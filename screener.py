@@ -994,7 +994,7 @@ def run_screening():
 
     # 地合い（日経平均の200日線と直近20日の変化）
     market = None
-    mkt_days = fetch_daily(session, "^N225", "")
+    mkt_days = fetch_daily(_get_session(), "^N225", "")
     if mkt_days and len(mkt_days) >= 210:
         mc = [d["close"] for d in mkt_days]
         ma200 = sum(mc[-200:]) / 200
