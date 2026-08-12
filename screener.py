@@ -63,7 +63,53 @@ CONFIG = {
 # 東証以外（札幌・名古屋・福岡の単独上場銘柄）を対象に加えたい場合はここに追記。
 # Yahoo Financeのサフィックス: 札証=.S / 名証=.N / 福証=.F
 # 例: {"code": "3544", "name": "サツドラHD", "sector": "小売業", "market": "札証", "suffix": ".S"},
-EXTRA_TICKERS = []
+EXTRA_TICKERS = [
+    # ---- 札幌証券取引所 単独上場（本則） ----
+    {"code": "1449", "name": "FUJIジャパン", "sector": "建設業", "market": "札証", "suffix": ".S"},
+    {"code": "1832", "name": "北海電工", "sector": "建設業", "market": "札証", "suffix": ".S"},
+    {"code": "2218", "name": "日糧製パン", "sector": "食料品", "market": "札証", "suffix": ".S"},
+    {"code": "9027", "name": "ロジネットジャパン", "sector": "陸運業", "market": "札証", "suffix": ".S"},
+    {"code": "9085", "name": "北海道中央バス", "sector": "陸運業", "market": "札証", "suffix": ".S"},
+    {"code": "5579", "name": "GSI", "sector": "卸売業", "market": "札証", "suffix": ".S"},
+    {"code": "3055", "name": "ほくやく・竹山HD", "sector": "卸売業", "market": "札証", "suffix": ".S"},
+    {"code": "8594", "name": "中道リース", "sector": "その他金融業", "market": "札証", "suffix": ".S"},
+    {"code": "2172", "name": "インサイト", "sector": "サービス業", "market": "札証", "suffix": ".S"},
+    # ---- 札幌証券取引所 単独上場（アンビシャス） ----
+    {"code": "3849", "name": "日本テクノ・ラボ", "sector": "情報・通信業", "market": "札証", "suffix": ".S"},
+    {"code": "3977", "name": "フュージョン", "sector": "サービス業", "market": "札証", "suffix": ".S"},
+    {"code": "5039", "name": "キットアライブ", "sector": "情報・通信業", "market": "札証", "suffix": ".S"},
+    {"code": "2928", "name": "RIZAPグループ", "sector": "サービス業", "market": "札証", "suffix": ".S"},
+    {"code": "2976", "name": "日本グランデ", "sector": "不動産業", "market": "札証", "suffix": ".S"},
+    {"code": "2137", "name": "光ハイツ・ヴェラス", "sector": "サービス業", "market": "札証", "suffix": ".S"},
+    # ---- 福岡証券取引所 単独上場（本則） ----
+    {"code": "1771", "name": "日本乾溜工業", "sector": "建設業", "market": "福証", "suffix": ".F"},
+    {"code": "1999", "name": "サイタHD", "sector": "建設業", "market": "福証", "suffix": ".F"},
+    {"code": "2058", "name": "ヒガシマル", "sector": "食料品", "market": "福証", "suffix": ".F"},
+    {"code": "2919", "name": "マルタイ", "sector": "食料品", "market": "福証", "suffix": ".F"},
+    {"code": "4995", "name": "サンケイ化学", "sector": "化学", "market": "福証", "suffix": ".F"},
+    {"code": "7894", "name": "丸東産業", "sector": "化学", "market": "福証", "suffix": ".F"},
+    {"code": "5953", "name": "昭和鉄工", "sector": "金属製品", "market": "福証", "suffix": ".F"},
+    {"code": "9035", "name": "第一交通産業", "sector": "陸運業", "market": "福証", "suffix": ".F"},
+    {"code": "9407", "name": "RKB毎日HD", "sector": "情報・通信業", "market": "福証", "suffix": ".F"},
+    {"code": "272A", "name": "グリーンクロスHD", "sector": "卸売業", "market": "福証", "suffix": ".F"},
+    {"code": "7441", "name": "Misumi", "sector": "卸売業", "market": "福証", "suffix": ".F"},
+    {"code": "9942", "name": "ジョイフル", "sector": "小売業", "market": "福証", "suffix": ".F"},
+    {"code": "8398", "name": "筑邦銀行", "sector": "銀行業", "market": "福証", "suffix": ".F"},
+    {"code": "8554", "name": "南日本銀行", "sector": "銀行業", "market": "福証", "suffix": ".F"},
+    {"code": "8559", "name": "豊和銀行", "sector": "銀行業", "market": "福証", "suffix": ".F"},
+    {"code": "8560", "name": "宮崎太陽銀行", "sector": "銀行業", "market": "福証", "suffix": ".F"},
+    {"code": "2974", "name": "大英産業", "sector": "不動産業", "market": "福証", "suffix": ".F"},
+    {"code": "6076", "name": "アメイズ", "sector": "サービス業", "market": "福証", "suffix": ".F"},
+    # ---- 福岡証券取引所 単独上場（Q-Board） ----
+    {"code": "231A", "name": "クロスイー", "sector": "不動産業", "market": "福証", "suffix": ".F"},
+    {"code": "4250", "name": "オールフロンティア", "sector": "化学", "market": "福証", "suffix": ".F"},
+    {"code": "3824", "name": "メディアファイブ", "sector": "情報・通信業", "market": "福証", "suffix": ".F"},
+    {"code": "4018", "name": "ジオロケーション・テクノロジー", "sector": "情報・通信業", "market": "福証", "suffix": ".F"},
+    {"code": "3047", "name": "TRUCK-ONE", "sector": "卸売業", "market": "福証", "suffix": ".F"},
+    {"code": "4827", "name": "ビジネス・ワンHD", "sector": "不動産業", "market": "福証", "suffix": ".F"},
+    {"code": "242A", "name": "リプライオリティ", "sector": "サービス業", "market": "福証", "suffix": ".F"},
+    {"code": "9388", "name": "パパネッツ", "sector": "サービス業", "market": "福証", "suffix": ".F"},
+]
 
 # JPX公式・全上場銘柄一覧（東証）
 JPX_LIST_URL = "https://www.jpx.co.jp/markets/statistics-equities/misc/tvdivq0000001vg2-att/data_j.xls"
