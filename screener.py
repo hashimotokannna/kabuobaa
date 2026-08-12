@@ -40,7 +40,8 @@ DOCS = ROOT / "docs"
 # ------------------------------------------------------------
 CONFIG = {
     # 選定
-    "TOP_N": 100,            # ピックアップする銘柄数
+    "TOP_N": 10,             # 画面に出す厳選銘柄数
+    "SHORTLIST_N": 40,       # 候補として用意する数（持ち金で外れる分の予備を含む）
     "RECENT_DAYS": 20,       # 「普段の値段」とみなす直近営業日数
     "CHEAP_PCT": 5.0,        # ◎かなり安い: 直近高値からこの%以上下落
     "MILD_PCT": 3.0,         # ○安め: 直近高値からこの%以上下落
@@ -316,6 +317,78 @@ def level_of(drop_pct):
 
 
 
+def sim_summary(trades):
+    """銘柄単体の仮想実行結果を要約（根拠スコア用）"""
+    closed = [t for t in trades if t["sell_date"]]
+    opened = [t for t in trades if not t["sell_date"]]
+    return {
+        "wins": len(closed),
+        "avg_held": (sum(t["held"] for t in closed) / len(closed)) if closed else None,
+        "open_loss": any(t["pnl"] < 0 for t in opened),
+    }
+
+
+def score_stock(s):
+    """厳選の根拠スコア。(点数, 根拠の文リスト) を返す"""
+    reasons = []
+    score = 0.0
+
+    # 1. いま安いか（主基準）
+    pt = s["drop_pct"] * 10
+    score += pt
+    reasons.append(f"直近20日高値から −{s['drop_pct']:.1f}%（安さの主基準 +{pt:.0f}点）")
+    if s.get("usual"):
+        vs = (s["usual"] - s["close"]) / s["usual"] * 100
+        if vs > 0:
+            pt = min(vs * 5, 25)
+            score += pt
+            reasons.append(f"普段の値段（20日平均）より {vs:.1f}%安い（+{pt:.0f}点）")
+
+    # 2. この銘柄で手法が効いてきた実績
+    t = s.get("sim") or {}
+    wins = t.get("wins", 0)
+    if wins > 0:
+        pt = min(wins, 10) * 6
+        score += pt
+        reasons.append(f"過去1年、同じ買い方で {wins}回 +5,000円に到達（+{pt:.0f}点）")
+        ah = t.get("avg_held")
+        if ah is not None and ah <= 10:
+            score += 15
+            reasons.append(f"+5,000円まで平均 {ah:.0f}営業日と回転が速い（+15点）")
+        elif ah is not None and ah <= 20:
+            score += 8
+            reasons.append(f"+5,000円まで平均 {ah:.0f}営業日（+8点）")
+    else:
+        reasons.append("過去1年はこの買い方の成立実績なし（加点なし）")
+    if t.get("open_loss"):
+        score -= 15
+        reasons.append("ただし直近の仮想買いが塩漬け中（−15点）")
+
+    # 3. 長期トレンドの健全さ
+    dd = s["drawdown_1y"] * 100
+    if dd <= 15:
+        score += 15
+        reasons.append(f"1年高値からの下落 −{dd:.0f}% で長期トレンド健全（+15点）")
+    elif dd <= 25:
+        score += 8
+        reasons.append(f"1年高値からの下落 −{dd:.0f}%（+8点）")
+    else:
+        reasons.append(f"1年高値から −{dd:.0f}%。除外基準（{int(CONFIG['DEAD_DRAWDOWN']*100)}%）内だが深め（加点なし）")
+
+    # 4. 売り買いのしやすさ
+    tv = s.get("turnover", 0)
+    if tv >= 1_000_000_000:
+        score += 15
+        reasons.append(f"1日平均 {tv/100_000_000:.0f}億円の売買があり注文が通りやすい（+15点）")
+    elif tv >= 100_000_000:
+        score += 8
+        reasons.append(f"1日平均 {tv/100_000_000:.1f}億円の売買（+8点）")
+    else:
+        reasons.append("売買代金は最低ライン付近。約定しづらい可能性（加点なし）")
+
+    return score, reasons
+
+
 # ------------------------------------------------------------
 # 仮想実行: 「◎になったら翌日の始値で100株買い、+5000円の指値で売る」
 # を過去1年の日足でなぞる（検証レポート用）
@@ -489,9 +562,10 @@ def run_screening():
                 skip_count += 1
                 all_results.append({**base, "status": "skip", "reason": reason})
                 continue
-            candidates.append({**stock, **m, "days": days[-10:]})
-            all_results.append({**base, "status": "ok", "reason": ""})
             trades = simulate_grandma(days)
+            candidates.append({**stock, **m, "days": days[-10:],
+                               "sim": sim_summary(trades)})
+            all_results.append({**base, "status": "ok", "reason": ""})
             if trades:
                 sim_records.append({"code": stock["code"],
                                     "name": stock["name"], "trades": trades})
@@ -503,8 +577,10 @@ def run_screening():
                 "closes": [d["close"] for d in days],
             })
 
-    candidates.sort(key=lambda s: s["drop_pct"], reverse=True)
-    picked = candidates[:CONFIG["TOP_N"]]
+    for c in candidates:
+        c["score"], c["reasons"] = score_stock(c)
+    candidates.sort(key=lambda s: s["score"], reverse=True)
+    picked = candidates[:CONFIG["SHORTLIST_N"]]
     picked_codes = {s["code"] for s in picked}
     for r in all_results:
         if r["status"] == "ok":
@@ -587,7 +663,12 @@ def make_demo_data():
                 for i in range(10)
             ],
         })
-    picked.sort(key=lambda s: s["drop_pct"], reverse=True)
+    for s in picked:
+        s["sim"] = {"wins": rng.randint(0, 9),
+                    "avg_held": rng.uniform(4, 28),
+                    "open_loss": rng.random() < 0.3}
+        s["score"], s["reasons"] = score_stock(s)
+    picked.sort(key=lambda s: s["score"], reverse=True)
     stats = {"universe": 3912, "dead_excluded": 214, "skipped": 1480, "failed": 3}
 
     all_results = []
@@ -670,6 +751,9 @@ def build_output(picked, stats):
             "high1y": round(s.get("high1y", 0), 1),
             "low1y": round(s.get("low1y", 0), 1),
             "suffix": s.get("suffix", ".T"),
+            "score": round(s.get("score", 0), 1),
+            "reasons": s.get("reasons", []),
+            "cost": round(s["close"] * 100),
             "level": level_of(s["drop_pct"]),
             "is_new": (prev_codes is not None and s["code"] not in prev_codes),
             "days": [
@@ -685,7 +769,7 @@ def build_output(picked, stats):
         "date_label": now.strftime("%-m/%-d") if sys.platform != "win32" else now.strftime("%m/%d"),
         "stats": stats,
         "config": {k: CONFIG[k] for k in
-                   ("TOP_N", "RECENT_DAYS", "CHEAP_PCT", "MILD_PCT",
+                   ("TOP_N", "SHORTLIST_N", "RECENT_DAYS", "CHEAP_PCT", "MILD_PCT",
                     "DEAD_DRAWDOWN", "DEAD_BELOW_MA_RATIO",
                     "MIN_RECORDS", "MIN_PRICE", "MIN_TURNOVER")},
         "stocks": stocks_out,
@@ -701,27 +785,44 @@ def yen(v):
 # 持ち金設定（帳簿ページ用・端末内保存）
 CAP_JS = '''<script>
 const CAP_KEY = 'kabuobaa_capital';
+const TOPN = __TOPN__;
 const capIn = document.getElementById('cap');
-const onlyChk = document.getElementById('caponly');
+const allChk = document.getElementById('showall');
 function applyCap(){
   const man = parseFloat(capIn.value) || 0;
   const cap = man * 10000;
   localStorage.setItem(CAP_KEY, capIn.value || '');
-  document.querySelectorAll('details.drow').forEach(r => {
+  const rows = Array.from(document.querySelectorAll('details.drow'));
+  let shown = 0;
+  rows.forEach(r => {
     const cost = parseFloat(r.dataset.cost);
-    const over = cap > 0 && cost > cap;
-    r.classList.toggle('over', over);
-    r.classList.toggle('caphidden', over && onlyChk.checked);
+    const afford = cap <= 0 || cost <= cap;
+    r.classList.toggle('over', !afford);
+    let visible;
+    if (allChk.checked){
+      visible = true;
+    } else {
+      visible = afford && shown < TOPN;
+      if (visible) shown++;
+    }
+    r.classList.toggle('caphidden', !visible);
   });
-  document.querySelectorAll('details.gsec').forEach(g => {
-    const visible = g.querySelectorAll('details.drow:not(.caphidden)').length;
-    g.classList.toggle('caphidden', visible === 0);
+  let n = 0;
+  rows.forEach(r => {
+    if (!r.classList.contains('caphidden')){
+      n++;
+      const rk = r.querySelector('.rk');
+      if (rk) rk.textContent = n;
+    }
   });
+  const cnt = document.getElementById('showncnt');
+  if (cnt && !allChk.checked) cnt.textContent = String(shown);
+  if (cnt && allChk.checked) cnt.textContent = String(n);
 }
 if (capIn){
   capIn.value = localStorage.getItem(CAP_KEY) || '';
   capIn.addEventListener('input', applyCap);
-  onlyChk.addEventListener('change', applyCap);
+  allChk.addEventListener('change', applyCap);
   applyCap();
 }
 </script>'''
@@ -730,12 +831,6 @@ if (capIn){
 def render_html(data):
     stocks = data["stocks"]
     stats = data["stats"]
-
-    # カテゴリごとにまとめ、銘柄数の多い順にセクションを並べる
-    groups = {}
-    for s in stocks:
-        groups.setdefault(s["group"], []).append(s)
-    ordered = sorted(groups.items(), key=lambda kv: len(kv[1]), reverse=True)
 
     weekdays = "月火水木金土日"
     dt = datetime.fromisoformat(data["generated_at"])
@@ -779,30 +874,26 @@ def render_html(data):
         return "\n".join(out)
 
     rows_html = []
-    for gi, (group_name, members) in enumerate(ordered):
-        rows_html.append(
-            f'<details class="gsec" open>'
-            f'<summary class="sec">{html.escape(group_name)}'
-            f'<span class="cnt">{len(members)}銘柄 <span class="gchev">›</span></span></summary>'
-        )
-        for i, s in enumerate(members, 1):
-            chip = chip_class.get(s["market"], "local")
-            badge = ('<span class="badge cheap">◎</span>' if s["level"] == "cheap"
-                     else '<span class="badge mild">○</span>' if s["level"] == "mild"
-                     else "")
-            new_mark = '<span class="new">NEW</span>' if s["is_new"] else ""
-            yahoo_url = f'https://finance.yahoo.co.jp/quote/{s["code"]}{s.get("suffix", ".T")}'
-            range1y = ""
-            if s.get("low1y") and s.get("high1y"):
-                range1y = (f'<div class="fact"><span>1年の値段の範囲</span>'
-                           f'<span class="num">{yen(s["low1y"])} 〜 {yen(s["high1y"])}円</span></div>')
-            rows_html.append(f"""
-      <details class="drow" data-cost="{s["close"] * 100:.0f}">
+    for s in stocks:
+        chip = chip_class.get(s["market"], "local")
+        badge = ('<span class="badge cheap">◎</span>' if s["level"] == "cheap"
+                 else '<span class="badge mild">○</span>' if s["level"] == "mild"
+                 else "")
+        new_mark = '<span class="new">NEW</span>' if s["is_new"] else ""
+        yahoo_url = f'https://finance.yahoo.co.jp/quote/{s["code"]}{s.get("suffix", ".T")}'
+        range1y = ""
+        if s.get("low1y") and s.get("high1y"):
+            range1y = (f'<div class="fact"><span>1年の値段の範囲</span>'
+                       f'<span class="num">{yen(s["low1y"])} 〜 {yen(s["high1y"])}円</span></div>')
+        reasons_html = "".join(
+            f'<div class="reason">・{html.escape(r)}</div>' for r in s.get("reasons", []))
+        rows_html.append(f"""
+      <details class="drow" data-cost="{s["cost"]}">
       <summary class="row">
-        <div class="rk num">{i}</div>
+        <div class="rk num">{s["rank"]}</div>
         <div class="nm">
           <div class="n1">{html.escape(s["name"])} <span class="chip {chip}">{html.escape(s["market"])}</span>{new_mark}</div>
-          <div class="n2 num">{s["code"]} ・ 100株 {s["close"] / 100:,.1f}万円 ・ 総合{s["rank"]}位<span class="nofund">資金不足</span></div>
+          <div class="n2 num">{s["code"]} ・ {html.escape(s["group"])} ・ 100株 {s["cost"] / 10000:,.1f}万円 ・ {s["score"]:.0f}点<span class="nofund">資金不足</span></div>
         </div>
         <div class="px">
           <div class="p1 num"><small>{price_label}</small> {yen(s["close"])}<small>円</small></div>
@@ -812,8 +903,10 @@ def render_html(data):
         <div class="chev">›</div>
       </summary>
       <div class="notebox">
+        <div class="nhead">選ばれた根拠（スコア {s["score"]:.0f}点）</div>
+        {reasons_html}
         {latest_block(s)}
-        <div class="fact"><span>100株の必要資金</span><span class="num">{s["close"] / 100:,.1f}万円</span></div>
+        <div class="fact"><span>100株の必要資金</span><span class="num">{s["cost"] / 10000:,.1f}万円</span></div>
         <div class="fact"><span>普段の値段（20日平均）</span><span class="num">{yen(s["usual"])}円</span></div>
         <div class="fact"><span>直近の高値（20日）</span><span class="num">{yen(s["high20"])}円</span></div>
         <div class="fact"><span>高値からの下げ</span><span class="num drop">−{yen(s["drop_yen"])}円（−{s["drop_pct"]:.1f}%）</span></div>
@@ -822,9 +915,7 @@ def render_html(data):
         {day_rows(s)}
         <a class="ylink" href="{yahoo_url}" target="_blank" rel="noopener">Yahoo!ファイナンスでこの銘柄の詳細を見る →</a>
       </div>
-      </details>"""
-            )
-        rows_html.append("</details>")
+      </details>""")
 
     body_rows = "\n".join(rows_html)
     excluded = stats.get("dead_excluded", 0)
@@ -930,6 +1021,7 @@ def render_html(data):
   .caponly{{font-size:11.5px; font-weight:600; color:var(--ink2); margin-left:auto;
     display:flex; align-items:center; gap:4px;}}
   .capnote{{font-size:10.5px; color:var(--ink3); line-height:1.6; margin-top:6px;}}
+  .reason{{font-size:11px; color:var(--ink2); line-height:1.7; padding:2px 0;}}
   .nofund{{display:none; color:#fff; background:#b06a00; font-size:9px; font-weight:800;
     border-radius:4px; padding:1px 4px; margin-left:6px; vertical-align:1px;}}
   details.drow.over summary.row{{opacity:.45;}}
@@ -939,29 +1031,30 @@ def render_html(data):
 </head>
 <body>
 <header>
-  <div class="t">今夜の{len(stocks)}銘柄</div>
-  <div class="s">{date_str} {dt.hour:02d}:{dt.minute:02d} 記帳{"（取引時間中・当日分は途中経過）" if is_intraday else ""} ・ 行をタップでノート ・ 判断はご自身で</div>
+  <div class="t">今夜の厳選<span id="showncnt">{cfg["TOP_N"]}</span>銘柄</div>
+  <div class="s">{date_str} {dt.hour:02d}:{dt.minute:02d} 記帳{"（取引時間中・当日分は途中経過）" if is_intraday else ""} ・ 根拠スコア順 ・ タップで根拠とノート ・ 判断はご自身で</div>
 </header>
 <div class="pnav">
   <a href="universe.html">全銘柄の判定一覧 ›</a>
   <a href="backtest.html">手法の検証レポート ›</a>
 </div>
 <details class="crit">
-  <summary>この{len(stocks)}銘柄の選定基準（タップで開閉）<span class="chev">›</span></summary>
+  <summary>この厳選{cfg["TOP_N"]}銘柄の選定基準（タップで開閉）<span class="chev">›</span></summary>
   <div class="critbody">
     <div class="step"><b>1. 対象</b> 東証プライム・スタンダード・グロースの全銘柄（{universe:,}銘柄）</div>
     <div class="step"><b>2. 土俵に上げない</b> 上場から日足{cfg["MIN_RECORDS"]}日未満 ／ 株価{cfg["MIN_PRICE"]}円未満 ／ 直近{cfg["RECENT_DAYS"]}日の平均売買代金{int(cfg["MIN_TURNOVER"]/10000):,}万円未満（売りたい時に売れない銘柄を避ける）</div>
     <div class="step"><b>3. 「終わった株」を除外</b> 1年高値から{int(cfg["DEAD_DRAWDOWN"]*100)}%以上下落 、または直近60営業日の{int(cfg["DEAD_BELOW_MA_RATIO"]*100)}%以上で200日平均線割れ（ピーク価格から下がり続けている銘柄。本日{excluded:,}銘柄）</div>
-    <div class="step"><b>4. 並べて選ぶ</b> 残った銘柄を「直近{cfg["RECENT_DAYS"]}日高値からの下落率」の大きい順に並べ、上位{cfg["TOP_N"]}銘柄を選定</div>
-    <div class="step"><b>5. 目安ラベル</b> ◎=高値から{cfg["CHEAP_PCT"]:.0f}%以上安い ／ ○={cfg["MILD_PCT"]:.0f}%以上安い ／ 「普段の値段」={cfg["RECENT_DAYS"]}日の終値平均</div>
+    <div class="step"><b>4. 根拠スコアで採点</b> 残った銘柄を「いまの安さ（20日高値からの下落率・普段との差）」「過去1年でこの買い方が+5,000円を取れた実績と速さ」「長期トレンドの健全さ」「売買のしやすさ」の4観点で採点し、上位{cfg["SHORTLIST_N"]}銘柄を候補に</div>
+    <div class="step"><b>5. 厳選{cfg["TOP_N"]}銘柄</b> 候補のうち、持ち金設定があれば「100株買える銘柄」だけを対象に、スコア上位{cfg["TOP_N"]}銘柄を表示。各銘柄の点数の内訳はタップで確認できます</div>
+    <div class="step"><b>6. 目安ラベル</b> ◎=高値から{cfg["CHEAP_PCT"]:.0f}%以上安い ／ ○={cfg["MILD_PCT"]:.0f}%以上安い ／ 「普段の値段」={cfg["RECENT_DAYS"]}日の終値平均</div>
     <div class="step" style="color:#8a5a17;">基準は毎回の実行時点の設定で、この文章も自動で追随します。個々の銘柄の判定理由は「全銘柄の判定一覧」で確認できます。</div>
   </div>
 </details>
 <div class="capcard">
   <div class="caprow">持ち金 <input id="cap" class="capin num" type="number" inputmode="numeric"
     placeholder="50"> 万円
-    <label class="caponly"><input id="caponly" type="checkbox"> 買える銘柄だけ表示</label></div>
-  <div class="capnote">この端末にだけ保存されます。設定すると持ち金で買えない銘柄が薄く表示され、
+    <label class="caponly"><input id="showall" type="checkbox"> 候補{cfg["SHORTLIST_N"]}銘柄すべて表示</label></div>
+  <div class="capnote">この端末にだけ保存されます。設定すると「100株買える銘柄」の中からスコア上位{cfg["TOP_N"]}銘柄が選ばれます。
   検証レポートの「持ち金別シミュレーション」とも連動します。</div>
 </div>
 <div class="ledger">
@@ -975,7 +1068,7 @@ def render_html(data):
 __CAPJS__
 </body>
 </html>
-""".replace("__CAPJS__", CAP_JS)
+""".replace("__CAPJS__", CAP_JS.replace("__TOPN__", str(cfg["TOP_N"])))
 
 
 # ------------------------------------------------------------
@@ -1146,8 +1239,8 @@ if (capIn){
 
 
 STATUS_DEF = {
-    "picked": ("選定", "#fdeeee", "#c62f2f", "今夜の100銘柄に選定"),
-    "bench":  ("圏外", "#eef0f4", "#4b4f57", "対象内だが上位100に届かず"),
+    "picked": ("候補", "#fdeeee", "#c62f2f", "根拠スコア上位の厳選候補（帳簿に表示）"),
+    "bench":  ("圏外", "#eef0f4", "#4b4f57", "対象内だがスコアが候補圏に届かず"),
     "dead":   ("除外", "#efe6f5", "#6b4487", "終わった株ルールで除外"),
     "skip":   ("対象外", "#fdf3e3", "#b06a00", "土俵に上げない条件に該当"),
     "fail":   ("失敗", "#e8e8e8", "#666", "データ取得失敗"),
