@@ -2,7 +2,11 @@ name: nightly-screener
 
 on:
   schedule:
-    # 平日 JST 20:30 (= UTC 11:30) に実行
+    # 平日 JST 9:40〜14:40 毎時 (= UTC 0:40〜5:40): 取引時間中の途中経過を記帳
+    - cron: "40 0-5 * * 1-5"
+    # 平日 JST 15:45 (= UTC 6:45): 大引け後の確定値を記帳
+    - cron: "45 6 * * 1-5"
+    # 平日 JST 20:30 (= UTC 11:30): 夜の確定記帳（入れ替えの基準）
     - cron: "30 11 * * 1-5"
   workflow_dispatch:      # 手動実行ボタンも有効化
     inputs:
