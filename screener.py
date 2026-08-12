@@ -311,6 +311,18 @@ def compute_metrics(days):
     if len(closes) >= 200:
         ma200_above = latest["close"] > sum(closes[-200:]) / 200
 
+    # コメント用: 出来高倍率・◎水準の連続日数・前日比
+    vols = [d.get("volume") or 0 for d in days[-21:-1]]
+    avg_vol = sum(vols) / len(vols) if vols else 0
+    vol_ratio = (latest.get("volume") or 0) / avg_vol if avg_vol > 0 else None
+    cheap_streak = 0
+    for d in reversed(days[-n:]):
+        if high20 > 0 and (high20 - d["close"]) / high20 * 100 >= CONFIG["CHEAP_PCT"]:
+            cheap_streak += 1
+        else:
+            break
+    prev_change = rets20[-1] if rets20 else None
+
     return {
         "open": latest["open"], "high": latest["high"],
         "low": latest["low"], "close": latest["close"],
@@ -324,6 +336,8 @@ def compute_metrics(days):
         "worst_1d": worst_1d, "vol20": vol20, "pos1y": pos1y,
         "concentration": concentration, "stabilizing": stabilizing,
         "ma200_above": ma200_above,
+        "vol_ratio": vol_ratio, "cheap_streak": cheap_streak,
+        "prev_change": prev_change,
     }
 
 
@@ -454,39 +468,57 @@ def score_stock(s):
 # 仮想実行: 「◎になったら翌日の始値で100株買い、+5000円の指値で売る」
 # を過去1年の日足でなぞる（検証レポート用）
 # ------------------------------------------------------------
-def simulate_grandma(days):
-    """取引のリストを返す。sell_dateがNoneのものは未決済（含み損益）"""
+SL_VARIANTS = [None, 5.0, 8.0, 12.0]  # 検証レポートで比較する損切り%（None=損切りなし）
+
+
+def simulate_variants(days, variants=None):
+    """買いシグナルを1回計算し、損切り%のバリアントごとに取引リストを返す"""
+    variants = variants or SL_VARIANTS
     n = CONFIG["RECENT_DAYS"]
+    out = {v: [] for v in variants}
     if len(days) < n + 5:
-        return []
+        return out
     opens = [d["open"] for d in days]
     highs = [d["high"] for d in days]
+    lows = [d["low"] for d in days]
     closes = [d["close"] for d in days]
-    trades, pos = [], None
+
+    signal_days = set()
     for i in range(n, len(days) - 1):
-        if pos is None:
-            high20 = max(highs[i - n + 1:i + 1])
-            c = closes[i]
-            drop_pct = (high20 - c) / high20 * 100 if high20 > 0 else 0
-            if drop_pct >= CONFIG["CHEAP_PCT"] and c >= CONFIG["MIN_PRICE"]:
-                pos = {"buy_i": i + 1, "buy": opens[i + 1]}
-        elif i >= pos["buy_i"] and highs[i] >= pos["buy"] * (1 + CONFIG["TP_PCT"] / 100):
-            # 買値+TP_PCT% の指値で売れた
-            trades.append({
-                "buy_date": days[pos["buy_i"]]["date"],
-                "sell_date": days[i]["date"],
-                "held": max(1, i - pos["buy_i"] + 1),
-                "pnl": pos["buy"] * CONFIG["TP_PCT"] / 100 * 100,
-            })
-            pos = None
-    if pos is not None and pos["buy_i"] < len(days):
-        trades.append({
-            "buy_date": days[pos["buy_i"]]["date"],
-            "sell_date": None,
-            "held": len(days) - 1 - pos["buy_i"],
-            "pnl": (closes[-1] - pos["buy"]) * 100,
-        })
-    return trades
+        h20 = max(highs[i - n + 1:i + 1])
+        c = closes[i]
+        if h20 > 0 and c >= CONFIG["MIN_PRICE"] and (h20 - c) / h20 * 100 >= CONFIG["CHEAP_PCT"]:
+            signal_days.add(i + 1)  # 翌営業日の始値で買う
+
+    tp = CONFIG["TP_PCT"] / 100
+    for v in variants:
+        trades, pos = [], None
+        for i in range(n, len(days)):
+            if pos is None and i in signal_days:
+                pos = {"buy_i": i, "buy": opens[i]}
+            if pos is not None and i >= pos["buy_i"]:
+                buy = pos["buy"]
+                if v is not None and lows[i] <= buy * (1 - v / 100):
+                    # 損切り（逆指値）成立を優先判定（保守的な仮定）
+                    trades.append({"buy_date": days[pos["buy_i"]]["date"],
+                                   "sell_date": days[i]["date"],
+                                   "held": max(1, i - pos["buy_i"] + 1),
+                                   "pnl": -buy * (v / 100) * 100, "stop": True})
+                    pos = None
+                elif highs[i] >= buy * (1 + tp):
+                    trades.append({"buy_date": days[pos["buy_i"]]["date"],
+                                   "sell_date": days[i]["date"],
+                                   "held": max(1, i - pos["buy_i"] + 1),
+                                   "pnl": buy * tp * 100, "stop": False})
+                    pos = None
+        if pos is not None:
+            trades.append({"buy_date": days[pos["buy_i"]]["date"],
+                           "sell_date": None,
+                           "held": len(days) - 1 - pos["buy_i"],
+                           "pnl": (closes[-1] - pos["buy"]) * 100, "stop": False})
+        out[v] = trades
+    return out
+
 
 
 # 検証レポートで比較する持ち金の段階
@@ -598,6 +630,8 @@ def run_screening():
 
     candidates, dead_count, skip_count, fail_count = [], 0, 0, 0
     all_results, sim_records, sim_universe = [], [], []
+    slagg = {v: {"sl": v, "tp_count": 0, "sl_count": 0, "realized": 0.0,
+                 "open": 0, "open_pnl": 0.0} for v in SL_VARIANTS}
     done = 0
     with ThreadPoolExecutor(max_workers=CONFIG["WORKERS"]) as pool:
         futures = [pool.submit(task, s) for s in universe]
@@ -625,13 +659,26 @@ def run_screening():
                 skip_count += 1
                 all_results.append({**base, "status": "skip", "reason": reason})
                 continue
-            trades = simulate_grandma(days)
+            var_trades = simulate_variants(days)
+            trades = var_trades[None]
             candidates.append({**stock, **m, "days": days[-10:],
                                "sim": sim_summary(trades)})
             all_results.append({**base, "status": "ok", "reason": ""})
             if trades:
                 sim_records.append({"code": stock["code"],
                                     "name": stock["name"], "trades": trades})
+            for v, tl in var_trades.items():
+                agg = slagg[v]
+                for t in tl:
+                    if t["sell_date"] is None:
+                        agg["open"] += 1
+                        agg["open_pnl"] += t["pnl"]
+                    elif t.get("stop"):
+                        agg["sl_count"] += 1
+                        agg["realized"] += t["pnl"]
+                    else:
+                        agg["tp_count"] += 1
+                        agg["realized"] += t["pnl"]
             sim_universe.append({
                 "code": stock["code"], "name": stock["name"],
                 "dates": [d["date"] for d in days],
@@ -657,7 +704,8 @@ def run_screening():
     }
     print("資金別シミュレーションを計算中...")
     portfolio = simulate_portfolio(sim_universe)
-    return picked, stats, all_results, sim_records, portfolio
+    slstats = [slagg[v] for v in SL_VARIANTS]
+    return picked, stats, all_results, sim_records, portfolio, slstats
 
 
 # ------------------------------------------------------------
@@ -736,6 +784,9 @@ def make_demo_data():
         s["concentration"] = rng.uniform(0.1, 0.8)
         s["stabilizing"] = True
         s["ma200_above"] = rng.random() < 0.6
+        s["vol_ratio"] = rng.uniform(0.5, 3.5)
+        s["cheap_streak"] = rng.randint(0, 6)
+        s["prev_change"] = rng.uniform(-4, 2)
         s["score"], s["reasons"] = score_stock(s)
     picked.sort(key=lambda s: s["score"], reverse=True)
     stats = {"universe": 3912, "dead_excluded": 214, "skipped": 1480, "failed": 3}
@@ -777,7 +828,17 @@ def make_demo_data():
         {"budget": None, "realized": 390000, "wins": 78, "skipped": 0,
          "open_count": 12, "unrealized": -160000, "max_positions": 19},
     ]
-    return picked, stats, all_results, sim_records, portfolio
+    slstats = [
+        {"sl": None, "tp_count": 610, "sl_count": 0, "realized": 4200000,
+         "open": 180, "open_pnl": -2900000},
+        {"sl": 5.0, "tp_count": 480, "sl_count": 260, "realized": 1900000,
+         "open": 60, "open_pnl": -420000},
+        {"sl": 8.0, "tp_count": 540, "sl_count": 150, "realized": 2600000,
+         "open": 85, "open_pnl": -700000},
+        {"sl": 12.0, "tp_count": 575, "sl_count": 80, "realized": 3200000,
+         "open": 120, "open_pnl": -1500000},
+    ]
+    return picked, stats, all_results, sim_records, portfolio, slstats
 
 
 # ------------------------------------------------------------
@@ -822,6 +883,7 @@ def build_output(picked, stats):
             "suffix": s.get("suffix", ".T"),
             "score": round(s.get("score", 0), 1),
             "reasons": s.get("reasons", []),
+            "comment": make_comment(s),
             "cost": round(s["close"] * 100),
             "level": level_of(s["drop_pct"]),
             "is_new": (prev_codes is not None and s["code"] not in prev_codes),
@@ -847,6 +909,29 @@ def build_output(picked, stats):
     return data
 
 
+def make_comment(s):
+    """自前データだけから作る1行コメント（事実のみ・最大3項目）"""
+    bits = []
+    vr = s.get("vol_ratio")
+    if vr and vr >= 2:
+        bits.append(f"出来高が普段の{vr:.1f}倍に急増")
+    st = s.get("cheap_streak") or 0
+    if st >= 3:
+        bits.append(f"◎水準の安さが{st}日続く")
+    pos = s.get("pos1y")
+    if pos is not None:
+        if pos <= 0.25:
+            bits.append("1年レンジの安値寄り")
+        elif pos >= 0.8:
+            bits.append("1年の高値圏からの一服")
+    pc = s.get("prev_change")
+    if pc is not None and abs(pc) >= 3:
+        bits.append(f"前日比{pc:+.1f}%と大きめの動き")
+    if s.get("ma200_above") is False:
+        bits.append("200日線の下")
+    return " ・ ".join(bits[:3])
+
+
 def yen(v):
     return f"{v:,.0f}"
 
@@ -855,22 +940,40 @@ def yen(v):
 # 持ち金設定（帳簿ページ用・端末内保存）
 CAP_JS = '''<script>
 const CAP_KEY = 'kabuobaa_capital';
+const FAV_KEY = 'kabuobaa_favs';
 const TOPN = __TOPN__;
 const capIn = document.getElementById('cap');
 const allChk = document.getElementById('showall');
+let favs = new Set();
+try { favs = new Set(JSON.parse(localStorage.getItem(FAV_KEY) || '[]')); } catch(e){}
+
+function saveFavs(){ localStorage.setItem(FAV_KEY, JSON.stringify(Array.from(favs))); }
+
 function applyCap(){
   const man = parseFloat(capIn.value) || 0;
   const cap = man * 10000;
   localStorage.setItem(CAP_KEY, capIn.value || '');
+  const ledger = document.querySelector('.ledger');
   const rows = Array.from(document.querySelectorAll('details.drow'));
+
+  // ★お気に入りを先頭に（スコア順は維持したまま並べ替え）
+  const favRows = rows.filter(r => favs.has(r.querySelector('.fav').dataset.code));
+  const rest = rows.filter(r => !favs.has(r.querySelector('.fav').dataset.code));
+  const ordered = favRows.concat(rest);
+  ordered.forEach(r => ledger.appendChild(r));
+
   let shown = 0;
-  rows.forEach(r => {
+  ordered.forEach(r => {
     const cost = parseFloat(r.dataset.cost);
     const afford = cap <= 0 || cost <= cap;
+    const isFav = favs.has(r.querySelector('.fav').dataset.code);
     r.classList.toggle('over', !afford);
     let visible;
     if (allChk.checked){
       visible = true;
+    } else if (isFav){
+      visible = true;  // お気に入りは資金に関わらず常に表示
+      shown++;
     } else {
       visible = afford && shown < TOPN;
       if (visible) shown++;
@@ -878,7 +981,9 @@ function applyCap(){
     r.classList.toggle('caphidden', !visible);
   });
   let n = 0;
-  rows.forEach(r => {
+  ordered.forEach(r => {
+    const st = r.querySelector('.fav');
+    st.classList.toggle('on', favs.has(st.dataset.code));
     if (!r.classList.contains('caphidden')){
       n++;
       const rk = r.querySelector('.rk');
@@ -886,9 +991,18 @@ function applyCap(){
     }
   });
   const cnt = document.getElementById('showncnt');
-  if (cnt && !allChk.checked) cnt.textContent = String(shown);
-  if (cnt && allChk.checked) cnt.textContent = String(n);
+  if (cnt) cnt.textContent = String(n);
 }
+
+document.querySelectorAll('.fav').forEach(b => b.addEventListener('click', e => {
+  e.preventDefault();
+  e.stopPropagation();
+  const c = b.dataset.code;
+  if (favs.has(c)) favs.delete(c); else favs.add(c);
+  saveFavs();
+  applyCap();
+}));
+
 if (capIn){
   capIn.value = localStorage.getItem(CAP_KEY) || '';
   capIn.addEventListener('input', applyCap);
@@ -964,12 +1078,14 @@ def render_html(data):
         <div class="nm">
           <div class="n1">{html.escape(s["name"])} <span class="chip {chip}">{html.escape(s["market"])}</span>{new_mark}</div>
           <div class="n2 num">{s["code"]} ・ {html.escape(s["group"])} ・ 100株 {s["cost"] / 10000:,.1f}万円 ・ {s["score"]:.0f}点<span class="nofund">資金不足</span></div>
+          {f'<div class="cmt">{html.escape(s["comment"])}</div>' if s.get("comment") else ""}
         </div>
         <div class="px">
           <div class="p1 num"><small>{price_label}</small> {yen(s["close"])}<small>円</small></div>
           <div class="p2 num drop">高値から −{s["drop_pct"]:.1f}%</div>
         </div>
         <div>{badge}</div>
+        <button class="fav" data-code="{s["code"]}" aria-label="お気に入り">★</button>
         <div class="chev">›</div>
       </summary>
       <div class="notebox">
@@ -1097,6 +1213,11 @@ def render_html(data):
   details.drow.over summary.row{{opacity:.45;}}
   details.drow.over .nofund{{display:inline;}}
   .caphidden{{display:none !important;}}
+  .cmt{{font-size:10px; color:#8a5a17; margin-top:2px; white-space:nowrap;
+    overflow:hidden; text-overflow:ellipsis;}}
+  .fav{{background:none; border:none; font-size:18px; color:#ddd3ba; padding:0 2px;
+    cursor:pointer; line-height:1;}}
+  .fav.on{{color:#e0a300;}}
 </style>
 </head>
 <body>
@@ -1192,7 +1313,7 @@ __SCRIPT__
 """
 
 
-def render_backtest(sim_records, dt, portfolio=None):
+def render_backtest(sim_records, dt, portfolio=None, slstats=None):
     """「◎で買って+5000円で売る」仮想実行の検証レポートページ"""
     closed, open_pos = [], []
     for rec in sim_records:
@@ -1237,6 +1358,24 @@ def render_backtest(sim_records, dt, portfolio=None):
         body.append('<div class="tiernote">持ち金を増やすと「見送り」が減って確定益が伸びる一方、'
                     '持ち越しの含み損も増えます。次の段の伸び幅が小さければ、まだ増額の必要はない、'
                     'という読み方ができます。</div></div>')
+    if slstats:
+        body.append('<div class="card"><h2>損切りルールの効果比較（利確+'
+                    f'{CONFIG["TP_PCT"]:.0f}%共通・資金無制限）</h2>')
+        for a in slstats:
+            label = "損切りなし（おばあさん流）" if a["sl"] is None else f'損切り −{a["sl"]:.0f}%'
+            key = "none" if a["sl"] is None else f'{a["sl"]:.0f}'
+            total = a["realized"] + a["open_pnl"]
+            tcls = "plus" if total >= 0 else "minus"
+            tsign = "+" if total >= 0 else "−"
+            osign = "+" if a["open_pnl"] >= 0 else "−"
+            body.append(
+                f'<div class="tier" data-sl="{key}">'
+                f'<div class="tname">{label}</div>'
+                f'<div class="tfacts num">トータル <b class="{tcls}">{tsign}{abs(total):,.0f}円</b>'
+                f' ／ 利確 {a["tp_count"]:,}回 ・ 損切り {a["sl_count"]:,}回（確定損益 計 {a["realized"]:+,.0f}円）'
+                f' ／ 持ち越し {a["open"]:,}件 {osign}{abs(a["open_pnl"]):,.0f}円</div></div>')
+        body.append('<div class="tiernote">損切りは「塩漬け（持ち越しの含み損）」を小さな確定損に置き換える保険です。'
+                    'トータル損益で比べて、自分の損切り%を決めてください。あなたの設定（持ち株管理で入力した%）に印が付きます。</div></div>')
     body.append('<div class="card"><h2>参考: 資金無制限で全シグナルを拾った場合の内訳</h2>')
     body.append(f'<div class="fact"><span>買いに入った回数</span><span class="v num">{n_all:,}回</span></div>')
     body.append(f'<div class="fact"><span>利確ライン（+{CONFIG["TP_PCT"]:.0f}%）で売れた回数</span><span class="v num">{n_closed:,}回（{win_rate:.0f}%）</span></div>')
@@ -1300,6 +1439,18 @@ if (capIn){
   capIn.addEventListener('input', applyTier);
   applyTier();
 }
+(function(){
+  const sl = parseFloat(localStorage.getItem('kabuobaa_sl')) || 8;
+  const rows = Array.from(document.querySelectorAll('.tier[data-sl]'));
+  if (!rows.length) return;
+  let best = null, bestDiff = 1e9;
+  rows.forEach(t => {
+    if (t.dataset.sl === 'none') return;
+    const diff = Math.abs(Number(t.dataset.sl) - sl);
+    if (diff < bestDiff){ bestDiff = diff; best = t; }
+  });
+  if (best) best.classList.add('me');
+})();
 </script>"""
     return (SUBPAGE_TEMPLATE
             .replace("__TITLE__", "手法の検証レポート")
@@ -1859,9 +2010,9 @@ def main():
 
     if args.demo:
         print("デモモード: ダミーデータでページを生成します")
-        picked, stats, all_results, sim_records, portfolio = make_demo_data()
+        picked, stats, all_results, sim_records, portfolio, slstats = make_demo_data()
     else:
-        picked, stats, all_results, sim_records, portfolio = run_screening()
+        picked, stats, all_results, sim_records, portfolio, slstats = run_screening()
 
     data = build_output(picked, stats)
 
@@ -1884,7 +2035,7 @@ def main():
     (DOCS / "universe.html").write_text(
         render_universe(all_results, stats, dt_now), encoding="utf-8")
     (DOCS / "backtest.html").write_text(
-        render_backtest(sim_records, dt_now, portfolio), encoding="utf-8")
+        render_backtest(sim_records, dt_now, portfolio, slstats), encoding="utf-8")
     (DOCS / "holdings.html").write_text(render_holdings(dt_now), encoding="utf-8")
 
     # 持ち株管理用: 全銘柄の最新価格表（銘柄名・終値・日付のみの公開情報）
