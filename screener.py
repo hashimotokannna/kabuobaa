@@ -268,6 +268,47 @@ def level_of(drop_pct):
     return "normal"
 
 
+
+
+# ------------------------------------------------------------
+# 仮想実行: 「◎になったら翌日の始値で100株買い、+5000円の指値で売る」
+# を過去1年の日足でなぞる（検証レポート用）
+# ------------------------------------------------------------
+def simulate_grandma(days):
+    """取引のリストを返す。sell_dateがNoneのものは未決済（含み損益）"""
+    n = CONFIG["RECENT_DAYS"]
+    if len(days) < n + 5:
+        return []
+    opens = [d["open"] for d in days]
+    highs = [d["high"] for d in days]
+    closes = [d["close"] for d in days]
+    trades, pos = [], None
+    for i in range(n, len(days) - 1):
+        if pos is None:
+            high20 = max(highs[i - n + 1:i + 1])
+            c = closes[i]
+            drop_pct = (high20 - c) / high20 * 100 if high20 > 0 else 0
+            if drop_pct >= CONFIG["CHEAP_PCT"] and c >= CONFIG["MIN_PRICE"]:
+                pos = {"buy_i": i + 1, "buy": opens[i + 1]}
+        elif i >= pos["buy_i"] and highs[i] >= pos["buy"] + 50.0:
+            # 100株なら +50円/株 = +5,000円 で指値成立
+            trades.append({
+                "buy_date": days[pos["buy_i"]]["date"],
+                "sell_date": days[i]["date"],
+                "held": max(1, i - pos["buy_i"] + 1),
+                "pnl": 5000.0,
+            })
+            pos = None
+    if pos is not None and pos["buy_i"] < len(days):
+        trades.append({
+            "buy_date": days[pos["buy_i"]]["date"],
+            "sell_date": None,
+            "held": len(days) - 1 - pos["buy_i"],
+            "pnl": (closes[-1] - pos["buy"]) * 100,
+        })
+    return trades
+
+
 # ------------------------------------------------------------
 # 4. スクリーニング本体
 # ------------------------------------------------------------
@@ -305,6 +346,7 @@ def run_screening():
         return stock, days
 
     candidates, dead_count, skip_count, fail_count = [], 0, 0, 0
+    all_results, sim_records = [], []
     done = 0
     with ThreadPoolExecutor(max_workers=CONFIG["WORKERS"]) as pool:
         futures = [pool.submit(task, s) for s in universe]
@@ -313,21 +355,38 @@ def run_screening():
             if done % 200 == 0:
                 print(f"  {done}/{len(universe)} 取得済み...")
             stock, days = fut.result()
+            base = {"code": stock["code"], "name": stock["name"],
+                    "market": stock["market"], "sector": stock["sector"]}
             if not days:
                 fail_count += 1
+                all_results.append({**base, "status": "fail",
+                                    "reason": "データ取得失敗"})
                 continue
             m = compute_metrics(days)
-            status, _reason = classify(m)
+            status, reason = classify(m)
+            base["close"] = round(m["close"], 1)
+            base["drop_pct"] = round(m["drop_pct"], 2)
             if status == "dead":
                 dead_count += 1
+                all_results.append({**base, "status": "dead", "reason": reason})
                 continue
             if status == "skip":
                 skip_count += 1
+                all_results.append({**base, "status": "skip", "reason": reason})
                 continue
             candidates.append({**stock, **m, "days": days[-10:]})
+            all_results.append({**base, "status": "ok", "reason": ""})
+            trades = simulate_grandma(days)
+            if trades:
+                sim_records.append({"code": stock["code"],
+                                    "name": stock["name"], "trades": trades})
 
     candidates.sort(key=lambda s: s["drop_pct"], reverse=True)
     picked = candidates[:CONFIG["TOP_N"]]
+    picked_codes = {s["code"] for s in picked}
+    for r in all_results:
+        if r["status"] == "ok":
+            r["status"] = "picked" if r["code"] in picked_codes else "bench"
 
     stats = {
         "universe": len(universe),
@@ -335,7 +394,7 @@ def run_screening():
         "skipped": skip_count,
         "failed": fail_count,
     }
-    return picked, stats
+    return picked, stats, all_results, sim_records
 
 
 # ------------------------------------------------------------
@@ -406,7 +465,33 @@ def make_demo_data():
         })
     picked.sort(key=lambda s: s["drop_pct"], reverse=True)
     stats = {"universe": 3912, "dead_excluded": 214, "skipped": 1480, "failed": 3}
-    return picked, stats
+
+    all_results = []
+    for i, s in enumerate(picked):
+        all_results.append({"code": s["code"], "name": s["name"],
+                            "market": s["market"], "sector": s["sector"],
+                            "close": round(s["close"], 1),
+                            "drop_pct": round(s["drop_pct"], 2),
+                            "status": "picked", "reason": ""})
+    all_results += [
+        {"code": "9999", "name": "デモ圏外株", "market": "プライム", "sector": "サービス業",
+         "close": 1200.0, "drop_pct": 1.2, "status": "bench", "reason": ""},
+        {"code": "6800", "name": "デモ右肩下がり", "market": "スタンダード", "sector": "電気機器",
+         "close": 300.0, "drop_pct": 8.0, "status": "dead", "reason": "1年高値から55%下落"},
+        {"code": "7777", "name": "デモ流動性不足", "market": "グロース", "sector": "サービス業",
+         "close": 800.0, "drop_pct": 4.0, "status": "skip", "reason": "流動性不足"},
+        {"code": "8888", "name": "デモ取得失敗", "market": "プライム", "sector": "機械",
+         "status": "fail", "reason": "データ取得失敗"},
+    ]
+    sim_records = []
+    for s in picked[:10]:
+        sim_records.append({"code": s["code"], "name": s["name"], "trades": [
+            {"buy_date": "2026-05-11", "sell_date": "2026-05-18", "held": 6, "pnl": 5000.0},
+            {"buy_date": "2026-06-02", "sell_date": "2026-07-13", "held": 28, "pnl": 5000.0},
+            {"buy_date": "2026-07-30", "sell_date": None, "held": 9,
+             "pnl": rng.uniform(-15000, 4000)},
+        ]})
+    return picked, stats, all_results, sim_records
 
 
 # ------------------------------------------------------------
@@ -644,6 +729,9 @@ def render_html(data):
   .nrow .nd{{width:58px; font-weight:700; flex:none;}}
   .ylink{{display:block; margin-top:12px; font-size:12px; font-weight:700; color:#2e4d7b;
     text-decoration:none; text-align:center; background:#eef2f8; border-radius:9px; padding:9px;}}
+  .pnav{{display:flex; gap:8px; padding:0 0 12px;}}
+  .pnav a{{flex:1; font-size:12px; font-weight:700; color:#4a3f28; text-decoration:none;
+    background:#f4eedd; border-radius:10px; padding:9px 10px; text-align:center;}}
 </style>
 </head>
 <body>
@@ -651,6 +739,10 @@ def render_html(data):
   <div class="t">今夜の{len(stocks)}銘柄</div>
   <div class="s">{date_str} {dt.hour:02d}:{dt.minute:02d} 記帳{"（取引時間中・当日分は途中経過）" if is_intraday else ""} ・ 行をタップでノート ・ 判断はご自身で</div>
 </header>
+<div class="pnav">
+  <a href="universe.html">全銘柄の判定一覧 ›</a>
+  <a href="backtest.html">手法の検証レポート ›</a>
+</div>
 <div class="ledger">
 {body_rows}
 </div>
@@ -662,6 +754,219 @@ def render_html(data):
 </body>
 </html>
 """
+
+
+# ------------------------------------------------------------
+# サブページ共通の枠（cream帳簿デザイン）
+# ------------------------------------------------------------
+SUBPAGE_TEMPLATE = """<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="robots" content="noindex, nofollow">
+<link rel="apple-touch-icon" href="icon.png">
+<link rel="icon" type="image/png" href="icon.png">
+<title>__TITLE__</title>
+<style>
+  :root{--ink:#1c1c1e; --ink2:#6e6e73; --ink3:#aeaeb2; --paper:#faf6ec;
+    --paper-line:#e7e0cf; --bg:#f2f2f7; --cheap:#c62f2f; --cheap-bg:#fdeeee;
+    --mild:#b06a00; --mild-bg:#fdf3e3;}
+  *{box-sizing:border-box; margin:0; padding:0;}
+  body{font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Noto Sans JP",sans-serif;
+    background:var(--bg); color:var(--ink); max-width:640px; margin:0 auto;
+    padding:14px 12px 40px;}
+  .num{font-family:ui-monospace,"SF Mono",Menlo,monospace; font-variant-numeric:tabular-nums;}
+  header{padding:6px 4px 12px;}
+  header .t{font-size:20px; font-weight:800;}
+  header .s{font-size:12px; color:var(--ink2); margin-top:3px; line-height:1.6;}
+  .back{display:inline-block; font-size:12px; font-weight:700; color:#2e4d7b;
+    text-decoration:none; margin-bottom:8px;}
+  .card{background:var(--paper); border-radius:14px; padding:12px 14px;
+    margin-bottom:12px; box-shadow:0 1px 3px rgba(0,0,0,.06);}
+  .card h2{font-size:13px; font-weight:800; color:#7a6a45; letter-spacing:.05em;
+    margin-bottom:8px;}
+  .fact{display:flex; justify-content:space-between; font-size:12.5px; padding:6px 0;
+    border-bottom:1px solid #f0ead9;}
+  .fact span:first-child{color:var(--ink2);}
+  .fact .v{font-weight:700;}
+  .plus{color:#2e7d32;} .minus{color:var(--cheap);}
+  .note{font-size:11px; color:var(--ink3); line-height:1.7; padding:8px 4px;}
+  __EXTRA_CSS__
+</style>
+</head>
+<body>
+<a class="back" href="index.html">‹ 帳簿にもどる</a>
+<header><div class="t">__TITLE__</div><div class="s">__SUBTITLE__</div></header>
+__BODY__
+<div class="note">__FOOTNOTE__</div>
+__SCRIPT__
+</body>
+</html>
+"""
+
+
+def render_backtest(sim_records, dt):
+    """「◎で買って+5000円で売る」仮想実行の検証レポートページ"""
+    closed, open_pos = [], []
+    for rec in sim_records:
+        for t in rec["trades"]:
+            (closed if t["sell_date"] else open_pos).append({**t, "code": rec["code"], "name": rec["name"]})
+
+    n_closed = len(closed)
+    total_realized = sum(t["pnl"] for t in closed)
+    avg_held = (sum(t["held"] for t in closed) / n_closed) if n_closed else 0
+    open_losers = [t for t in open_pos if t["pnl"] < 0]
+    open_total = sum(t["pnl"] for t in open_pos)
+    worst = sorted(open_pos, key=lambda t: t["pnl"])[:15]
+    n_all = n_closed + len(open_pos)
+    win_rate = (n_closed / n_all * 100) if n_all else 0
+
+    # 月別の成立回数
+    monthly = {}
+    for t in closed:
+        monthly[t["sell_date"][:7]] = monthly.get(t["sell_date"][:7], 0) + 1
+
+    def yen2(v):
+        sign = "+" if v >= 0 else "−"
+        return f"{sign}{abs(v):,.0f}円"
+
+    body = ['<div class="card"><h2>この1年、手法をそのまま機械的に続けていたら</h2>']
+    body.append(f'<div class="fact"><span>買いに入った回数</span><span class="v num">{n_all:,}回</span></div>')
+    body.append(f'<div class="fact"><span>+5,000円で売れた回数</span><span class="v num">{n_closed:,}回（{win_rate:.0f}%）</span></div>')
+    body.append(f'<div class="fact"><span>確定した利益の合計</span><span class="v num plus">{yen2(total_realized)}</span></div>')
+    body.append(f'<div class="fact"><span>+5,000円までの平均日数</span><span class="v num">約{avg_held:.0f}営業日</span></div>')
+    body.append(f'<div class="fact"><span>まだ売れていない持ち越し</span><span class="v num">{len(open_pos):,}件（うち含み損 {len(open_losers):,}件）</span></div>')
+    cls = "plus" if open_total >= 0 else "minus"
+    body.append(f'<div class="fact"><span>持ち越し分の含み損益 合計</span><span class="v num {cls}">{yen2(open_total)}</span></div>')
+    body.append("</div>")
+
+    if monthly:
+        body.append('<div class="card"><h2>月別・+5,000円が取れた回数</h2>')
+        for m in sorted(monthly):
+            body.append(f'<div class="fact"><span class="num">{m.replace("-", "/")}</span><span class="v num">{monthly[m]:,}回</span></div>')
+        body.append("</div>")
+
+    if worst:
+        body.append('<div class="card"><h2>塩漬け注意リスト（含み損の大きい持ち越し）</h2>')
+        for t in worst:
+            body.append(
+                f'<div class="fact"><span>{html.escape(t["name"])} '
+                f'<span class="num">{t["code"]}</span>（{t["buy_date"][5:].replace("-", "/")}買い・{t["held"]}日経過）</span>'
+                f'<span class="v num minus">{yen2(t["pnl"])}</span></div>')
+        body.append("</div>")
+
+    weekdays = "月火水木金土日"
+    subtitle = (f"{dt.month}/{dt.day}（{weekdays[dt.weekday()]}）時点 ・ 過去1年の日足で仮想実行 ・ "
+                "ルール: ◎（20日高値から5%安）になったら翌日の始値で100株買い → +5,000円の指値で売る")
+    footnote = ("この検証は「いまの対象銘柄」の過去1年をなぞった簡易計算です。手数料・税金は含みません。"
+                "買値は翌営業日の始値、売りは+50円/株に到達した日に成立と仮定。同時に何銘柄でも買える前提のため、"
+                "実際の資金では全部は買えません。傾向を掴む道具としてお使いください。")
+    return (SUBPAGE_TEMPLATE
+            .replace("__TITLE__", "手法の検証レポート")
+            .replace("__SUBTITLE__", subtitle)
+            .replace("__BODY__", "\n".join(body))
+            .replace("__FOOTNOTE__", footnote)
+            .replace("__EXTRA_CSS__", "")
+            .replace("__SCRIPT__", ""))
+
+
+STATUS_DEF = {
+    "picked": ("選定", "#fdeeee", "#c62f2f", "今夜の100銘柄に選定"),
+    "bench":  ("圏外", "#eef0f4", "#4b4f57", "対象内だが上位100に届かず"),
+    "dead":   ("除外", "#efe6f5", "#6b4487", "終わった株ルールで除外"),
+    "skip":   ("対象外", "#fdf3e3", "#b06a00", "土俵に上げない条件に該当"),
+    "fail":   ("失敗", "#e8e8e8", "#666", "データ取得失敗"),
+}
+
+
+def render_universe(all_results, stats, dt):
+    """全銘柄の判定一覧ページ（なぜ対象外かが後から分かる台帳）"""
+    counts = {}
+    for r in all_results:
+        counts[r["status"]] = counts.get(r["status"], 0) + 1
+
+    chips = ['<div class="chips"><button class="chip on" data-f="all">すべて '
+             f'{len(all_results):,}</button>']
+    for key, (label, bg, fg, _desc) in STATUS_DEF.items():
+        if counts.get(key):
+            chips.append(f'<button class="chip" data-f="{key}" style="background:{bg}; color:{fg}">'
+                         f'{label} {counts[key]:,}</button>')
+    chips.append("</div>")
+    chips.append('<input id="q" class="search" type="search" placeholder="銘柄名・コードで検索">')
+
+    rows = []
+    for r in sorted(all_results, key=lambda x: x["code"]):
+        label, bg, fg, _d = STATUS_DEF[r["status"]]
+        close = f'{r["close"]:,.0f}円' if r.get("close") is not None else "−"
+        drop = f'−{r["drop_pct"]:.1f}%' if r.get("drop_pct") is not None else ""
+        reason = html.escape(r.get("reason") or "")
+        reason_html = f'<span class="why">{reason}</span>' if reason else ""
+        rows.append(
+            f'<div class="urow" data-s="{r["status"]}" data-t="{html.escape(r["name"].lower())} {r["code"]}">'
+            f'<span class="st" style="background:{bg}; color:{fg}">{label}</span>'
+            f'<span class="un"><b>{html.escape(r["name"])}</b> '
+            f'<span class="num uc">{r["code"]}</span> ・ {html.escape(r.get("sector", ""))}{reason_html}</span>'
+            f'<span class="up num">{close}<small>{drop}</small></span></div>')
+
+    legend = "".join(
+        f'<div class="fact"><span><span class="st" style="background:{bg}; color:{fg}">{label}</span></span>'
+        f'<span style="font-size:11.5px; color:var(--ink2)">{desc}</span></div>'
+        for label, bg, fg, desc in STATUS_DEF.values())
+
+    extra_css = """
+  .chips{display:flex; gap:6px; flex-wrap:wrap; padding:2px 0 8px;}
+  .chip{font-size:11.5px; font-weight:700; border:none; border-radius:14px;
+    padding:5px 11px; background:#fff; color:var(--ink2); cursor:pointer;}
+  .chip.on{outline:2px solid var(--ink);}
+  .search{width:100%; font-size:14px; padding:9px 12px; border:1.5px solid #d9d2bf;
+    border-radius:10px; background:#fff; margin-bottom:10px;}
+  .list{background:var(--paper); border-radius:14px; padding:2px 0;}
+  .urow{display:flex; align-items:center; gap:8px; padding:6.5px 12px;
+    border-top:1px solid var(--paper-line); font-size:12px;}
+  .urow:first-child{border-top:none;}
+  .st{flex:none; font-size:9.5px; font-weight:800; border-radius:5px; padding:2px 6px;}
+  .un{flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+  .uc{color:var(--ink2);}
+  .why{color:#6b4487; font-size:10.5px; margin-left:6px;}
+  .up{flex:none; text-align:right; font-weight:700; font-size:12px;}
+  .up small{display:block; font-weight:600; color:var(--cheap); font-size:10px;}
+  .hidden{display:none;}
+"""
+    script = """<script>
+const rows = Array.from(document.querySelectorAll('.urow'));
+let filter = 'all';
+function apply(){
+  const q = document.getElementById('q').value.trim().toLowerCase();
+  for (const r of rows){
+    const okF = (filter === 'all' || r.dataset.s === filter);
+    const okQ = (!q || r.dataset.t.includes(q));
+    r.classList.toggle('hidden', !(okF && okQ));
+  }
+}
+document.querySelectorAll('.chip').forEach(c => c.addEventListener('click', () => {
+  document.querySelectorAll('.chip').forEach(x => x.classList.remove('on'));
+  c.classList.add('on'); filter = c.dataset.f; apply();
+}));
+document.getElementById('q').addEventListener('input', apply);
+</script>"""
+
+    weekdays = "月火水木金土日"
+    subtitle = (f"{dt.month}/{dt.day}（{weekdays[dt.weekday()]}）{dt.hour:02d}:{dt.minute:02d} 判定 ・ "
+                f"全{len(all_results):,}銘柄の扱いと理由の台帳")
+    body = ('<div class="card"><h2>判定の凡例</h2>' + legend + "</div>"
+            + "".join(chips)
+            + '<div class="list">' + "\n".join(rows) + "</div>")
+    footnote = ("「対象外」は上場間もない・株価100円未満・売買代金が少ない、のいずれか。"
+                "「除外」は1年高値から40%以上下落、または長期の下落トレンド継続（ピクセラ型）。"
+                "判定は毎回の実行で更新されます。")
+    return (SUBPAGE_TEMPLATE
+            .replace("__TITLE__", "全銘柄の判定一覧")
+            .replace("__SUBTITLE__", subtitle)
+            .replace("__BODY__", body)
+            .replace("__FOOTNOTE__", footnote)
+            .replace("__EXTRA_CSS__", extra_css)
+            .replace("__SCRIPT__", script))
 
 
 # ------------------------------------------------------------
@@ -935,9 +1240,9 @@ def main():
 
     if args.demo:
         print("デモモード: ダミーデータでページを生成します")
-        picked, stats = make_demo_data()
+        picked, stats, all_results, sim_records = make_demo_data()
     else:
-        picked, stats = run_screening()
+        picked, stats, all_results, sim_records = run_screening()
 
     data = build_output(picked, stats)
 
@@ -955,8 +1260,16 @@ def main():
         print("注意: PAGE_PASSWORD が未設定のため、施錠なしで公開します")
     (DOCS / "index.html").write_text(html_out, encoding="utf-8")
 
+    # サブページ（公開データのみなので施錠の対象外）
+    dt_now = datetime.fromisoformat(data["generated_at"])
+    (DOCS / "universe.html").write_text(
+        render_universe(all_results, stats, dt_now), encoding="utf-8")
+    (DOCS / "backtest.html").write_text(
+        render_backtest(sim_records, dt_now), encoding="utf-8")
+
     print(f"完了: {len(data['stocks'])}銘柄を選定 "
-          f"(除外 {stats.get('dead_excluded', 0)}銘柄) → docs/index.html")
+          f"(除外 {stats.get('dead_excluded', 0)}銘柄) → docs/index.html"
+          f" + universe.html + backtest.html")
 
 
 if __name__ == "__main__":
