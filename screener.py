@@ -550,7 +550,8 @@ def build_output(picked, stats):
         "stats": stats,
         "config": {k: CONFIG[k] for k in
                    ("TOP_N", "RECENT_DAYS", "CHEAP_PCT", "MILD_PCT",
-                    "DEAD_DRAWDOWN", "DEAD_BELOW_MA_RATIO")},
+                    "DEAD_DRAWDOWN", "DEAD_BELOW_MA_RATIO",
+                    "MIN_RECORDS", "MIN_PRICE", "MIN_TURNOVER")},
         "stocks": stocks_out,
     }
     return data
@@ -579,6 +580,9 @@ def render_html(data):
     price_label = "現在値" if is_intraday else "終値"
 
     chip_class = {"プライム": "prime", "スタンダード": "std", "グロース": "growth"}
+    cfg = data["config"]
+    universe = stats.get("universe", 0)
+    excluded = stats.get("dead_excluded", 0)
 
     def latest_block(s):
         days = s.get("days", [])
@@ -609,10 +613,11 @@ def render_html(data):
         return "\n".join(out)
 
     rows_html = []
-    for group_name, members in ordered:
+    for gi, (group_name, members) in enumerate(ordered):
         rows_html.append(
-            f'<div class="sec">{html.escape(group_name)}'
-            f'<span class="cnt">{len(members)}銘柄</span></div>'
+            f'<details class="gsec" open>'
+            f'<summary class="sec">{html.escape(group_name)}'
+            f'<span class="cnt">{len(members)}銘柄 <span class="gchev">›</span></span></summary>'
         )
         for i, s in enumerate(members, 1):
             chip = chip_class.get(s["market"], "local")
@@ -652,6 +657,7 @@ def render_html(data):
       </div>
       </details>"""
             )
+        rows_html.append("</details>")
 
     body_rows = "\n".join(rows_html)
     excluded = stats.get("dead_excluded", 0)
@@ -729,9 +735,26 @@ def render_html(data):
   .nrow .nd{{width:58px; font-weight:700; flex:none;}}
   .ylink{{display:block; margin-top:12px; font-size:12px; font-weight:700; color:#2e4d7b;
     text-decoration:none; text-align:center; background:#eef2f8; border-radius:9px; padding:9px;}}
-  .pnav{{display:flex; gap:8px; padding:0 0 12px;}}
+  .pnav{{display:flex; gap:8px; padding:0 0 10px;}}
   .pnav a{{flex:1; font-size:12px; font-weight:700; color:#4a3f28; text-decoration:none;
     background:#f4eedd; border-radius:10px; padding:9px 10px; text-align:center;}}
+  details.crit{{background:#fff; border-radius:12px; margin-bottom:12px;
+    box-shadow:0 1px 3px rgba(0,0,0,.05);}}
+  details.crit summary{{list-style:none; cursor:pointer; font-size:12px; font-weight:800;
+    color:#4a3f28; padding:11px 14px; display:flex; justify-content:space-between; align-items:center;}}
+  details.crit summary::-webkit-details-marker{{display:none;}}
+  details.crit .chev{{color:#c9bd9d; transition:transform .15s;}}
+  details.crit[open] .chev{{transform:rotate(90deg);}}
+  .critbody{{padding:0 14px 12px; border-top:1px solid #f0ead9;}}
+  .step{{font-size:11.5px; line-height:1.7; color:var(--ink2); padding:7px 0;
+    border-bottom:1px dashed #f0ead9;}}
+  .step:last-child{{border-bottom:none;}}
+  .step b{{color:var(--ink);}}
+  details.gsec summary.sec{{list-style:none; cursor:pointer;}}
+  details.gsec summary.sec::-webkit-details-marker{{display:none;}}
+  .gchev{{display:inline-block; color:#c9bd9d; font-weight:700; margin-left:4px;
+    transition:transform .15s;}}
+  details.gsec[open] .gchev{{transform:rotate(90deg);}}
 </style>
 </head>
 <body>
@@ -743,6 +766,17 @@ def render_html(data):
   <a href="universe.html">全銘柄の判定一覧 ›</a>
   <a href="backtest.html">手法の検証レポート ›</a>
 </div>
+<details class="crit">
+  <summary>この{len(stocks)}銘柄の選定基準（タップで開閉）<span class="chev">›</span></summary>
+  <div class="critbody">
+    <div class="step"><b>1. 対象</b> 東証プライム・スタンダード・グロースの全銘柄（{universe:,}銘柄）</div>
+    <div class="step"><b>2. 土俵に上げない</b> 上場から日足{cfg["MIN_RECORDS"]}日未満 ／ 株価{cfg["MIN_PRICE"]}円未満 ／ 直近{cfg["RECENT_DAYS"]}日の平均売買代金{int(cfg["MIN_TURNOVER"]/10000):,}万円未満（売りたい時に売れない銘柄を避ける）</div>
+    <div class="step"><b>3. 「終わった株」を除外</b> 1年高値から{int(cfg["DEAD_DRAWDOWN"]*100)}%以上下落 、または直近60営業日の{int(cfg["DEAD_BELOW_MA_RATIO"]*100)}%以上で200日平均線割れ（ピーク価格から下がり続けている銘柄。本日{excluded:,}銘柄）</div>
+    <div class="step"><b>4. 並べて選ぶ</b> 残った銘柄を「直近{cfg["RECENT_DAYS"]}日高値からの下落率」の大きい順に並べ、上位{cfg["TOP_N"]}銘柄を選定</div>
+    <div class="step"><b>5. 目安ラベル</b> ◎=高値から{cfg["CHEAP_PCT"]:.0f}%以上安い ／ ○={cfg["MILD_PCT"]:.0f}%以上安い ／ 「普段の値段」={cfg["RECENT_DAYS"]}日の終値平均</div>
+    <div class="step" style="color:#8a5a17;">基準は毎回の実行時点の設定で、この文章も自動で追随します。個々の銘柄の判定理由は「全銘柄の判定一覧」で確認できます。</div>
+  </div>
+</details>
 <div class="ledger">
 {body_rows}
 </div>
