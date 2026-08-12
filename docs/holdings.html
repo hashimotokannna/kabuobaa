@@ -64,12 +64,12 @@
 
 <div class="card">
   <h2>売りルール（あなたの決めごと）</h2>
-  <div class="fact"><span>利確: 利益がいくらになったら売るか</span>
-    <span class="v"><input id="tp" class="rin num" type="number" inputmode="numeric" placeholder="5000"> 円</span></div>
+  <div class="fact"><span>利確: 買値から何%上がったら売るか</span>
+    <span class="v"><input id="tp" class="rin num" type="number" inputmode="decimal" step="0.5" placeholder="5"> %</span></div>
   <div class="fact"><span>損切り: 買値から何%下がったら売るか</span>
     <span class="v"><input id="sl" class="rin num" type="number" inputmode="decimal" step="0.5" placeholder="8"> %</span></div>
-  <div class="rulenote">未入力なら灰色の推奨値（利確+5,000円・損切り−8%）で計算します。
-  登録した持ち株ごとに「◯円になったら売る」の具体的な値段に換算して表示します。</div>
+  <div class="rulenote">未入力なら灰色の推奨値（利確+5%・損切り−8%）で計算します。
+  登録した持ち株ごとに「◯円になったら売る」の具体的な値段と、そのときの損益額に換算して表示します。</div>
 </div>
 
 <div class="card">
@@ -88,8 +88,8 @@
 
 <div class="note">売りルールと持ち株データはこの端末のブラウザにだけ保存され、外部には送信されません。価格は取引時間中は毎時、夜に確定値で記帳されたものです。実際の売り注文は証券会社アプリで行ってください。</div>
 <script>
-const TP_DEF = 5000, SL_DEF = 8;
-const TP_KEY='kabuobaa_tp', SL_KEY='kabuobaa_sl', H_KEY='kabuobaa_holdings';
+const TP_DEF = 5, SL_DEF = 8;
+const TP_KEY='kabuobaa_tp_pct', SL_KEY='kabuobaa_sl', H_KEY='kabuobaa_holdings';
 const tpIn=document.getElementById('tp'), slIn=document.getElementById('sl');
 let prices=null, gen='';
 
@@ -110,7 +110,7 @@ function render(){
   let out = '';
   holds.forEach((h, idx) => {
     const p = prices ? prices[h.code] : null;
-    const tpLine = h.buy + tp / h.shares;
+    const tpLine = h.buy * (1 + tp / 100);
     const slLine = h.buy * (1 - sl / 100);
     let inner = '';
     if (!p){
@@ -127,8 +127,8 @@ function render(){
         '<div class="hstatus ' + cls + '">' + st + '</div>' +
         '<div class="fact num"><span>いまの値段（' + (p.d ? p.d.slice(5).replace('-','/') : '') + '記帳）</span><span class="v">' + yen(cur) + '円</span></div>' +
         '<div class="fact num"><span>買値 × 株数</span><span class="v">' + yen(h.buy) + '円 × ' + h.shares + '株</span></div>' +
-        '<div class="fact num"><span>利確ライン（+' + yen(tp) + '円）</span><span class="v plus">' + yen(tpLine) + '円になったら売る</span></div>' +
-        '<div class="fact num"><span>損切りライン（−' + sl + '%）</span><span class="v minus">' + yen(slLine) + '円になったら売る</span></div>';
+        '<div class="fact num"><span>利確ライン（+' + tp + '%＝+' + yen((tpLine - h.buy) * h.shares) + '円）</span><span class="v plus">' + yen(tpLine) + '円になったら売る</span></div>' +
+        '<div class="fact num"><span>損切りライン（−' + sl + '%＝−' + yen((h.buy - slLine) * h.shares) + '円）</span><span class="v minus">' + yen(slLine) + '円になったら売る</span></div>';
     }
     const nm = (prices && prices[h.code]) ? prices[h.code].n : '銘柄 ' + h.code;
     out += '<div class="hcard ' + (inner.includes('hstatus tp') ? 'selltp' : inner.includes('hstatus sl"') ? 'sellsl' : '') + '">' +
