@@ -196,6 +196,7 @@ def compute_metrics(days):
     drop_pct = (drop_yen / high20 * 100) if high20 > 0 else 0.0
 
     high1y = max(d["high"] for d in days)
+    low1y = min(d["low"] for d in days)
     drawdown_1y = (high1y - latest["close"]) / high1y if high1y > 0 else 0.0
 
     # 200日平均線と、直近60営業日でそれを下回っていた割合
@@ -214,7 +215,7 @@ def compute_metrics(days):
         "date": latest["date"],
         "usual": usual, "high20": high20,
         "drop_yen": drop_yen, "drop_pct": drop_pct,
-        "high1y": high1y, "drawdown_1y": drawdown_1y,
+        "high1y": high1y, "low1y": low1y, "drawdown_1y": drawdown_1y,
         "below_ma_ratio": below_ratio,
         "turnover": turnover,
         "records": len(days),
@@ -301,7 +302,7 @@ def run_screening():
             if status == "skip":
                 skip_count += 1
                 continue
-            candidates.append({**stock, **m})
+            candidates.append({**stock, **m, "days": days[-10:]})
 
     candidates.sort(key=lambda s: s["drop_pct"], reverse=True)
     picked = candidates[:CONFIG["TOP_N"]]
@@ -371,6 +372,15 @@ def make_demo_data():
             "below_ma_ratio": rng.uniform(0, 0.5),
             "turnover": 1e9,
             "records": 245,
+            "days": [
+                {"date": f"2026-08-{3 + i:02d}",
+                 "open": close * rng.uniform(0.98, 1.03),
+                 "high": close * rng.uniform(1.03, 1.06),
+                 "low": close * rng.uniform(0.95, 0.98),
+                 "close": close * rng.uniform(0.98, 1.03),
+                 "volume": 1_000_000}
+                for i in range(10)
+            ],
         })
     picked.sort(key=lambda s: s["drop_pct"], reverse=True)
     stats = {"universe": 3912, "dead_excluded": 214, "skipped": 1480, "failed": 3}
@@ -414,8 +424,17 @@ def build_output(picked, stats):
             "high20": round(s["high20"], 1),
             "drop_yen": round(s["drop_yen"], 1),
             "drop_pct": round(s["drop_pct"], 2),
+            "high1y": round(s.get("high1y", 0), 1),
+            "low1y": round(s.get("low1y", 0), 1),
+            "suffix": s.get("suffix", ".T"),
             "level": level_of(s["drop_pct"]),
             "is_new": (prev_codes is not None and s["code"] not in prev_codes),
+            "days": [
+                {"date": d["date"], "open": round(d["open"], 1),
+                 "high": round(d["high"], 1), "low": round(d["low"], 1),
+                 "close": round(d["close"], 1)}
+                for d in reversed(s.get("days", []))
+            ],
         })
 
     data = {
@@ -450,6 +469,18 @@ def render_html(data):
 
     chip_class = {"プライム": "prime", "スタンダード": "std", "グロース": "growth"}
 
+    def day_rows(s):
+        out = []
+        for d in s.get("days", []):
+            dt2 = datetime.fromisoformat(d["date"])
+            label = f"{dt2.month}/{dt2.day}({weekdays[dt2.weekday()]})"
+            out.append(
+                f'<div class="nrow num"><span class="nd">{label}</span>'
+                f'<span>始:{yen(d["open"])} 高:{yen(d["high"])} '
+                f'安:{yen(d["low"])} 終:{yen(d["close"])}</span></div>'
+            )
+        return "\n".join(out)
+
     rows_html = []
     for group_name, members in ordered:
         rows_html.append(
@@ -462,19 +493,37 @@ def render_html(data):
                      else '<span class="badge mild">○</span>' if s["level"] == "mild"
                      else "")
             new_mark = '<span class="new">NEW</span>' if s["is_new"] else ""
+            yahoo_url = f'https://finance.yahoo.co.jp/quote/{s["code"]}{s.get("suffix", ".T")}'
+            range1y = ""
+            if s.get("low1y") and s.get("high1y"):
+                range1y = (f'<div class="fact"><span>1年の値段の範囲</span>'
+                           f'<span class="num">{yen(s["low1y"])} 〜 {yen(s["high1y"])}円</span></div>')
             rows_html.append(f"""
-      <div class="row">
+      <details class="drow">
+      <summary class="row">
         <div class="rk num">{i}</div>
         <div class="nm">
           <div class="n1">{html.escape(s["name"])} <span class="chip {chip}">{html.escape(s["market"])}</span>{new_mark}</div>
           <div class="n2 num">{s["code"]} ・ 普段 {yen(s["usual"])}円 ・ 総合{s["rank"]}位</div>
         </div>
         <div class="px">
-          <div class="p1 num">{yen(s["close"])}<small>円</small></div>
+          <div class="p1 num"><small>終値</small> {yen(s["close"])}<small>円</small></div>
           <div class="p2 num drop">高値から −{s["drop_pct"]:.1f}%</div>
         </div>
         <div>{badge}</div>
-      </div>""")
+        <div class="chev">›</div>
+      </summary>
+      <div class="notebox">
+        <div class="fact"><span>普段の値段（20日平均）</span><span class="num">{yen(s["usual"])}円</span></div>
+        <div class="fact"><span>直近の高値（20日）</span><span class="num">{yen(s["high20"])}円</span></div>
+        <div class="fact"><span>高値からの下げ</span><span class="num drop">−{yen(s["drop_yen"])}円（−{s["drop_pct"]:.1f}%）</span></div>
+        {range1y}
+        <div class="nhead">ノート（新しい順）</div>
+        {day_rows(s)}
+        <a class="ylink" href="{yahoo_url}" target="_blank" rel="noopener">Yahoo!ファイナンスでこの銘柄の詳細を見る →</a>
+      </div>
+      </details>"""
+            )
 
     body_rows = "\n".join(rows_html)
     excluded = stats.get("dead_excluded", 0)
@@ -537,12 +586,27 @@ def render_html(data):
   .badge.cheap{{color:var(--cheap); background:var(--cheap-bg);}}
   .badge.mild{{color:var(--mild); background:var(--mild-bg);}}
   footer{{padding:16px 8px; font-size:10.5px; color:var(--ink3); text-align:center; line-height:1.7;}}
+  details.drow summary{{list-style:none; cursor:pointer;}}
+  details.drow summary::-webkit-details-marker{{display:none;}}
+  .chev{{color:#c9bd9d; font-size:16px; font-weight:700; transition:transform .15s;}}
+  details[open] .chev{{transform:rotate(90deg);}}
+  details[open] summary.row{{background:#f4eedd;}}
+  .notebox{{background:#fffdf6; border-top:1px dashed var(--paper-line); padding:10px 14px 14px;}}
+  .fact{{display:flex; justify-content:space-between; font-size:12px; padding:5px 0;
+    border-bottom:1px solid #f0ead9;}}
+  .fact span:first-child{{color:var(--ink2);}}
+  .fact .num{{font-weight:700;}}
+  .nhead{{font-size:10.5px; font-weight:800; color:#7a6a45; letter-spacing:.06em; margin:12px 0 4px;}}
+  .nrow{{display:flex; gap:10px; font-size:11.5px; padding:4px 0;}}
+  .nrow .nd{{width:58px; font-weight:700; flex:none;}}
+  .ylink{{display:block; margin-top:12px; font-size:12px; font-weight:700; color:#2e4d7b;
+    text-decoration:none; text-align:center; background:#eef2f8; border-radius:9px; padding:9px;}}
 </style>
 </head>
 <body>
 <header>
   <div class="t">今夜の{len(stocks)}銘柄</div>
-  <div class="s">{date_str}の終値で記帳済み ・ 業種別 ・ 判断はご自身で</div>
+  <div class="s">{date_str}の終値で記帳 ・ 行をタップでノートが開きます ・ 判断はご自身で</div>
 </header>
 <div class="ledger">
 {body_rows}
