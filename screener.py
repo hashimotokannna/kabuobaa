@@ -189,7 +189,7 @@ def fetch_universe():
 def fetch_daily(session, code, suffix=".T"):
     """日足1年分を [{date, open, high, low, close, volume}] (古い順) で返す"""
     url = f"https://query1.finance.yahoo.com/v8/finance/chart/{code}{suffix}"
-    params = {"range": "1y", "interval": "1d"}
+    params = {"range": "10y", "interval": "1d"}
     headers = {"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)"}
 
     last_err = None
@@ -452,7 +452,41 @@ def score_stock(s):
         score -= 15
         reasons.append("ただし直近の仮想買いが塩漬け中（−15点）")
 
-    # 5. 売り買いのしやすさ
+    # 5. 長期テクニカル（10年データからの定石）
+    lg = s.get("long") or {}
+    z = lg.get("zone")
+    if z:
+        if z["touches"] <= 2 and z["dist_pct"] >= -1:
+            pt = 12
+            score += pt
+            reasons.append(f"長期支持帯 {z['zone_low']:,.0f}〜{z['zone_top']:,.0f}円の直上。"
+                           f"過去{z['touches']}回反発し、今回が{z['touches'] + 1}回目の試し"
+                           f"（〜3回目までは支持されやすいという定石の圏内 +{pt}点）")
+        else:
+            score -= 5
+            reasons.append(f"長期支持帯 {z['zone_top']:,.0f}円付近は過去{z['touches']}回試されており、"
+                           f"今回で{z['touches'] + 1}回目。支持線は試されるほど割れやすい（−5点・警戒）")
+    if lg.get("gc") is True:
+        score += 10
+        reasons.append("50日線が200日線の上（ゴールデンクロス継続中の長期上昇形 +10点）")
+    elif lg.get("gc") is False:
+        reasons.append("50日線が200日線の下（長期は調整形・加点なし）")
+    rsi = lg.get("rsi")
+    if rsi is not None:
+        if rsi <= 30:
+            score += 10
+            reasons.append(f"RSI(14)={rsi:.0f} の売られすぎ水準（+10点）")
+        elif rsi <= 40:
+            score += 5
+            reasons.append(f"RSI(14)={rsi:.0f} でやや売られすぎ（+5点）")
+    if lg.get("w_bottom"):
+        score += 8
+        reasons.append(f"W底（ダブルボトム）を形成しネックライン{lg['w_bottom']['neck']:,.0f}円を上抜け（+8点）")
+    if lg.get("climax"):
+        score += 6
+        reasons.append("直近に出来高急増+長い下ヒゲ（セリングクライマックス=投げ売り一巡の兆候 +6点）")
+
+    # 6. 売り買いのしやすさ
     tv = s.get("turnover", 0)
     if tv >= 1_000_000_000:
         score += 12
@@ -462,6 +496,109 @@ def score_stock(s):
         reasons.append(f"1日平均 {tv/100_000_000:.1f}億円の売買（+6点）")
 
     return score, reasons
+
+
+# ------------------------------------------------------------
+# 長期テクニカル分析（10年データから計算する定石の技法）
+#  - 長期支持帯とタッチ回数（支持線は試されるほど割れやすい=4回目警戒）
+#  - ゴールデンクロス状態（50日/200日移動平均）
+#  - RSI(14) の売られすぎ
+#  - W底（ダブルボトム）形成
+#  - セリングクライマックス兆候（出来高急増+長い下ヒゲ）
+# ------------------------------------------------------------
+def compute_long_metrics(days_full):
+    out = {}
+    if not days_full or len(days_full) < 120:
+        return out
+    closes = [d["close"] for d in days_full]
+    lows = [d["low"] for d in days_full]
+    highs = [d["high"] for d in days_full]
+    opens = [d["open"] for d in days_full]
+    vols = [d.get("volume") or 0 for d in days_full]
+    dates = [d["date"] for d in days_full]
+    cur = closes[-1]
+
+    # RSI(14)
+    if len(closes) >= 15:
+        gains = losses = 0.0
+        for i in range(len(closes) - 14, len(closes)):
+            ch = closes[i] - closes[i - 1]
+            if ch >= 0:
+                gains += ch
+            else:
+                losses -= ch
+        rs = gains / losses if losses > 0 else 99.0
+        out["rsi"] = round(100 - 100 / (1 + rs), 1)
+
+    # 50日/200日移動平均のクロス状態
+    if len(closes) >= 200:
+        sma50 = sum(closes[-50:]) / 50
+        sma200 = sum(closes[-200:]) / 200
+        out["gc"] = sma50 > sma200
+
+    # 長期支持帯（直近3年の谷をクラスタリング）
+    n3 = min(len(days_full), 245 * 3)
+    lows3 = lows[-n3:]
+    dates3 = dates[-n3:]
+    w = 10
+    minima = [i for i in range(w, n3 - w) if lows3[i] == min(lows3[i - w:i + w + 1])]
+    clusters = []
+    for i in sorted(minima, key=lambda j: lows3[j]):
+        placed = False
+        for cl in clusters:
+            center = sum(lows3[j] for j in cl) / len(cl)
+            if center > 0 and abs(lows3[i] - center) / center * 100 <= 4.0:
+                cl.append(i)
+                placed = True
+                break
+        if not placed:
+            clusters.append([i])
+    best = None
+    for cl in clusters:
+        cl.sort()
+        distinct = [cl[0]]
+        for i in cl[1:]:
+            if i - distinct[-1] > w:
+                distinct.append(i)
+        if len(distinct) < 2:
+            continue
+        z_low = min(lows3[i] for i in distinct)
+        z_top = max(lows3[i] for i in distinct)
+        if z_top <= 0 or cur < z_low * 0.97 or cur > z_top * 1.15:
+            continue  # 現在値と関係の薄い帯・すでに割れた帯は対象外
+        if best is None or len(distinct) > best["touches"]:
+            best = {"zone_low": round(z_low, 1), "zone_top": round(z_top, 1),
+                    "touches": len(distinct),
+                    "touch_dates": [dates3[i] for i in distinct],
+                    "dist_pct": round((cur - z_top) / z_top * 100, 1)}
+    if best:
+        out["zone"] = best
+
+    # W底（直近120日: 2つの谷が±4%以内・間の戻り高値=ネックラインを上抜け）
+    n4 = min(len(days_full), 120)
+    lowsW = lows[-n4:]
+    mm = [i for i in range(5, n4 - 5) if lowsW[i] == min(lowsW[i - 5:i + 6])]
+    if len(mm) >= 2:
+        a, b = mm[-2], mm[-1]
+        if b - a >= 15 and lowsW[a] > 0 and abs(lowsW[b] - lowsW[a]) / lowsW[a] * 100 <= 4.0:
+            neckline = max(highs[-n4:][a:b + 1])
+            if cur > neckline:
+                out["w_bottom"] = {"neck": round(neckline, 1)}
+
+    # セリングクライマックス兆候（直近5日）
+    if len(vols) >= 25:
+        avg_vol = sum(vols[-25:-5]) / 20
+        for i in range(len(days_full) - 5, len(days_full)):
+            body = abs(closes[i] - opens[i])
+            tail = min(closes[i], opens[i]) - lows[i]
+            if avg_vol > 0 and vols[i] >= avg_vol * 2 and tail >= body * 2 and tail > 0:
+                out["climax"] = {"date": dates[i]}
+                break
+
+    # 週足スパークライン用（3年・5日おき）
+    closes3 = closes[-n3:]
+    out["spark"] = [[dates3[i], round(closes3[i], 1)] for i in range(0, n3, 5)]
+    return out
 
 
 # ------------------------------------------------------------
@@ -672,7 +809,8 @@ def run_screening():
             done += 1
             if done % 200 == 0:
                 print(f"  {done}/{len(universe)} 取得済み...")
-            stock, days = fut.result()
+            stock, days_full = fut.result()
+            days = days_full[-245:] if days_full else days_full  # 既存判定は直近1年
             base = {"code": stock["code"], "name": stock["name"],
                     "market": stock["market"], "sector": stock["sector"]}
             if not days:
@@ -695,6 +833,7 @@ def run_screening():
             var_trades = simulate_variants(days)
             trades = var_trades[None]
             candidates.append({**stock, **m, "days": days[-10:],
+                               "long": compute_long_metrics(days_full),
                                "sim": sim_summary(trades)})
             all_results.append({**base, "status": "ok", "reason": ""})
             if trades:
@@ -839,6 +978,30 @@ def make_demo_data():
         s["disclosures"] = ([{"date": "8/7", "title": "2027年3月期 第1四半期決算短信〔日本基準〕（連結）",
                               "url": "https://www.release.tdnet.info/"}]
                             if rng.random() < 0.5 else [])
+        base3 = close * rng.uniform(0.9, 1.2)
+        spark = []
+        p = base3
+        from datetime import date as _date, timedelta as _td
+        d0 = _date(2023, 8, 20)
+        for k in range(150):
+            p = max(close * 0.7, p * rng.uniform(0.975, 1.025))
+            spark.append([( d0 + _td(days=k * 7)).isoformat(), round(p, 1)])
+        spark[-1][1] = close
+        zone_low = close * rng.uniform(0.88, 0.94)
+        s["long"] = {
+            "rsi": round(rng.uniform(22, 55), 1),
+            "gc": rng.random() < 0.6,
+            "zone": {"zone_low": round(zone_low, 1),
+                     "zone_top": round(zone_low * 1.05, 1),
+                     "touches": rng.randint(2, 5),
+                     "touch_dates": [spark[i][0] for i in rng.sample(range(20, 140), 3)],
+                     "dist_pct": round(rng.uniform(-1, 6), 1)},
+            "spark": spark,
+        }
+        if rng.random() < 0.25:
+            s["long"]["w_bottom"] = {"neck": round(close * 1.02, 1)}
+        if rng.random() < 0.2:
+            s["long"]["climax"] = {"date": "2026-08-08"}
         s["vol_ratio"] = rng.uniform(0.5, 3.5)
         s["cheap_streak"] = rng.randint(0, 6)
         s["prev_change"] = rng.uniform(-4, 2)
@@ -942,6 +1105,8 @@ def build_output(picked, stats):
             "reasons": s.get("reasons", []),
             "comment": make_comment(s),
             "disclosures": s.get("disclosures", []),
+            "long": {k: v for k, v in (s.get("long") or {}).items() if k != "spark"},
+            "spark": (s.get("long") or {}).get("spark", []),
             "cost": round(s["close"] * 100),
             "level": level_of(s["drop_pct"]),
             "is_new": (prev_codes is not None and s["code"] not in prev_codes),
@@ -965,6 +1130,48 @@ def build_output(picked, stats):
         "stocks": stocks_out,
     }
     return data
+
+
+def spark_svg(spark, long_info, width=320, height=110):
+    """3年週足のミニチャートをSVG文字列で返す（支持帯・反発▲・現在地入り）"""
+    if not spark or len(spark) < 10:
+        return ""
+    closes = [p[1] for p in spark]
+    dates = [p[0] for p in spark]
+    zone = (long_info or {}).get("zone")
+    lo = min(closes)
+    hi = max(closes)
+    if zone:
+        lo = min(lo, zone["zone_low"])
+        hi = max(hi, zone["zone_top"])
+    pad = (hi - lo) * 0.08 or 1
+    lo -= pad
+    hi += pad
+
+    def x(i):
+        return round(i / (len(closes) - 1) * (width - 8) + 4, 1)
+
+    def y(v):
+        return round(height - 6 - (v - lo) / (hi - lo) * (height - 12), 1)
+
+    parts = [f'<svg viewBox="0 0 {width} {height}" xmlns="http://www.w3.org/2000/svg" '
+             f'style="width:100%; height:auto; background:#fffdf6; border-radius:8px;">']
+    if zone:
+        parts.append(f'<rect x="0" y="{y(zone["zone_top"])}" width="{width}" '
+                     f'height="{max(2, y(zone["zone_low"]) - y(zone["zone_top"]))}" '
+                     f'fill="#c62f2f" opacity="0.12"/>')
+    pts = " ".join(f"{x(i)},{y(v)}" for i, v in enumerate(closes))
+    parts.append(f'<polyline points="{pts}" fill="none" stroke="#1c1c1e" stroke-width="1.6"/>')
+    if zone:
+        # 反発地点（タッチ日を週足の最寄り位置へ）
+        for td in zone.get("touch_dates", []):
+            best_i = min(range(len(dates)), key=lambda i: abs(
+                (datetime.fromisoformat(dates[i]) - datetime.fromisoformat(td)).days))
+            parts.append(f'<path d="M {x(best_i)} {y(closes[best_i]) + 12} l 5 8 l -10 0 z" '
+                         f'fill="#c62f2f"/>')
+    parts.append(f'<circle cx="{x(len(closes) - 1)}" cy="{y(closes[-1])}" r="4" fill="#1c1c1e"/>')
+    parts.append("</svg>")
+    return "".join(parts)
 
 
 def make_comment(s):
@@ -1129,6 +1336,15 @@ def render_html(data):
                        f'<span class="num">{yen(s["low1y"])} 〜 {yen(s["high1y"])}円</span></div>')
         reasons_html = "".join(
             f'<div class="reason">・{html.escape(r)}</div>' for r in s.get("reasons", []))
+        tech_html = ""
+        svg = spark_svg(s.get("spark"), s.get("long"))
+        if svg:
+            z = (s.get("long") or {}).get("zone")
+            zline = (f'赤い帯=長期支持帯 {z["zone_low"]:,.0f}〜{z["zone_top"]:,.0f}円'
+                     f'（▲=過去の反発地点 ・ ●=いま）' if z else "●=いま（3年週足）")
+            tech_html = (f'<div class="nhead">3年の値動きと支持帯</div>'
+                         f'<div class="spark">{svg}</div>'
+                         f'<div class="discnote">{zline}</div>')
         disc_html = ""
         if s.get("disclosures"):
             rows_d = "".join(
@@ -1158,6 +1374,7 @@ def render_html(data):
       <div class="notebox">
         <div class="nhead">選ばれた根拠（スコア {s["score"]:.0f}点）</div>
         {reasons_html}
+        {tech_html}
         {disc_html}
         {latest_block(s)}
         <div class="fact"><span>100株の必要資金</span><span class="num">{s["cost"] / 10000:,.1f}万円</span></div>
@@ -1291,6 +1508,7 @@ __NAVCSS__
     padding:4px 0; border-bottom:1px dashed #f0ead9;}}
   .disc .num{{color:var(--ink2); font-weight:700; margin-right:4px;}}
   .discnote{{font-size:10px; color:var(--ink3); line-height:1.6; padding:5px 0 2px;}}
+  .spark{{margin:4px 0 2px;}}
 </style>
 </head>
 <body>
@@ -1305,7 +1523,7 @@ __NAV__
     <div class="step"><b>1. 対象</b> 東証プライム・スタンダード・グロースの全銘柄（{universe:,}銘柄）</div>
     <div class="step"><b>2. 土俵に上げない</b> 上場から日足{cfg["MIN_RECORDS"]}日未満 ／ 株価{cfg["MIN_PRICE"]}円未満 ／ 直近{cfg["RECENT_DAYS"]}日の平均売買代金{int(cfg["MIN_TURNOVER"]/10000):,}万円未満（売りたい時に売れない銘柄を避ける）</div>
     <div class="step"><b>3. 危ない下げ方を除外</b> ①1年高値から{int(cfg["DEAD_DRAWDOWN"]*100)}%以上下落・長期の下落トレンド継続（終わった株） ②直近10日に1日{cfg["KNIFE_DROP_1D"]:.0f}%超の急落（決算ミス等の材料落ち=落ちるナイフ） ③日々の値動きが±{cfg["MAX_VOL20"]:.1f}%超の荒い銘柄 ④1年安値圏を更新中 ⑤下げ止まり未確認（前日から安値切り下げ中）——本日計{excluded:,}銘柄を除外</div>
-    <div class="step"><b>4. 根拠スコアで採点</b> 残った銘柄を「いまの安さ」「下げの質（じわ下げか急落か・値動きの穏やかさ）」「トレンドの地合い（200日線の上の押し目か・1年レンジ内の位置）」「過去1年でこの買い方が利確+{cfg["TP_PCT"]:.0f}%を取れた実績」「売買のしやすさ」の5観点で採点し、上位{cfg["SHORTLIST_N"]}銘柄を候補に</div>
+    <div class="step"><b>4. 根拠スコアで採点</b> 残った銘柄を「いまの安さ」「下げの質（じわ下げか急落か・値動きの穏やかさ）」「トレンドの地合い（200日線の上の押し目か・1年レンジ内の位置）」「過去1年でこの買い方が利確+{cfg["TP_PCT"]:.0f}%を取れた実績」「10年データの長期テクニカル（支持帯の反発実績と試行回数・ゴールデンクロス・RSI売られすぎ・W底・セリクラ兆候）」「売買のしやすさ」の6観点で採点し、上位{cfg["SHORTLIST_N"]}銘柄を候補に</div>
     <div class="step"><b>5. 厳選{cfg["TOP_N"]}銘柄</b> 候補のうち、持ち金設定があれば「100株買える銘柄」だけを対象に、スコア上位{cfg["TOP_N"]}銘柄を表示。各銘柄の点数の内訳はタップで確認できます</div>
     <div class="step"><b>6. 目安ラベル</b> ◎=高値から{cfg["CHEAP_PCT"]:.0f}%以上安い ／ ○={cfg["MILD_PCT"]:.0f}%以上安い ／ 「普段の値段」={cfg["RECENT_DAYS"]}日の終値平均</div>
     <div class="step" style="color:#8a5a17;">基準は毎回の実行時点の設定で、この文章も自動で追随します。個々の銘柄の判定理由は「全銘柄の判定一覧」で確認できます。</div>
