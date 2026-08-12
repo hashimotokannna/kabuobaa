@@ -593,6 +593,39 @@ def simulate_portfolio(sim_universe):
 
 
 # ------------------------------------------------------------
+# TDnet適時開示（東証公式の一次情報）の見出し取得
+# 候補銘柄だけを対象に、TDnet配信API経由で直近の開示タイトルを取る
+# ------------------------------------------------------------
+def fetch_tdnet(session, code, days_back=30, limit=3):
+    """[{date, title, url}] を返す。取得できなければ空リスト（ページには出ない）"""
+    try:
+        url = f"https://webapi.yanoshin.jp/webapi/tdnet/list/{code}.json"
+        resp = session.get(url, params={"limit": 10}, timeout=15,
+                           headers={"User-Agent": "Mozilla/5.0"})
+        if resp.status_code != 200:
+            return []
+        items = (resp.json() or {}).get("items") or []
+        cutoff = datetime.now(JST) - timedelta(days=days_back)
+        out = []
+        for it in items:
+            td = it.get("Tdnet") or {}
+            pub = td.get("pubdate", "")
+            title = (td.get("title") or "").strip()
+            doc = td.get("document_url") or ""
+            try:
+                dt2 = datetime.strptime(pub[:19], "%Y-%m-%d %H:%M:%S").replace(tzinfo=JST)
+            except ValueError:
+                continue
+            if dt2 >= cutoff and title:
+                out.append({"date": f"{dt2.month}/{dt2.day}", "title": title, "url": doc})
+            if len(out) >= limit:
+                break
+        return out
+    except Exception:  # noqa: BLE001
+        return []
+
+
+# ------------------------------------------------------------
 # 4. スクリーニング本体
 # ------------------------------------------------------------
 _thread_local = None
@@ -692,19 +725,32 @@ def run_screening():
     candidates.sort(key=lambda s: s["score"], reverse=True)
     picked = candidates[:CONFIG["SHORTLIST_N"]]
     picked_codes = {s["code"] for s in picked}
+    score_map = {c["code"]: c["score"] for c in candidates}
+    rank_map = {s["code"]: i + 1 for i, s in enumerate(picked)}
     for r in all_results:
         if r["status"] == "ok":
             r["status"] = "picked" if r["code"] in picked_codes else "bench"
+            r["score"] = round(score_map.get(r["code"], 0), 1)
+            if r["status"] == "picked":
+                r["cand_rank"] = rank_map.get(r["code"])
 
     stats = {
         "universe": len(universe),
         "dead_excluded": dead_count,
         "skipped": skip_count,
         "failed": fail_count,
+        "cutoff_score": round(picked[-1]["score"], 1) if picked else 0,
     }
     print("資金別シミュレーションを計算中...")
     portfolio = simulate_portfolio(sim_universe)
     slstats = [slagg[v] for v in SL_VARIANTS]
+
+    print("TDnet適時開示の見出しを取得中...")
+    import requests as _rq
+    td_session = _rq.Session()
+    for s in picked:
+        s["disclosures"] = fetch_tdnet(td_session, s["code"])
+        time.sleep(0.25)
     return picked, stats, all_results, sim_records, portfolio, slstats
 
 
@@ -765,13 +811,15 @@ def make_demo_data():
             "turnover": 1e9,
             "records": 245,
             "days": [
-                {"date": f"2026-08-{3 + i:02d}",
+                {"date": d,
                  "open": close * rng.uniform(0.98, 1.03),
                  "high": close * rng.uniform(1.03, 1.06),
                  "low": close * rng.uniform(0.95, 0.98),
                  "close": close * rng.uniform(0.98, 1.03),
                  "volume": 1_000_000}
-                for i in range(10)
+                for d in ["2026-07-30", "2026-07-31", "2026-08-03", "2026-08-04",
+                          "2026-08-05", "2026-08-06", "2026-08-07", "2026-08-10",
+                          "2026-08-11", "2026-08-12"]
             ],
         })
     for s in picked:
@@ -784,12 +832,20 @@ def make_demo_data():
         s["concentration"] = rng.uniform(0.1, 0.8)
         s["stabilizing"] = True
         s["ma200_above"] = rng.random() < 0.6
+        s["days"][-1]["close"] = close
+        s["days"][-1]["open"] = close * 1.001
+        s["days"][-1]["high"] = max(s["days"][-1]["high"], close * 1.004)
+        s["days"][-1]["low"] = min(s["days"][-1]["low"], close * 0.996)
+        s["disclosures"] = ([{"date": "8/7", "title": "2027年3月期 第1四半期決算短信〔日本基準〕（連結）",
+                              "url": "https://www.release.tdnet.info/"}]
+                            if rng.random() < 0.5 else [])
         s["vol_ratio"] = rng.uniform(0.5, 3.5)
         s["cheap_streak"] = rng.randint(0, 6)
         s["prev_change"] = rng.uniform(-4, 2)
         s["score"], s["reasons"] = score_stock(s)
     picked.sort(key=lambda s: s["score"], reverse=True)
-    stats = {"universe": 3912, "dead_excluded": 214, "skipped": 1480, "failed": 3}
+    stats = {"universe": 3912, "dead_excluded": 214, "skipped": 1480, "failed": 3,
+             "cutoff_score": round(picked[-1]["score"], 1) if picked else 0}
 
     all_results = []
     for i, s in enumerate(picked):
@@ -797,10 +853,11 @@ def make_demo_data():
                             "market": s["market"], "sector": s["sector"],
                             "close": round(s["close"], 1),
                             "drop_pct": round(s["drop_pct"], 2),
+                            "score": round(s["score"], 1), "cand_rank": i + 1,
                             "status": "picked", "reason": ""})
     all_results += [
         {"code": "9999", "name": "デモ圏外株", "market": "プライム", "sector": "サービス業",
-         "close": 1200.0, "drop_pct": 1.2, "status": "bench", "reason": ""},
+         "close": 1200.0, "drop_pct": 1.2, "score": 46.0, "status": "bench", "reason": ""},
         {"code": "6800", "name": "デモ右肩下がり", "market": "スタンダード", "sector": "電気機器",
          "close": 300.0, "drop_pct": 8.0, "status": "dead", "reason": "1年高値から55%下落"},
         {"code": "7777", "name": "デモ流動性不足", "market": "グロース", "sector": "サービス業",
@@ -884,6 +941,7 @@ def build_output(picked, stats):
             "score": round(s.get("score", 0), 1),
             "reasons": s.get("reasons", []),
             "comment": make_comment(s),
+            "disclosures": s.get("disclosures", []),
             "cost": round(s["close"] * 100),
             "level": level_of(s["drop_pct"]),
             "is_new": (prev_codes is not None and s["code"] not in prev_codes),
@@ -1071,6 +1129,15 @@ def render_html(data):
                        f'<span class="num">{yen(s["low1y"])} 〜 {yen(s["high1y"])}円</span></div>')
         reasons_html = "".join(
             f'<div class="reason">・{html.escape(r)}</div>' for r in s.get("reasons", []))
+        disc_html = ""
+        if s.get("disclosures"):
+            rows_d = "".join(
+                f'<a class="disc" href="{d["url"]}" target="_blank" rel="noopener">'
+                f'<span class="num">{d["date"]}</span> {html.escape(d["title"])}</a>'
+                for d in s["disclosures"])
+            disc_html = (f'<div class="nhead">会社からの発表（TDnet適時開示・直近30日）</div>{rows_d}'
+                         f'<div class="discnote">決算・業績修正などの発表直後は値動きが大きくなりがちです。'
+                         f'見出しをタップすると原文（PDF）が開きます。</div>')
         rows_html.append(f"""
       <details class="drow" data-cost="{s["cost"]}">
       <summary class="row">
@@ -1091,6 +1158,7 @@ def render_html(data):
       <div class="notebox">
         <div class="nhead">選ばれた根拠（スコア {s["score"]:.0f}点）</div>
         {reasons_html}
+        {disc_html}
         {latest_block(s)}
         <div class="fact"><span>100株の必要資金</span><span class="num">{s["cost"] / 10000:,.1f}万円</span></div>
         <div class="fact"><span>普段の値段（20日平均）</span><span class="num">{yen(s["usual"])}円</span></div>
@@ -1117,7 +1185,7 @@ def render_html(data):
 <meta name="robots" content="noindex, nofollow">
 <link rel="apple-touch-icon" href="icon.png">
 <link rel="icon" type="image/png" href="icon.png">
-<title>Kabuobaa - 今夜の{len(stocks)}銘柄</title>
+<title>Kabuobaa - 今夜の厳選{cfg["TOP_N"]}銘柄</title>
 <style>
   :root{{
     --ink:#1c1c1e; --ink2:#6e6e73; --ink3:#aeaeb2;
@@ -1179,6 +1247,7 @@ def render_html(data):
   .nrow .nd{{width:58px; font-weight:700; flex:none;}}
   .ylink{{display:block; margin-top:12px; font-size:12px; font-weight:700; color:#2e4d7b;
     text-decoration:none; text-align:center; background:#eef2f8; border-radius:9px; padding:9px;}}
+__NAVCSS__
   .pnav{{display:flex; gap:8px; padding:0 0 10px;}}
   .pnav a{{flex:1; font-size:12px; font-weight:700; color:#4a3f28; text-decoration:none;
     background:#f4eedd; border-radius:10px; padding:9px 10px; text-align:center;}}
@@ -1218,6 +1287,10 @@ def render_html(data):
   .fav{{background:none; border:none; font-size:18px; color:#ddd3ba; padding:0 2px;
     cursor:pointer; line-height:1;}}
   .fav.on{{color:#e0a300;}}
+  .disc{{display:block; font-size:11px; line-height:1.6; color:#2e4d7b; text-decoration:none;
+    padding:4px 0; border-bottom:1px dashed #f0ead9;}}
+  .disc .num{{color:var(--ink2); font-weight:700; margin-right:4px;}}
+  .discnote{{font-size:10px; color:var(--ink3); line-height:1.6; padding:5px 0 2px;}}
 </style>
 </head>
 <body>
@@ -1225,11 +1298,7 @@ def render_html(data):
   <div class="t">今夜の厳選<span id="showncnt">{cfg["TOP_N"]}</span>銘柄</div>
   <div class="s">{date_str} {dt.hour:02d}:{dt.minute:02d} 記帳{"（取引時間中・当日分は途中経過）" if is_intraday else ""} ・ 根拠スコア順 ・ タップで根拠とノート ・ 判断はご自身で</div>
 </header>
-<div class="pnav">
-  <a href="holdings.html">持ち株の管理 ›</a>
-  <a href="universe.html">全銘柄の判定 ›</a>
-  <a href="backtest.html">手法の検証 ›</a>
-</div>
+__NAV__
 <details class="crit">
   <summary>この厳選{cfg["TOP_N"]}銘柄の選定基準（タップで開閉）<span class="chev">›</span></summary>
   <div class="critbody">
@@ -1245,7 +1314,7 @@ def render_html(data):
 <div class="capcard">
   <div class="caprow">持ち金 <input id="cap" class="capin num" type="number" inputmode="numeric"
     placeholder="50"> 万円
-    <label class="caponly"><input id="showall" type="checkbox"> 候補{cfg["SHORTLIST_N"]}銘柄すべて表示</label></div>
+    <label class="caponly"><input id="showall" type="checkbox"> 候補{len(stocks)}銘柄すべて表示</label></div>
   <div class="capnote">この端末にだけ保存されます。設定すると「100株買える銘柄」の中からスコア上位{cfg["TOP_N"]}銘柄が選ばれます。
   検証レポートの「持ち金別シミュレーション」とも連動します。</div>
 </div>
@@ -1260,7 +1329,35 @@ def render_html(data):
 __CAPJS__
 </body>
 </html>
-""".replace("__CAPJS__", CAP_JS.replace("__TOPN__", str(cfg["TOP_N"])))
+""".replace("__CAPJS__", CAP_JS.replace("__TOPN__", str(cfg["TOP_N"]))) \
+       .replace("__NAVCSS__", NAV_CSS.replace("{", "{").replace("}", "}")) \
+       .replace("__NAV__", nav_html("index"))
+
+
+# 全ページ共通のナビゲーション
+NAV_CSS = """
+  .topnav{display:flex; gap:6px; overflow-x:auto; padding:2px 0 12px;
+    -webkit-overflow-scrolling:touch;}
+  .topnav a{flex:none; font-size:12.5px; font-weight:700; color:#4a3f28;
+    text-decoration:none; background:#f4eedd; border-radius:10px; padding:8px 14px;}
+  .topnav a.act{background:#1c1c1e; color:#fff;}
+"""
+
+NAV_ITEMS = [
+    ("index.html", "帳簿", "index"),
+    ("holdings.html", "持ち株", "holdings"),
+    ("universe.html", "全銘柄", "universe"),
+    ("backtest.html", "検証", "backtest"),
+    ("guide.html", "使い方", "guide"),
+]
+
+
+def nav_html(active):
+    parts = []
+    for href, label, key in NAV_ITEMS:
+        cls = ' class="act"' if key == active else ""
+        parts.append(f'<a href="{href}"{cls}>{label}</a>')
+    return '<div class="topnav">' + "".join(parts) + "</div>"
 
 
 # ------------------------------------------------------------
@@ -1277,7 +1374,7 @@ SUBPAGE_TEMPLATE = """<!DOCTYPE html>
 <title>__TITLE__</title>
 <style>
   :root{--ink:#1c1c1e; --ink2:#6e6e73; --ink3:#aeaeb2; --paper:#faf6ec;
-    --paper-line:#e7e0cf; --bg:#f2f2f7; --cheap:#c62f2f; --cheap-bg:#fdeeee;
+    --paper-line:#e7e0cf; --bg:#f2f2f7; --line:#e5e5ea; --cheap:#c62f2f; --cheap-bg:#fdeeee;
     --mild:#b06a00; --mild-bg:#fdf3e3;}
   *{box-sizing:border-box; margin:0; padding:0;}
   body{font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Noto Sans JP",sans-serif;
@@ -1289,6 +1386,7 @@ SUBPAGE_TEMPLATE = """<!DOCTYPE html>
   header .s{font-size:12px; color:var(--ink2); margin-top:3px; line-height:1.6;}
   .back{display:inline-block; font-size:12px; font-weight:700; color:#2e4d7b;
     text-decoration:none; margin-bottom:8px;}
+__NAVCSS__
   .card{background:var(--paper); border-radius:14px; padding:12px 14px;
     margin-bottom:12px; box-shadow:0 1px 3px rgba(0,0,0,.06);}
   .card h2{font-size:13px; font-weight:800; color:#7a6a45; letter-spacing:.05em;
@@ -1303,7 +1401,7 @@ SUBPAGE_TEMPLATE = """<!DOCTYPE html>
 </style>
 </head>
 <body>
-<a class="back" href="index.html">‹ 帳簿にもどる</a>
+__NAV__
 <header><div class="t">__TITLE__</div><div class="s">__SUBTITLE__</div></header>
 __BODY__
 <div class="note">__FOOTNOTE__</div>
@@ -1325,7 +1423,7 @@ def render_backtest(sim_records, dt, portfolio=None, slstats=None):
     avg_held = (sum(t["held"] for t in closed) / n_closed) if n_closed else 0
     open_losers = [t for t in open_pos if t["pnl"] < 0]
     open_total = sum(t["pnl"] for t in open_pos)
-    worst = sorted(open_pos, key=lambda t: t["pnl"])[:15]
+    worst = sorted(open_losers, key=lambda t: t["pnl"])[:15]
     n_all = n_closed + len(open_pos)
     win_rate = (n_closed / n_all * 100) if n_all else 0
 
@@ -1426,7 +1524,7 @@ function applyTier(){
   const man = parseFloat(capIn.value) || 0;
   const cap = man * 10000;
   localStorage.setItem(CAP_KEY, capIn.value || '');
-  const tiers = Array.from(document.querySelectorAll('.tier'));
+  const tiers = Array.from(document.querySelectorAll('.tier[data-budget]'));
   tiers.forEach(t => t.classList.remove('me'));
   if (cap > 0){
     const fit = tiers.filter(t => t.dataset.budget !== 'inf' && Number(t.dataset.budget) <= cap).pop()
@@ -1453,6 +1551,8 @@ if (capIn){
 })();
 </script>"""
     return (SUBPAGE_TEMPLATE
+            .replace("__NAVCSS__", NAV_CSS)
+            .replace("__NAV__", nav_html("backtest"))
             .replace("__TITLE__", "手法の検証レポート")
             .replace("__SUBTITLE__", subtitle)
             .replace("__BODY__", "\n".join(body))
@@ -1476,11 +1576,11 @@ def render_universe(all_results, stats, dt):
     for r in all_results:
         counts[r["status"]] = counts.get(r["status"], 0) + 1
 
-    chips = ['<div class="chips"><button class="chip on" data-f="all">すべて '
+    chips = ['<div class="chips"><button class="fbtn on" data-f="all">すべて '
              f'{len(all_results):,}</button>']
     for key, (label, bg, fg, _desc) in STATUS_DEF.items():
         if counts.get(key):
-            chips.append(f'<button class="chip" data-f="{key}" style="background:{bg}; color:{fg}">'
+            chips.append(f'<button class="fbtn" data-f="{key}" style="background:{bg}; color:{fg}">'
                          f'{label} {counts[key]:,}</button>')
     chips.append("</div>")
     chips.append('<input id="q" class="search" type="search" placeholder="銘柄名・コードで検索">')
@@ -1498,8 +1598,14 @@ def render_universe(all_results, stats, dt):
         mchip = chip_class.get(r.get("market", ""), "local")
         close = f'{r["close"]:,.0f}円' if r.get("close") is not None else "−"
         drop = f'−{r["drop_pct"]:.1f}%' if r.get("drop_pct") is not None else ""
-        reason = html.escape(r.get("reason") or "")
-        reason_html = f'<span class="why">{reason}</span>' if reason else ""
+        cut = stats.get("cutoff_score", 0)
+        if r["status"] == "picked" and r.get("cand_rank"):
+            why = f'候補{r["cand_rank"]}位 ・ スコア{r.get("score", 0):.0f}点'
+        elif r["status"] == "bench" and r.get("score") is not None:
+            why = f'スコア{r["score"]:.0f}点（候補ライン{cut:.0f}点に届かず）'
+        else:
+            why = r.get("reason") or ""
+        reason_html = (f'<span class="why">{html.escape(why)}</span>' if why else "")
         return (
             f'<div class="urow" data-s="{r["status"]}" data-t="{html.escape(r["name"].lower())} {r["code"]}">'
             f'<span class="st" style="background:{bg}; color:{fg}">{label}</span>'
@@ -1522,9 +1628,9 @@ def render_universe(all_results, stats, dt):
 
     extra_css = """
   .chips{display:flex; gap:6px; flex-wrap:wrap; padding:2px 0 8px;}
-  .chip{font-size:11.5px; font-weight:700; border:none; border-radius:14px;
+  .fbtn{font-size:11.5px; font-weight:700; border:none; border-radius:14px;
     padding:5px 11px; background:#fff; color:var(--ink2); cursor:pointer;}
-  .chip.on{outline:2px solid var(--ink);}
+  .fbtn.on{outline:2px solid var(--ink);}
   .search{width:100%; font-size:14px; padding:9px 12px; border:1.5px solid #d9d2bf;
     border-radius:10px; background:#fff; margin-bottom:10px;}
   .list{background:var(--paper); border-radius:14px; padding:2px 0;}
@@ -1567,8 +1673,8 @@ function apply(){
     g.classList.toggle('hidden', visible === 0);
   }
 }
-document.querySelectorAll('.chip').forEach(c => c.addEventListener('click', () => {
-  document.querySelectorAll('.chip').forEach(x => x.classList.remove('on'));
+document.querySelectorAll('.fbtn').forEach(c => c.addEventListener('click', () => {
+  document.querySelectorAll('.fbtn').forEach(x => x.classList.remove('on'));
   c.classList.add('on'); filter = c.dataset.f; apply();
 }));
 document.getElementById('q').addEventListener('input', apply);
@@ -1576,7 +1682,8 @@ document.getElementById('q').addEventListener('input', apply);
 
     weekdays = "月火水木金土日"
     subtitle = (f"{dt.month}/{dt.day}（{weekdays[dt.weekday()]}）{dt.hour:02d}:{dt.minute:02d} 判定 ・ "
-                f"全{len(all_results):,}銘柄の扱いと理由の台帳")
+                f"全{len(all_results):,}銘柄の扱いと理由の台帳 ・ "
+                f"候補ライン（{CONFIG['SHORTLIST_N']}位のスコア）: {stats.get('cutoff_score', 0):.0f}点")
     body = ('<div class="card"><h2>判定の凡例</h2>' + legend + "</div>"
             + "".join(chips)
             + '<div class="list">' + "\n".join(rows) + "</div>")
@@ -1585,6 +1692,8 @@ document.getElementById('q').addEventListener('input', apply);
                 "直近の急落（落ちるナイフ）・荒すぎる値動き・1年安値圏更新中・下げ止まり未確認を含みます。"
                 "各行に個別の理由を表示。判定は毎回の実行で更新されます。")
     return (SUBPAGE_TEMPLATE
+            .replace("__NAVCSS__", NAV_CSS)
+            .replace("__NAV__", nav_html("universe"))
             .replace("__TITLE__", "全銘柄の判定一覧")
             .replace("__SUBTITLE__", subtitle)
             .replace("__BODY__", body)
@@ -1731,12 +1840,84 @@ render();
                 "価格は取引時間中は毎時、夜に確定値で記帳されたものです。"
                 "実際の売り注文は証券会社アプリで行ってください。")
     return (SUBPAGE_TEMPLATE
+            .replace("__NAVCSS__", NAV_CSS)
+            .replace("__NAV__", nav_html("holdings"))
             .replace("__TITLE__", "持ち株の管理")
             .replace("__SUBTITLE__", subtitle)
             .replace("__BODY__", body)
             .replace("__FOOTNOTE__", footnote)
             .replace("__EXTRA_CSS__", extra_css)
             .replace("__SCRIPT__", script))
+
+
+def render_guide(dt):
+    """使い方ページ（設定値から自動生成するので仕様変更に追随する）"""
+    c = CONFIG
+    body = f"""
+<div class="card"><h2>これは何？</h2>
+<div class="gtext">おじいさま・おばあさまの株手法——毎日の四本値をノートに記録し、いつもより安くなったら買い、
+決めた利益で機械的に売る——をWeb化したものです。<b>下準備（記録・選定・計算）はシステムが毎日自動で行い、
+買う・売るの判断と注文は人間が行います。</b>このサイトに注文機能はありません。</div></div>
+
+<div class="card"><h2>毎日の使い方（1〜2分）</h2>
+<div class="gstep"><b>1. 夜、帳簿を開く</b> ホーム画面のアイコンから開き、合言葉を入れる（記憶させた端末は自動で開きます）</div>
+<div class="gstep"><b>2. 厳選{c["TOP_N"]}銘柄を眺める</b> 気になる銘柄をタップすると、選ばれた根拠（スコア内訳）・
+最新日の四本値・10日分のノート・Yahoo!ファイナンスへのリンクが開きます</div>
+<div class="gstep"><b>3. 買うと決めたら</b> 証券会社アプリで注文し、「持ち株」画面にコード・買値・株数を登録</div>
+<div class="gstep"><b>4. 売り時はシステムが監視</b> 持ち株画面が毎時の価格と突き合わせ、利確ライン・損切りライン到達を
+色付きで知らせます。赤やオレンジのカードが出たら売り注文を検討</div></div>
+
+<div class="card"><h2>画面の説明</h2>
+<div class="gstep"><b>帳簿</b> 全上場銘柄から選ばれた厳選{c["TOP_N"]}銘柄。持ち金を設定すると「100株買える銘柄」だけから選ばれます。
+★を付けた銘柄は常に最上部に固定。銘柄名の下の茶色い1行は、数字から機械生成した事実コメントです</div>
+<div class="gstep"><b>持ち株</b> 保有銘柄の登録と売り判断。利確（推奨+{c["TP_PCT"]:.0f}%）・損切り（推奨−8%）の%を設定すると、
+銘柄ごとに「◯円になったら売る」に換算されます</div>
+<div class="gstep"><b>全銘柄</b> 約4,000銘柄すべての判定台帳。候補・圏外にはスコア、除外・対象外には理由が付き、
+「なぜあの銘柄が載っていないか」が調べられます</div>
+<div class="gstep"><b>検証</b> 過去1年、この手法を機械的に続けていたらの成績。持ち金別（30万〜無制限）と
+損切り%別（なし〜−12%）の比較で、自分の設定の妥当性を数字で確かめられます</div></div>
+
+<div class="card"><h2>選定の仕組み（要約）</h2>
+<div class="gtext">全銘柄から、流動性不足・低位株・上場間もない銘柄を対象外にし、
+「終わった株」（1年高値から{int(c["DEAD_DRAWDOWN"]*100)}%以上下落など）と「危ない下げ方」
+（1日{c["KNIFE_DROP_1D"]:.0f}%超の急落・荒い値動き・下げ止まり未確認）を除外。
+残りを5観点（いまの安さ・下げの質・トレンドの地合い・過去1年の利確実績・売買のしやすさ)で採点し、
+上位{c["SHORTLIST_N"]}銘柄を候補に、そこから{c["TOP_N"]}銘柄を表示します。
+詳細は帳簿の「選定基準」カードと、各銘柄の根拠表示をご覧ください。</div></div>
+
+<div class="card"><h2>設定とデータの保存場所</h2>
+<div class="gtext">持ち金・売りルール・★お気に入り・持ち株・合言葉の記憶は、<b>すべて閲覧している端末の中にだけ</b>保存されます。
+公開されているのは銘柄と株価という公開情報のみ。iPhoneとMacで設定は共有されないため、端末ごとに入力してください。</div></div>
+
+<div class="card"><h2>更新タイミングとよくある質問</h2>
+<div class="gstep"><b>いつ更新される？</b> 平日9:40〜14:40の毎時（取引時間中の途中経過）、15:45（大引け後）、
+20:30（夜の確定記帳・銘柄入れ替えの基準）。実行に10〜20分かかるため、表示は最大1時間ほど前の値です</div>
+<div class="gstep"><b>Yahooと数字が違う</b> このサイトは毎時の「写真」です。リアルタイムの板や気配は
+各銘柄のYahoo!ファイナンスリンクで確認してください</div>
+<div class="gstep"><b>昨日いた銘柄が消えた</b> 全銘柄画面でその銘柄を検索すると、今日の判定と理由が出ます</div>
+<div class="gstep"><b>データの出どころ</b> 銘柄一覧はJPX公式、株価はYahoo Finance、
+各銘柄の「会社からの発表」は東証の適時開示（TDnet）です。
+このサイトは判断材料の表示のみで、投資判断はご自身の責任で行ってください</div></div>
+"""
+    extra_css = """
+  .gtext{font-size:12.5px; line-height:1.9; color:var(--ink);}
+  .gstep{font-size:12.5px; line-height:1.8; color:var(--ink); padding:7px 0;
+    border-bottom:1px dashed #f0ead9;}
+  .gstep:last-child{border-bottom:none;}
+  .gstep b, .gtext b{color:#4a3f28;}
+"""
+    weekdays = "月火水木金土日"
+    subtitle = f"このサイトの役割分担と毎日の流れ ・ {dt.month}/{dt.day}（{weekdays[dt.weekday()]}）時点の仕様"
+    footnote = "仕様を変えるとこのページも自動で追随します。困ったことがあればこのページを最初に見てください。"
+    return (SUBPAGE_TEMPLATE
+            .replace("__NAVCSS__", NAV_CSS)
+            .replace("__NAV__", nav_html("guide"))
+            .replace("__TITLE__", "使い方")
+            .replace("__SUBTITLE__", subtitle)
+            .replace("__BODY__", body)
+            .replace("__FOOTNOTE__", footnote)
+            .replace("__EXTRA_CSS__", extra_css)
+            .replace("__SCRIPT__", ""))
 
 
 # ------------------------------------------------------------
@@ -2037,6 +2218,7 @@ def main():
     (DOCS / "backtest.html").write_text(
         render_backtest(sim_records, dt_now, portfolio, slstats), encoding="utf-8")
     (DOCS / "holdings.html").write_text(render_holdings(dt_now), encoding="utf-8")
+    (DOCS / "guide.html").write_text(render_guide(dt_now), encoding="utf-8")
 
     # 持ち株管理用: 全銘柄の最新価格表（銘柄名・終値・日付のみの公開情報）
     prices = {}
