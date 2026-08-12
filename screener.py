@@ -466,8 +466,28 @@ def render_html(data):
     weekdays = "月火水木金土日"
     dt = datetime.fromisoformat(data["generated_at"])
     date_str = f"{dt.month}/{dt.day}（{weekdays[dt.weekday()]}）"
+    # 平日9:00〜15:35の実行なら「取引時間中の途中経過」とみなす
+    mins = dt.hour * 60 + dt.minute
+    is_intraday = dt.weekday() < 5 and (9 * 60) <= mins <= (15 * 60 + 35)
+    price_label = "現在値" if is_intraday else "終値"
 
     chip_class = {"プライム": "prime", "スタンダード": "std", "グロース": "growth"}
+
+    def latest_block(s):
+        days = s.get("days", [])
+        if not days:
+            return ""
+        d = days[0]  # 新しい順の先頭 = 最新日
+        dt2 = datetime.fromisoformat(d["date"])
+        label = f"{dt2.month}/{dt2.day}({weekdays[dt2.weekday()]})"
+        suffix2 = "（取引時間中の途中経過）" if is_intraday else "（確定）"
+        return (
+            f'<div class="nhead">最新日 {label} の値段{suffix2}</div>'
+            f'<div class="fact"><span>始値</span><span class="num">{yen(d["open"])}円</span></div>'
+            f'<div class="fact"><span>高値</span><span class="num">{yen(d["high"])}円</span></div>'
+            f'<div class="fact"><span>安値</span><span class="num">{yen(d["low"])}円</span></div>'
+            f'<div class="fact"><span>{price_label}</span><span class="num">{yen(d["close"])}円</span></div>'
+        )
 
     def day_rows(s):
         out = []
@@ -507,13 +527,14 @@ def render_html(data):
           <div class="n2 num">{s["code"]} ・ 普段 {yen(s["usual"])}円 ・ 総合{s["rank"]}位</div>
         </div>
         <div class="px">
-          <div class="p1 num"><small>終値</small> {yen(s["close"])}<small>円</small></div>
+          <div class="p1 num"><small>{price_label}</small> {yen(s["close"])}<small>円</small></div>
           <div class="p2 num drop">高値から −{s["drop_pct"]:.1f}%</div>
         </div>
         <div>{badge}</div>
         <div class="chev">›</div>
       </summary>
       <div class="notebox">
+        {latest_block(s)}
         <div class="fact"><span>普段の値段（20日平均）</span><span class="num">{yen(s["usual"])}円</span></div>
         <div class="fact"><span>直近の高値（20日）</span><span class="num">{yen(s["high20"])}円</span></div>
         <div class="fact"><span>高値からの下げ</span><span class="num drop">−{yen(s["drop_yen"])}円（−{s["drop_pct"]:.1f}%）</span></div>
@@ -606,7 +627,7 @@ def render_html(data):
 <body>
 <header>
   <div class="t">今夜の{len(stocks)}銘柄</div>
-  <div class="s">{date_str}の終値で記帳 ・ 行をタップでノートが開きます ・ 判断はご自身で</div>
+  <div class="s">{date_str} {dt.hour:02d}:{dt.minute:02d} 記帳{"（取引時間中・当日分は途中経過）" if is_intraday else ""} ・ 行をタップでノート ・ 判断はご自身で</div>
 </header>
 <div class="ledger">
 {body_rows}
