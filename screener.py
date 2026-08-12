@@ -39,6 +39,9 @@ DOCS = ROOT / "docs"
 # 設定（味付けを変えたいときはここだけ触ればOK）
 # ------------------------------------------------------------
 CONFIG = {
+    # 売りルール（検証・スコアで使う基準値。持ち株管理画面では個人設定が優先）
+    "TP_PCT": 5.0,           # 利確: 買値から+この%で売る
+
     # 選定
     "TOP_N": 10,             # 画面に出す厳選銘柄数
     "SHORTLIST_N": 40,       # 候補として用意する数（持ち金で外れる分の予備を含む）
@@ -417,23 +420,18 @@ def score_stock(s):
         score += 10
         reasons.append(f"1年の値幅の中腹（下から{pos*100:.0f}%）での下げ。底抜けでも高値掴みでもない位置（+10点）")
 
-    # 4. この銘柄で手法が効いてきた実績（株価が高いほど+50円は簡単なので割り引く）
+    # 4. この銘柄で手法が効いてきた実績（安く買って+TP_PCT%で売る、の再現性）
     t = s.get("sim") or {}
     wins = t.get("wins", 0)
-    req_pct = 50.0 / s["close"] * 100 if s["close"] > 0 else 0
+    tp = CONFIG["TP_PCT"]
     if wins > 0:
         base_pt = min(wins, 10) * 5
-        if req_pct < 0.8:
-            base_pt *= 0.5
-            note = "（値がさ株で+50円は小幅のため半分に割引）"
-        else:
-            note = ""
         score += base_pt
-        reasons.append(f"過去1年、同じ買い方で {wins}回 +5,000円に到達{note}（+{base_pt:.0f}点）")
+        reasons.append(f"過去1年、同じ買い方で {wins}回 利確ライン（+{tp:.0f}%）に到達（+{base_pt:.0f}点）")
         ah = t.get("avg_held")
         if ah is not None and ah <= 10:
             score += 10
-            reasons.append(f"+5,000円まで平均 {ah:.0f}営業日と回転が速い（+10点）")
+            reasons.append(f"利確まで平均 {ah:.0f}営業日と回転が速い（+10点）")
     else:
         reasons.append("過去1年はこの買い方の成立実績なし（加点なし）")
     if t.get("open_loss"):
@@ -472,13 +470,13 @@ def simulate_grandma(days):
             drop_pct = (high20 - c) / high20 * 100 if high20 > 0 else 0
             if drop_pct >= CONFIG["CHEAP_PCT"] and c >= CONFIG["MIN_PRICE"]:
                 pos = {"buy_i": i + 1, "buy": opens[i + 1]}
-        elif i >= pos["buy_i"] and highs[i] >= pos["buy"] + 50.0:
-            # 100株なら +50円/株 = +5,000円 で指値成立
+        elif i >= pos["buy_i"] and highs[i] >= pos["buy"] * (1 + CONFIG["TP_PCT"] / 100):
+            # 買値+TP_PCT% の指値で売れた
             trades.append({
                 "buy_date": days[pos["buy_i"]]["date"],
                 "sell_date": days[i]["date"],
                 "held": max(1, i - pos["buy_i"] + 1),
-                "pnl": 5000.0,
+                "pnl": pos["buy"] * CONFIG["TP_PCT"] / 100 * 100,
             })
             pos = None
     if pos is not None and pos["buy_i"] < len(days):
@@ -530,11 +528,13 @@ def simulate_portfolio(sim_universe):
             for code in list(positions):
                 info = stock_info[code]
                 h = info["highmap"].get(d)
-                if h is not None and h >= positions[code]["buy"] + 50.0:
-                    realized += 5000.0
+                target = positions[code]["buy"] * (1 + CONFIG["TP_PCT"] / 100)
+                if h is not None and h >= target:
+                    profit = positions[code]["cost"] * CONFIG["TP_PCT"] / 100
+                    realized += profit
                     wins += 1
                     if not unlimited:
-                        cash += positions[code]["cost"] + 5000.0
+                        cash += positions[code]["cost"] + profit
                     del positions[code]
             for drop, code in sorted(events_by_date.get(d, []), reverse=True):
                 if code in positions:
@@ -838,7 +838,7 @@ def build_output(picked, stats):
         "date_label": now.strftime("%-m/%-d") if sys.platform != "win32" else now.strftime("%m/%d"),
         "stats": stats,
         "config": {k: CONFIG[k] for k in
-                   ("TOP_N", "SHORTLIST_N", "RECENT_DAYS", "CHEAP_PCT", "MILD_PCT",
+                   ("TOP_N", "SHORTLIST_N", "RECENT_DAYS", "CHEAP_PCT", "MILD_PCT", "TP_PCT",
                     "DEAD_DRAWDOWN", "DEAD_BELOW_MA_RATIO",
                     "KNIFE_DROP_1D", "MAX_VOL20", "MIN_POS_1Y",
                     "MIN_RECORDS", "MIN_PRICE", "MIN_TURNOVER")},
@@ -1115,7 +1115,7 @@ def render_html(data):
     <div class="step"><b>1. 対象</b> 東証プライム・スタンダード・グロースの全銘柄（{universe:,}銘柄）</div>
     <div class="step"><b>2. 土俵に上げない</b> 上場から日足{cfg["MIN_RECORDS"]}日未満 ／ 株価{cfg["MIN_PRICE"]}円未満 ／ 直近{cfg["RECENT_DAYS"]}日の平均売買代金{int(cfg["MIN_TURNOVER"]/10000):,}万円未満（売りたい時に売れない銘柄を避ける）</div>
     <div class="step"><b>3. 危ない下げ方を除外</b> ①1年高値から{int(cfg["DEAD_DRAWDOWN"]*100)}%以上下落・長期の下落トレンド継続（終わった株） ②直近10日に1日{cfg["KNIFE_DROP_1D"]:.0f}%超の急落（決算ミス等の材料落ち=落ちるナイフ） ③日々の値動きが±{cfg["MAX_VOL20"]:.1f}%超の荒い銘柄 ④1年安値圏を更新中 ⑤下げ止まり未確認（前日から安値切り下げ中）——本日計{excluded:,}銘柄を除外</div>
-    <div class="step"><b>4. 根拠スコアで採点</b> 残った銘柄を「いまの安さ」「下げの質（じわ下げか急落か・値動きの穏やかさ）」「トレンドの地合い（200日線の上の押し目か・1年レンジ内の位置）」「過去1年でこの買い方が+5,000円を取れた実績（値がさ株は割引）」「売買のしやすさ」の5観点で採点し、上位{cfg["SHORTLIST_N"]}銘柄を候補に</div>
+    <div class="step"><b>4. 根拠スコアで採点</b> 残った銘柄を「いまの安さ」「下げの質（じわ下げか急落か・値動きの穏やかさ）」「トレンドの地合い（200日線の上の押し目か・1年レンジ内の位置）」「過去1年でこの買い方が利確+{cfg["TP_PCT"]:.0f}%を取れた実績」「売買のしやすさ」の5観点で採点し、上位{cfg["SHORTLIST_N"]}銘柄を候補に</div>
     <div class="step"><b>5. 厳選{cfg["TOP_N"]}銘柄</b> 候補のうち、持ち金設定があれば「100株買える銘柄」だけを対象に、スコア上位{cfg["TOP_N"]}銘柄を表示。各銘柄の点数の内訳はタップで確認できます</div>
     <div class="step"><b>6. 目安ラベル</b> ◎=高値から{cfg["CHEAP_PCT"]:.0f}%以上安い ／ ○={cfg["MILD_PCT"]:.0f}%以上安い ／ 「普段の値段」={cfg["RECENT_DAYS"]}日の終値平均</div>
     <div class="step" style="color:#8a5a17;">基準は毎回の実行時点の設定で、この文章も自動で追随します。個々の銘柄の判定理由は「全銘柄の判定一覧」で確認できます。</div>
@@ -1239,16 +1239,16 @@ def render_backtest(sim_records, dt, portfolio=None):
                     'という読み方ができます。</div></div>')
     body.append('<div class="card"><h2>参考: 資金無制限で全シグナルを拾った場合の内訳</h2>')
     body.append(f'<div class="fact"><span>買いに入った回数</span><span class="v num">{n_all:,}回</span></div>')
-    body.append(f'<div class="fact"><span>+5,000円で売れた回数</span><span class="v num">{n_closed:,}回（{win_rate:.0f}%）</span></div>')
+    body.append(f'<div class="fact"><span>利確ライン（+{CONFIG["TP_PCT"]:.0f}%）で売れた回数</span><span class="v num">{n_closed:,}回（{win_rate:.0f}%）</span></div>')
     body.append(f'<div class="fact"><span>確定した利益の合計</span><span class="v num plus">{yen2(total_realized)}</span></div>')
-    body.append(f'<div class="fact"><span>+5,000円までの平均日数</span><span class="v num">約{avg_held:.0f}営業日</span></div>')
+    body.append(f'<div class="fact"><span>利確までの平均日数</span><span class="v num">約{avg_held:.0f}営業日</span></div>')
     body.append(f'<div class="fact"><span>まだ売れていない持ち越し</span><span class="v num">{len(open_pos):,}件（うち含み損 {len(open_losers):,}件）</span></div>')
     cls = "plus" if open_total >= 0 else "minus"
     body.append(f'<div class="fact"><span>持ち越し分の含み損益 合計</span><span class="v num {cls}">{yen2(open_total)}</span></div>')
     body.append("</div>")
 
     if monthly:
-        body.append('<div class="card"><h2>月別・+5,000円が取れた回数</h2>')
+        body.append('<div class="card"><h2>月別・利確が取れた回数</h2>')
         for m in sorted(monthly):
             body.append(f'<div class="fact"><span class="num">{m.replace("-", "/")}</span><span class="v num">{monthly[m]:,}回</span></div>')
         body.append("</div>")
@@ -1264,10 +1264,11 @@ def render_backtest(sim_records, dt, portfolio=None):
 
     weekdays = "月火水木金土日"
     subtitle = (f"{dt.month}/{dt.day}（{weekdays[dt.weekday()]}）時点 ・ 過去1年の日足で仮想実行 ・ "
-                "ルール: ◎（20日高値から5%安）になったら翌日の始値で100株買い → +5,000円の指値で売る")
-    footnote = ("この検証は「いまの対象銘柄」の過去1年をなぞった簡易計算です。手数料・税金は含みません。"
-                "買値は翌営業日の始値、売りは+50円/株に到達した日に成立と仮定。同時に何銘柄でも買える前提のため、"
-                "実際の資金では全部は買えません。傾向を掴む道具としてお使いください。")
+                f"ルール: ◎（20日高値から{CONFIG['CHEAP_PCT']:.0f}%安）になったら翌日の始値で100株買い → "
+                f"買値+{CONFIG['TP_PCT']:.0f}%の指値で売る")
+    footnote = (f"この検証は「いまの対象銘柄」の過去1年をなぞった簡易計算です。手数料・税金は含みません。"
+                f"買値は翌営業日の始値、売りは買値+{CONFIG['TP_PCT']:.0f}%に到達した日に成立と仮定（損切りなし）。"
+                "持ち株管理で設定した個人の利確・損切り%とは独立に、共通基準で計算しています。")
     extra_css = """
   .capset{font-size:12px; color:var(--ink2); padding:2px 0 10px;}
   .capin{width:70px; font-size:14px; font-weight:700; padding:5px 8px;
@@ -1450,12 +1451,12 @@ def render_holdings(dt):
     body = """
 <div class="card">
   <h2>売りルール（あなたの決めごと）</h2>
-  <div class="fact"><span>利確: 利益がいくらになったら売るか</span>
-    <span class="v"><input id="tp" class="rin num" type="number" inputmode="numeric" placeholder="5000"> 円</span></div>
+  <div class="fact"><span>利確: 買値から何%上がったら売るか</span>
+    <span class="v"><input id="tp" class="rin num" type="number" inputmode="decimal" step="0.5" placeholder="5"> %</span></div>
   <div class="fact"><span>損切り: 買値から何%下がったら売るか</span>
     <span class="v"><input id="sl" class="rin num" type="number" inputmode="decimal" step="0.5" placeholder="8"> %</span></div>
-  <div class="rulenote">未入力なら灰色の推奨値（利確+5,000円・損切り−8%）で計算します。
-  登録した持ち株ごとに「◯円になったら売る」の具体的な値段に換算して表示します。</div>
+  <div class="rulenote">未入力なら灰色の推奨値（利確+5%・損切り−8%）で計算します。
+  登録した持ち株ごとに「◯円になったら売る」の具体的な値段と、そのときの損益額に換算して表示します。</div>
 </div>
 
 <div class="card">
@@ -1500,8 +1501,8 @@ def render_holdings(dt):
 """
 
     script = """<script>
-const TP_DEF = 5000, SL_DEF = 8;
-const TP_KEY='kabuobaa_tp', SL_KEY='kabuobaa_sl', H_KEY='kabuobaa_holdings';
+const TP_DEF = 5, SL_DEF = 8;
+const TP_KEY='kabuobaa_tp_pct', SL_KEY='kabuobaa_sl', H_KEY='kabuobaa_holdings';
 const tpIn=document.getElementById('tp'), slIn=document.getElementById('sl');
 let prices=null, gen='';
 
@@ -1522,7 +1523,7 @@ function render(){
   let out = '';
   holds.forEach((h, idx) => {
     const p = prices ? prices[h.code] : null;
-    const tpLine = h.buy + tp / h.shares;
+    const tpLine = h.buy * (1 + tp / 100);
     const slLine = h.buy * (1 - sl / 100);
     let inner = '';
     if (!p){
@@ -1539,8 +1540,8 @@ function render(){
         '<div class="hstatus ' + cls + '">' + st + '</div>' +
         '<div class="fact num"><span>いまの値段（' + (p.d ? p.d.slice(5).replace('-','/') : '') + '記帳）</span><span class="v">' + yen(cur) + '円</span></div>' +
         '<div class="fact num"><span>買値 × 株数</span><span class="v">' + yen(h.buy) + '円 × ' + h.shares + '株</span></div>' +
-        '<div class="fact num"><span>利確ライン（+' + yen(tp) + '円）</span><span class="v plus">' + yen(tpLine) + '円になったら売る</span></div>' +
-        '<div class="fact num"><span>損切りライン（−' + sl + '%）</span><span class="v minus">' + yen(slLine) + '円になったら売る</span></div>';
+        '<div class="fact num"><span>利確ライン（+' + tp + '%＝+' + yen((tpLine - h.buy) * h.shares) + '円）</span><span class="v plus">' + yen(tpLine) + '円になったら売る</span></div>' +
+        '<div class="fact num"><span>損切りライン（−' + sl + '%＝−' + yen((h.buy - slLine) * h.shares) + '円）</span><span class="v minus">' + yen(slLine) + '円になったら売る</span></div>';
     }
     const nm = (prices && prices[h.code]) ? prices[h.code].n : '銘柄 ' + h.code;
     out += '<div class="hcard ' + (inner.includes('hstatus tp') ? 'selltp' : inner.includes('hstatus sl"') ? 'sellsl' : '') + '">' +
