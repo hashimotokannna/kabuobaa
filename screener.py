@@ -1035,8 +1035,9 @@ def render_html(data):
   <div class="s">{date_str} {dt.hour:02d}:{dt.minute:02d} 記帳{"（取引時間中・当日分は途中経過）" if is_intraday else ""} ・ 根拠スコア順 ・ タップで根拠とノート ・ 判断はご自身で</div>
 </header>
 <div class="pnav">
-  <a href="universe.html">全銘柄の判定一覧 ›</a>
-  <a href="backtest.html">手法の検証レポート ›</a>
+  <a href="holdings.html">持ち株の管理 ›</a>
+  <a href="universe.html">全銘柄の判定 ›</a>
+  <a href="backtest.html">手法の検証 ›</a>
 </div>
 <details class="crit">
   <summary>この厳選{cfg["TOP_N"]}銘柄の選定基準（タップで開閉）<span class="chev">›</span></summary>
@@ -1369,6 +1370,152 @@ document.getElementById('q').addEventListener('input', apply);
             .replace("__SCRIPT__", script))
 
 
+def render_holdings(dt):
+    """持ち株の管理ページ（データは全て閲覧端末のlocalStorageに保存）"""
+    weekdays = "月火水木金土日"
+    subtitle = (f"買った銘柄を登録すると、毎時の記帳価格と突き合わせて"
+                f"「売り判断かどうか」を自動表示します ・ データはこの端末にだけ保存")
+
+    body = """
+<div class="card">
+  <h2>売りルール（あなたの決めごと）</h2>
+  <div class="fact"><span>利確: 利益がいくらになったら売るか</span>
+    <span class="v"><input id="tp" class="rin num" type="number" inputmode="numeric" placeholder="5000"> 円</span></div>
+  <div class="fact"><span>損切り: 買値から何%下がったら売るか</span>
+    <span class="v"><input id="sl" class="rin num" type="number" inputmode="decimal" step="0.5" placeholder="8"> %</span></div>
+  <div class="rulenote">未入力なら灰色の推奨値（利確+5,000円・損切り−8%）で計算します。
+  登録した持ち株ごとに「◯円になったら売る」の具体的な値段に換算して表示します。</div>
+</div>
+
+<div class="card">
+  <h2>持ち株を登録</h2>
+  <div class="addrow">
+    <input id="acode" class="rin num" type="text" placeholder="コード 7203" maxlength="6">
+    <input id="abuy" class="rin num" type="number" inputmode="decimal" placeholder="買値 3,050">
+    <input id="ashares" class="rin num" type="number" inputmode="numeric" placeholder="株数 100">
+    <button id="aadd" class="abtn">追加</button>
+  </div>
+  <div id="aerr" class="aerr"></div>
+</div>
+
+<div id="hlist"></div>
+<div id="hupdated" class="note"></div>
+"""
+
+    extra_css = """
+  .rin{width:90px; font-size:14px; font-weight:700; padding:6px 8px;
+    border:1.5px solid #d9d2bf; border-radius:8px; background:#fff; text-align:right;}
+  #acode{text-align:left;}
+  .rulenote{font-size:11px; color:#8a5a17; line-height:1.7; padding-top:8px;}
+  .addrow{display:flex; gap:6px; flex-wrap:wrap; align-items:center;}
+  .addrow .rin{flex:1; min-width:90px;}
+  .abtn{font-size:13px; font-weight:800; color:#fff; background:#1c1c1e; border:none;
+    border-radius:9px; padding:9px 18px;}
+  .aerr{color:var(--cheap); font-size:11.5px; font-weight:700; padding-top:6px; min-height:14px;}
+  .hcard{background:#fff; border-radius:14px; padding:12px 14px; margin-bottom:10px;
+    box-shadow:0 1px 3px rgba(0,0,0,.06);}
+  .hcard.selltp{outline:2.5px solid var(--cheap); background:var(--cheap-bg);}
+  .hcard.sellsl{outline:2.5px solid #b06a00; background:var(--mild-bg);}
+  .htop{display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;}
+  .hname{font-size:14px; font-weight:800;}
+  .hname small{font-weight:600; color:var(--ink2); font-size:11px;}
+  .hdel{font-size:11px; color:var(--ink3); background:none; border:1px solid var(--line);
+    border-radius:7px; padding:3px 8px;}
+  .hstatus{font-size:13px; font-weight:800; border-radius:9px; padding:7px 10px;
+    text-align:center; margin:8px 0 4px;}
+  .hstatus.tp{color:#fff; background:var(--cheap);}
+  .hstatus.sl{color:#fff; background:#b06a00;}
+  .hstatus.hold{color:var(--ink2); background:#f0f0f4;}
+"""
+
+    script = """<script>
+const TP_DEF = 5000, SL_DEF = 8;
+const TP_KEY='kabuobaa_tp', SL_KEY='kabuobaa_sl', H_KEY='kabuobaa_holdings';
+const tpIn=document.getElementById('tp'), slIn=document.getElementById('sl');
+let prices=null, gen='';
+
+function loadH(){ try{return JSON.parse(localStorage.getItem(H_KEY)||'[]');}catch(e){return [];} }
+function saveH(h){ localStorage.setItem(H_KEY, JSON.stringify(h)); }
+function yen(v){ return Math.round(v).toLocaleString(); }
+
+function render(){
+  const tp = parseFloat(tpIn.value) || TP_DEF;
+  const sl = parseFloat(slIn.value) || SL_DEF;
+  localStorage.setItem(TP_KEY, tpIn.value||''); localStorage.setItem(SL_KEY, slIn.value||'');
+  const list = document.getElementById('hlist');
+  const holds = loadH();
+  if (!holds.length){
+    list.innerHTML = '<div class="card"><h2>持ち株一覧</h2><div class="note">まだ登録がありません。上の欄から追加してください。</div></div>';
+    return;
+  }
+  let out = '';
+  holds.forEach((h, idx) => {
+    const p = prices ? prices[h.code] : null;
+    const tpLine = h.buy + tp / h.shares;
+    const slLine = h.buy * (1 - sl / 100);
+    let inner = '';
+    if (!p){
+      inner = '<div class="hstatus hold">' + (prices ? '価格データなし（コードを確認）' : '価格データ読み込み中…') + '</div>';
+    } else {
+      const cur = p.c;
+      const pnl = (cur - h.buy) * h.shares;
+      const pnlTxt = (pnl >= 0 ? '+' : '−') + yen(Math.abs(pnl)) + '円';
+      let st, cls;
+      if (cur >= tpLine){ st = '売り判断 ｜ 利確ライン到達（' + pnlTxt + '）'; cls = 'tp'; }
+      else if (cur <= slLine){ st = '売り判断 ｜ 損切りライン到達（' + pnlTxt + '）'; cls = 'sl'; }
+      else { st = '持続 ｜ いま ' + pnlTxt + ' ・ 利確まであと' + yen((tpLine - cur) * h.shares) + '円'; cls = 'hold'; }
+      inner =
+        '<div class="hstatus ' + cls + '">' + st + '</div>' +
+        '<div class="fact num"><span>いまの値段（' + (p.d ? p.d.slice(5).replace('-','/') : '') + '記帳）</span><span class="v">' + yen(cur) + '円</span></div>' +
+        '<div class="fact num"><span>買値 × 株数</span><span class="v">' + yen(h.buy) + '円 × ' + h.shares + '株</span></div>' +
+        '<div class="fact num"><span>利確ライン（+' + yen(tp) + '円）</span><span class="v plus">' + yen(tpLine) + '円になったら売る</span></div>' +
+        '<div class="fact num"><span>損切りライン（−' + sl + '%）</span><span class="v minus">' + yen(slLine) + '円になったら売る</span></div>';
+    }
+    const nm = (prices && prices[h.code]) ? prices[h.code].n : '銘柄 ' + h.code;
+    out += '<div class="hcard ' + (inner.includes('hstatus tp') ? 'selltp' : inner.includes('hstatus sl"') ? 'sellsl' : '') + '">' +
+      '<div class="htop"><div class="hname">' + nm + ' <small class="num">' + h.code + '</small></div>' +
+      '<button class="hdel" data-i="' + idx + '">削除</button></div>' + inner + '</div>';
+  });
+  list.innerHTML = out;
+  list.querySelectorAll('.hdel').forEach(b => b.addEventListener('click', () => {
+    const holds2 = loadH(); holds2.splice(Number(b.dataset.i), 1); saveH(holds2); render();
+  }));
+}
+
+document.getElementById('aadd').addEventListener('click', () => {
+  const code = document.getElementById('acode').value.trim().toUpperCase();
+  const buy = parseFloat(document.getElementById('abuy').value);
+  const shares = parseInt(document.getElementById('ashares').value) || 100;
+  const err = document.getElementById('aerr');
+  if (!code || !(buy > 0)){ err.textContent = 'コードと買値を入力してください'; return; }
+  err.textContent = '';
+  const holds = loadH(); holds.push({code: code, buy: buy, shares: shares}); saveH(holds);
+  document.getElementById('acode').value=''; document.getElementById('abuy').value='';
+  render();
+});
+tpIn.value = localStorage.getItem(TP_KEY) || ''; slIn.value = localStorage.getItem(SL_KEY) || '';
+tpIn.addEventListener('input', render); slIn.addEventListener('input', render);
+fetch('prices.json').then(r => r.json()).then(j => {
+  prices = j.prices; gen = j.generated_at;
+  const u = document.getElementById('hupdated');
+  if (u) u.textContent = '価格の記帳: ' + gen.replace('T', ' ').slice(0, 16);
+  render();
+}).catch(() => { prices = {}; render(); });
+render();
+</script>"""
+
+    footnote = ("売りルールと持ち株データはこの端末のブラウザにだけ保存され、外部には送信されません。"
+                "価格は取引時間中は毎時、夜に確定値で記帳されたものです。"
+                "実際の売り注文は証券会社アプリで行ってください。")
+    return (SUBPAGE_TEMPLATE
+            .replace("__TITLE__", "持ち株の管理")
+            .replace("__SUBTITLE__", subtitle)
+            .replace("__BODY__", body)
+            .replace("__FOOTNOTE__", footnote)
+            .replace("__EXTRA_CSS__", extra_css)
+            .replace("__SCRIPT__", script))
+
+
 # ------------------------------------------------------------
 # 施錠（パスワード付き公開）
 # GitHubのSecretsに PAGE_PASSWORD を登録すると、ページ全体を
@@ -1666,6 +1813,19 @@ def main():
         render_universe(all_results, stats, dt_now), encoding="utf-8")
     (DOCS / "backtest.html").write_text(
         render_backtest(sim_records, dt_now, portfolio), encoding="utf-8")
+    (DOCS / "holdings.html").write_text(render_holdings(dt_now), encoding="utf-8")
+
+    # 持ち株管理用: 全銘柄の最新価格表（銘柄名・終値・日付のみの公開情報）
+    prices = {}
+    for r in all_results:
+        if r.get("close") is not None:
+            prices[r["code"]] = {"n": r["name"], "c": r["close"],
+                                 "d": data["stocks"][0]["date"] if data["stocks"] else ""}
+    for s in data["stocks"]:
+        prices[s["code"]] = {"n": s["name"], "c": s["close"], "d": s["date"]}
+    (DOCS / "prices.json").write_text(
+        json.dumps({"generated_at": data["generated_at"], "prices": prices},
+                   ensure_ascii=False), encoding="utf-8")
 
     print(f"完了: {len(data['stocks'])}銘柄を選定 "
           f"(除外 {stats.get('dead_excluded', 0)}銘柄) → docs/index.html"
