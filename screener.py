@@ -355,6 +355,75 @@ def simulate_grandma(days):
     return trades
 
 
+# 検証レポートで比較する持ち金の段階
+SIM_BUDGETS = [300_000, 500_000, 1_000_000, 2_000_000, None]  # None=無制限
+
+
+def simulate_portfolio(sim_universe):
+    """資金制約付きで「◎買い→+5000円売り」を1年なぞる。持ち金の段階別に成績を返す"""
+    n = CONFIG["RECENT_DAYS"]
+    events_by_date = {}
+    stock_info = {}
+    for s in sim_universe:
+        dates, opens, highs, closes = s["dates"], s["opens"], s["highs"], s["closes"]
+        if len(dates) < n + 5:
+            continue
+        stock_info[s["code"]] = {
+            "highmap": dict(zip(dates, highs)),
+            "openmap": dict(zip(dates, opens)),
+            "last_close": closes[-1],
+            "dates": dates,
+        }
+        for i in range(n, len(dates) - 1):
+            h20 = max(highs[i - n + 1:i + 1])
+            c = closes[i]
+            if h20 > 0 and c >= CONFIG["MIN_PRICE"]:
+                drop = (h20 - c) / h20 * 100
+                if drop >= CONFIG["CHEAP_PCT"]:
+                    events_by_date.setdefault(dates[i + 1], []).append((drop, s["code"]))
+
+    calendar = sorted({d for info in stock_info.values() for d in info["dates"]})
+    results = []
+    for budget in SIM_BUDGETS:
+        cash = float(budget) if budget else 0.0
+        unlimited = budget is None
+        positions = {}
+        realized = 0.0
+        wins = skipped = max_pos = 0
+        for d in calendar:
+            for code in list(positions):
+                info = stock_info[code]
+                h = info["highmap"].get(d)
+                if h is not None and h >= positions[code]["buy"] + 50.0:
+                    realized += 5000.0
+                    wins += 1
+                    if not unlimited:
+                        cash += positions[code]["cost"] + 5000.0
+                    del positions[code]
+            for drop, code in sorted(events_by_date.get(d, []), reverse=True):
+                if code in positions:
+                    continue
+                op = stock_info[code]["openmap"].get(d)
+                if op is None:
+                    continue
+                cost = op * 100.0
+                if not unlimited and cost > cash:
+                    skipped += 1
+                    continue
+                if not unlimited:
+                    cash -= cost
+                positions[code] = {"buy": op, "cost": cost}
+            max_pos = max(max_pos, len(positions))
+        unrealized = sum((stock_info[c]["last_close"] - p["buy"]) * 100.0
+                         for c, p in positions.items())
+        results.append({
+            "budget": budget, "realized": realized, "wins": wins,
+            "skipped": skipped, "open_count": len(positions),
+            "unrealized": unrealized, "max_positions": max_pos,
+        })
+    return results
+
+
 # ------------------------------------------------------------
 # 4. スクリーニング本体
 # ------------------------------------------------------------
@@ -392,7 +461,7 @@ def run_screening():
         return stock, days
 
     candidates, dead_count, skip_count, fail_count = [], 0, 0, 0
-    all_results, sim_records = [], []
+    all_results, sim_records, sim_universe = [], [], []
     done = 0
     with ThreadPoolExecutor(max_workers=CONFIG["WORKERS"]) as pool:
         futures = [pool.submit(task, s) for s in universe]
@@ -426,6 +495,13 @@ def run_screening():
             if trades:
                 sim_records.append({"code": stock["code"],
                                     "name": stock["name"], "trades": trades})
+            sim_universe.append({
+                "code": stock["code"], "name": stock["name"],
+                "dates": [d["date"] for d in days],
+                "opens": [d["open"] for d in days],
+                "highs": [d["high"] for d in days],
+                "closes": [d["close"] for d in days],
+            })
 
     candidates.sort(key=lambda s: s["drop_pct"], reverse=True)
     picked = candidates[:CONFIG["TOP_N"]]
@@ -440,7 +516,9 @@ def run_screening():
         "skipped": skip_count,
         "failed": fail_count,
     }
-    return picked, stats, all_results, sim_records
+    print("資金別シミュレーションを計算中...")
+    portfolio = simulate_portfolio(sim_universe)
+    return picked, stats, all_results, sim_records, portfolio
 
 
 # ------------------------------------------------------------
@@ -537,7 +615,19 @@ def make_demo_data():
             {"buy_date": "2026-07-30", "sell_date": None, "held": 9,
              "pnl": rng.uniform(-15000, 4000)},
         ]})
-    return picked, stats, all_results, sim_records
+    portfolio = [
+        {"budget": 300_000, "realized": 65000, "wins": 13, "skipped": 172,
+         "open_count": 1, "unrealized": -8000, "max_positions": 2},
+        {"budget": 500_000, "realized": 110000, "wins": 22, "skipped": 121,
+         "open_count": 2, "unrealized": -21000, "max_positions": 3},
+        {"budget": 1_000_000, "realized": 195000, "wins": 39, "skipped": 60,
+         "open_count": 4, "unrealized": -47000, "max_positions": 6},
+        {"budget": 2_000_000, "realized": 300000, "wins": 60, "skipped": 18,
+         "open_count": 7, "unrealized": -92000, "max_positions": 11},
+        {"budget": None, "realized": 390000, "wins": 78, "skipped": 0,
+         "open_count": 12, "unrealized": -160000, "max_positions": 19},
+    ]
+    return picked, stats, all_results, sim_records, portfolio
 
 
 # ------------------------------------------------------------
@@ -605,6 +695,36 @@ def build_output(picked, stats):
 
 def yen(v):
     return f"{v:,.0f}"
+
+
+
+# 持ち金設定（帳簿ページ用・端末内保存）
+CAP_JS = '''<script>
+const CAP_KEY = 'kabuobaa_capital';
+const capIn = document.getElementById('cap');
+const onlyChk = document.getElementById('caponly');
+function applyCap(){
+  const man = parseFloat(capIn.value) || 0;
+  const cap = man * 10000;
+  localStorage.setItem(CAP_KEY, capIn.value || '');
+  document.querySelectorAll('details.drow').forEach(r => {
+    const cost = parseFloat(r.dataset.cost);
+    const over = cap > 0 && cost > cap;
+    r.classList.toggle('over', over);
+    r.classList.toggle('caphidden', over && onlyChk.checked);
+  });
+  document.querySelectorAll('details.gsec').forEach(g => {
+    const visible = g.querySelectorAll('details.drow:not(.caphidden)').length;
+    g.classList.toggle('caphidden', visible === 0);
+  });
+}
+if (capIn){
+  capIn.value = localStorage.getItem(CAP_KEY) || '';
+  capIn.addEventListener('input', applyCap);
+  onlyChk.addEventListener('change', applyCap);
+  applyCap();
+}
+</script>'''
 
 
 def render_html(data):
@@ -677,12 +797,12 @@ def render_html(data):
                 range1y = (f'<div class="fact"><span>1年の値段の範囲</span>'
                            f'<span class="num">{yen(s["low1y"])} 〜 {yen(s["high1y"])}円</span></div>')
             rows_html.append(f"""
-      <details class="drow">
+      <details class="drow" data-cost="{s["close"] * 100:.0f}">
       <summary class="row">
         <div class="rk num">{i}</div>
         <div class="nm">
           <div class="n1">{html.escape(s["name"])} <span class="chip {chip}">{html.escape(s["market"])}</span>{new_mark}</div>
-          <div class="n2 num">{s["code"]} ・ 普段 {yen(s["usual"])}円 ・ 総合{s["rank"]}位</div>
+          <div class="n2 num">{s["code"]} ・ 100株 {s["close"] / 100:,.1f}万円 ・ 総合{s["rank"]}位<span class="nofund">資金不足</span></div>
         </div>
         <div class="px">
           <div class="p1 num"><small>{price_label}</small> {yen(s["close"])}<small>円</small></div>
@@ -693,6 +813,7 @@ def render_html(data):
       </summary>
       <div class="notebox">
         {latest_block(s)}
+        <div class="fact"><span>100株の必要資金</span><span class="num">{s["close"] / 100:,.1f}万円</span></div>
         <div class="fact"><span>普段の値段（20日平均）</span><span class="num">{yen(s["usual"])}円</span></div>
         <div class="fact"><span>直近の高値（20日）</span><span class="num">{yen(s["high20"])}円</span></div>
         <div class="fact"><span>高値からの下げ</span><span class="num drop">−{yen(s["drop_yen"])}円（−{s["drop_pct"]:.1f}%）</span></div>
@@ -801,6 +922,19 @@ def render_html(data):
   .gchev{{display:inline-block; color:#c9bd9d; font-weight:700; margin-left:4px;
     transition:transform .15s;}}
   details.gsec[open] .gchev{{transform:rotate(90deg);}}
+  .capcard{{background:#fff; border-radius:12px; padding:11px 14px; margin-bottom:12px;
+    box-shadow:0 1px 3px rgba(0,0,0,.05);}}
+  .caprow{{font-size:13px; font-weight:700; display:flex; align-items:center; gap:6px; flex-wrap:wrap;}}
+  .capin{{width:70px; font-size:15px; font-weight:700; padding:5px 8px;
+    border:1.5px solid #d9d2bf; border-radius:8px; background:#fff; text-align:right;}}
+  .caponly{{font-size:11.5px; font-weight:600; color:var(--ink2); margin-left:auto;
+    display:flex; align-items:center; gap:4px;}}
+  .capnote{{font-size:10.5px; color:var(--ink3); line-height:1.6; margin-top:6px;}}
+  .nofund{{display:none; color:#fff; background:#b06a00; font-size:9px; font-weight:800;
+    border-radius:4px; padding:1px 4px; margin-left:6px; vertical-align:1px;}}
+  details.drow.over summary.row{{opacity:.45;}}
+  details.drow.over .nofund{{display:inline;}}
+  .caphidden{{display:none !important;}}
 </style>
 </head>
 <body>
@@ -823,6 +957,13 @@ def render_html(data):
     <div class="step" style="color:#8a5a17;">基準は毎回の実行時点の設定で、この文章も自動で追随します。個々の銘柄の判定理由は「全銘柄の判定一覧」で確認できます。</div>
   </div>
 </details>
+<div class="capcard">
+  <div class="caprow">持ち金 <input id="cap" class="capin num" type="number" inputmode="numeric"
+    placeholder="50"> 万円
+    <label class="caponly"><input id="caponly" type="checkbox"> 買える銘柄だけ表示</label></div>
+  <div class="capnote">この端末にだけ保存されます。設定すると持ち金で買えない銘柄が薄く表示され、
+  検証レポートの「持ち金別シミュレーション」とも連動します。</div>
+</div>
 <div class="ledger">
 {body_rows}
 </div>
@@ -831,9 +972,10 @@ def render_html(data):
   ◎=直近{data["config"]["RECENT_DAYS"]}日高値から{data["config"]["CHEAP_PCT"]:.0f}%以上安い ・ ○={data["config"]["MILD_PCT"]:.0f}%以上安い<br>
   データ: Yahoo Finance ・ このページは判断材料の表示のみ
 </footer>
+__CAPJS__
 </body>
 </html>
-"""
+""".replace("__CAPJS__", CAP_JS)
 
 
 # ------------------------------------------------------------
@@ -886,7 +1028,7 @@ __SCRIPT__
 """
 
 
-def render_backtest(sim_records, dt):
+def render_backtest(sim_records, dt, portfolio=None):
     """「◎で買って+5000円で売る」仮想実行の検証レポートページ"""
     closed, open_pos = [], []
     for rec in sim_records:
@@ -911,7 +1053,27 @@ def render_backtest(sim_records, dt):
         sign = "+" if v >= 0 else "−"
         return f"{sign}{abs(v):,.0f}円"
 
-    body = ['<div class="card"><h2>この1年、手法をそのまま機械的に続けていたら</h2>']
+    body = []
+    if portfolio:
+        body.append('<div class="card"><h2>持ち金別・現実シミュレーション（この1年）</h2>')
+        body.append('<div class="capset">あなたの持ち金 <input id="cap" class="capin num" type="number" '
+                    'inputmode="numeric" placeholder="50"> 万円（この端末にだけ保存）</div>')
+        for p in portfolio:
+            label = "無制限（参考）" if p["budget"] is None else f'{int(p["budget"]/10000)}万円'
+            bid = "inf" if p["budget"] is None else str(p["budget"])
+            cls = "plus" if p["unrealized"] >= 0 else "minus"
+            sign = "+" if p["unrealized"] >= 0 else "−"
+            body.append(
+                f'<div class="tier" data-budget="{bid}">'
+                f'<div class="tname num">{label}</div>'
+                f'<div class="tfacts num">確定 <b class="plus">+{p["realized"]:,.0f}円</b>（{p["wins"]}勝）'
+                f' ／ 資金不足で見送り {p["skipped"]:,}回'
+                f' ／ 持ち越し{p["open_count"]}件 <b class="{cls}">{sign}{abs(p["unrealized"]):,.0f}円</b>'
+                f' ／ 最大同時{p["max_positions"]}銘柄</div></div>')
+        body.append('<div class="tiernote">持ち金を増やすと「見送り」が減って確定益が伸びる一方、'
+                    '持ち越しの含み損も増えます。次の段の伸び幅が小さければ、まだ増額の必要はない、'
+                    'という読み方ができます。</div></div>')
+    body.append('<div class="card"><h2>参考: 資金無制限で全シグナルを拾った場合の内訳</h2>')
     body.append(f'<div class="fact"><span>買いに入った回数</span><span class="v num">{n_all:,}回</span></div>')
     body.append(f'<div class="fact"><span>+5,000円で売れた回数</span><span class="v num">{n_closed:,}回（{win_rate:.0f}%）</span></div>')
     body.append(f'<div class="fact"><span>確定した利益の合計</span><span class="v num plus">{yen2(total_realized)}</span></div>')
@@ -942,13 +1104,45 @@ def render_backtest(sim_records, dt):
     footnote = ("この検証は「いまの対象銘柄」の過去1年をなぞった簡易計算です。手数料・税金は含みません。"
                 "買値は翌営業日の始値、売りは+50円/株に到達した日に成立と仮定。同時に何銘柄でも買える前提のため、"
                 "実際の資金では全部は買えません。傾向を掴む道具としてお使いください。")
+    extra_css = """
+  .capset{font-size:12px; color:var(--ink2); padding:2px 0 10px;}
+  .capin{width:70px; font-size:14px; font-weight:700; padding:5px 8px;
+    border:1.5px solid #d9d2bf; border-radius:8px; background:#fff; text-align:right;}
+  .tier{padding:8px 10px; border-radius:10px; margin-bottom:6px; background:#fff;}
+  .tier.me{outline:2px solid var(--cheap); background:var(--cheap-bg);}
+  .tier.me .tname::after{content:" ← いまのあなた"; color:var(--cheap); font-size:10.5px;}
+  .tname{font-size:13px; font-weight:800;}
+  .tfacts{font-size:11px; color:var(--ink2); margin-top:3px; line-height:1.6;}
+  .tiernote{font-size:11px; color:#8a5a17; line-height:1.7; padding-top:8px;}
+"""
+    script = """<script>
+const CAP_KEY = 'kabuobaa_capital';
+const capIn = document.getElementById('cap');
+function applyTier(){
+  const man = parseFloat(capIn.value) || 0;
+  const cap = man * 10000;
+  localStorage.setItem(CAP_KEY, capIn.value || '');
+  const tiers = Array.from(document.querySelectorAll('.tier'));
+  tiers.forEach(t => t.classList.remove('me'));
+  if (cap > 0){
+    const fit = tiers.filter(t => t.dataset.budget !== 'inf' && Number(t.dataset.budget) <= cap).pop()
+             || tiers[0];
+    if (fit) fit.classList.add('me');
+  }
+}
+if (capIn){
+  capIn.value = localStorage.getItem(CAP_KEY) || '';
+  capIn.addEventListener('input', applyTier);
+  applyTier();
+}
+</script>"""
     return (SUBPAGE_TEMPLATE
             .replace("__TITLE__", "手法の検証レポート")
             .replace("__SUBTITLE__", subtitle)
             .replace("__BODY__", "\n".join(body))
             .replace("__FOOTNOTE__", footnote)
-            .replace("__EXTRA_CSS__", "")
-            .replace("__SCRIPT__", ""))
+            .replace("__EXTRA_CSS__", extra_css)
+            .replace("__SCRIPT__", script))
 
 
 STATUS_DEF = {
@@ -1353,9 +1547,9 @@ def main():
 
     if args.demo:
         print("デモモード: ダミーデータでページを生成します")
-        picked, stats, all_results, sim_records = make_demo_data()
+        picked, stats, all_results, sim_records, portfolio = make_demo_data()
     else:
-        picked, stats, all_results, sim_records = run_screening()
+        picked, stats, all_results, sim_records, portfolio = run_screening()
 
     data = build_output(picked, stats)
 
@@ -1378,7 +1572,7 @@ def main():
     (DOCS / "universe.html").write_text(
         render_universe(all_results, stats, dt_now), encoding="utf-8")
     (DOCS / "backtest.html").write_text(
-        render_backtest(sim_records, dt_now), encoding="utf-8")
+        render_backtest(sim_records, dt_now, portfolio), encoding="utf-8")
 
     print(f"完了: {len(data['stocks'])}銘柄を選定 "
           f"(除外 {stats.get('dead_excluded', 0)}銘柄) → docs/index.html"
