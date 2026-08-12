@@ -32,12 +32,30 @@
   .plus{color:#2e7d32;} .minus{color:var(--cheap);}
   .note{font-size:11px; color:var(--ink3); line-height:1.7; padding:8px 4px;}
   
+  .capset{font-size:12px; color:var(--ink2); padding:2px 0 10px;}
+  .capin{width:70px; font-size:14px; font-weight:700; padding:5px 8px;
+    border:1.5px solid #d9d2bf; border-radius:8px; background:#fff; text-align:right;}
+  .tier{padding:8px 10px; border-radius:10px; margin-bottom:6px; background:#fff;}
+  .tier.me{outline:2px solid var(--cheap); background:var(--cheap-bg);}
+  .tier.me .tname::after{content:" ← いまのあなた"; color:var(--cheap); font-size:10.5px;}
+  .tname{font-size:13px; font-weight:800;}
+  .tfacts{font-size:11px; color:var(--ink2); margin-top:3px; line-height:1.6;}
+  .tiernote{font-size:11px; color:#8a5a17; line-height:1.7; padding-top:8px;}
+
 </style>
 </head>
 <body>
 <a class="back" href="index.html">‹ 帳簿にもどる</a>
 <header><div class="t">手法の検証レポート</div><div class="s">8/13（木）時点 ・ 過去1年の日足で仮想実行 ・ ルール: ◎（20日高値から5%安）になったら翌日の始値で100株買い → +5,000円の指値で売る</div></header>
-<div class="card"><h2>この1年、手法をそのまま機械的に続けていたら</h2>
+<div class="card"><h2>持ち金別・現実シミュレーション（この1年）</h2>
+<div class="capset">あなたの持ち金 <input id="cap" class="capin num" type="number" inputmode="numeric" placeholder="50"> 万円（この端末にだけ保存）</div>
+<div class="tier" data-budget="300000"><div class="tname num">30万円</div><div class="tfacts num">確定 <b class="plus">+110,000円</b>（22勝） ／ 資金不足で見送り 135,449回 ／ 持ち越し13件 <b class="minus">−600円</b> ／ 最大同時13銘柄</div></div>
+<div class="tier" data-budget="500000"><div class="tname num">50万円</div><div class="tfacts num">確定 <b class="plus">+185,000円</b>（37勝） ／ 資金不足で見送り 134,568回 ／ 持ち越し18件 <b class="minus">−300円</b> ／ 最大同時18銘柄</div></div>
+<div class="tier" data-budget="1000000"><div class="tname num">100万円</div><div class="tfacts num">確定 <b class="plus">+545,000円</b>（109勝） ／ 資金不足で見送り 132,902回 ／ 持ち越し30件 <b class="minus">−43,267円</b> ／ 最大同時32銘柄</div></div>
+<div class="tier" data-budget="2000000"><div class="tname num">200万円</div><div class="tfacts num">確定 <b class="plus">+1,175,000円</b>（235勝） ／ 資金不足で見送り 130,547回 ／ 持ち越し45件 <b class="minus">−82,540円</b> ／ 最大同時51銘柄</div></div>
+<div class="tier" data-budget="inf"><div class="tname num">無制限（参考）</div><div class="tfacts num">確定 <b class="plus">+80,540,000円</b>（16108勝） ／ 資金不足で見送り 0回 ／ 持ち越し989件 <b class="minus">−47,921,658円</b> ／ 最大同時1275銘柄</div></div>
+<div class="tiernote">持ち金を増やすと「見送り」が減って確定益が伸びる一方、持ち越しの含み損も増えます。次の段の伸び幅が小さければ、まだ増額の必要はない、という読み方ができます。</div></div>
+<div class="card"><h2>参考: 資金無制限で全シグナルを拾った場合の内訳</h2>
 <div class="fact"><span>買いに入った回数</span><span class="v num">17,992回</span></div>
 <div class="fact"><span>+5,000円で売れた回数</span><span class="v num">17,084回（95%）</span></div>
 <div class="fact"><span>確定した利益の合計</span><span class="v num plus">+85,420,000円</span></div>
@@ -77,6 +95,26 @@
 <div class="fact"><span>ＴＯＴＯ <span class="num">5332</span>（07/10買い・21日経過）</span><span class="v num minus">−164,900円</span></div>
 </div>
 <div class="note">この検証は「いまの対象銘柄」の過去1年をなぞった簡易計算です。手数料・税金は含みません。買値は翌営業日の始値、売りは+50円/株に到達した日に成立と仮定。同時に何銘柄でも買える前提のため、実際の資金では全部は買えません。傾向を掴む道具としてお使いください。</div>
-
+<script>
+const CAP_KEY = 'kabuobaa_capital';
+const capIn = document.getElementById('cap');
+function applyTier(){
+  const man = parseFloat(capIn.value) || 0;
+  const cap = man * 10000;
+  localStorage.setItem(CAP_KEY, capIn.value || '');
+  const tiers = Array.from(document.querySelectorAll('.tier'));
+  tiers.forEach(t => t.classList.remove('me'));
+  if (cap > 0){
+    const fit = tiers.filter(t => t.dataset.budget !== 'inf' && Number(t.dataset.budget) <= cap).pop()
+             || tiers[0];
+    if (fit) fit.classList.add('me');
+  }
+}
+if (capIn){
+  capIn.value = localStorage.getItem(CAP_KEY) || '';
+  capIn.addEventListener('input', applyTier);
+  applyTier();
+}
+</script>
 </body>
 </html>
