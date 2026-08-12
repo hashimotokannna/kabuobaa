@@ -601,11 +601,77 @@ def compute_long_metrics(days_full):
     return out
 
 
+def measure_factor_lift(days_full, days1y, factor_stats):
+    """この銘柄の過去1年の全買いシグナルについて、シグナル時点の要因と
+    その後の結果（40営業日以内に+TP_PCT%到達=勝ち）を集計に加算する"""
+    n = CONFIG["RECENT_DAYS"]
+    if len(days1y) < n + 10:
+        return
+    closes_f = [d["close"] for d in days_full]
+    offset = len(days_full) - len(days1y)
+    # 50/200日移動平均（累積和で高速化）
+    prefix = [0.0]
+    for c in closes_f:
+        prefix.append(prefix[-1] + c)
+
+    def sma(fi, w):
+        if fi + 1 < w:
+            return None
+        return (prefix[fi + 1] - prefix[fi + 1 - w]) / w
+
+    # RSI(14) を全期間ぶん前計算
+    rsi_arr = [None] * len(closes_f)
+    gains = losses = 0.0
+    for i in range(1, len(closes_f)):
+        ch = closes_f[i] - closes_f[i - 1]
+        gains += max(ch, 0)
+        losses += max(-ch, 0)
+        if i > 14:
+            ch_old = closes_f[i - 14] - closes_f[i - 15]
+            gains -= max(ch_old, 0)
+            losses -= max(-ch_old, 0)
+        if i >= 14:
+            rsi_arr[i] = 100 - 100 / (1 + gains / losses) if losses > 0 else 100.0
+
+    opens = [d["open"] for d in days1y]
+    highs = [d["high"] for d in days1y]
+    closes = [d["close"] for d in days1y]
+    tp = 1 + CONFIG["TP_PCT"] / 100
+    for i in range(n, len(days1y) - 2):
+        h20 = max(highs[i - n + 1:i + 1])
+        c = closes[i]
+        if h20 <= 0 or c < CONFIG["MIN_PRICE"]:
+            continue
+        if (h20 - c) / h20 * 100 < CONFIG["CHEAP_PCT"]:
+            continue
+        buy = opens[i + 1]
+        horizon = highs[i + 1:i + 1 + 40]
+        win = bool(horizon) and max(horizon) >= buy * tp
+
+        fi = offset + i
+        s50, s200 = sma(fi, 50), sma(fi, 200)
+        facts = {}
+        if s50 is not None and s200 is not None:
+            facts["gc"] = s50 > s200
+        if rsi_arr[fi] is not None:
+            facts["rsi"] = rsi_arr[fi] <= 40
+        # じわ下げ: 直近10日に1日-4%超の急落がない
+        worst = min((closes[j] - closes[j - 1]) / closes[j - 1] * 100
+                    for j in range(max(1, i - 9), i + 1))
+        facts["gradual"] = worst > -4.0
+
+        for key, val in facts.items():
+            bucket = factor_stats[key]["with" if val else "without"]
+            bucket[0] += 1
+            if win:
+                bucket[1] += 1
+
+
 # ------------------------------------------------------------
 # 仮想実行: 「◎になったら翌日の始値で100株買い、+5000円の指値で売る」
 # を過去1年の日足でなぞる（検証レポート用）
 # ------------------------------------------------------------
-SL_VARIANTS = [None, 5.0, 8.0, 12.0]  # 検証レポートで比較する損切り%（None=損切りなし）
+SL_VARIANTS = [None, 3.0, 5.0, 8.0, 10.0, 15.0]  # 検証レポートで比較する損切り%（None=なし）
 
 
 def simulate_variants(days, variants=None):
@@ -762,6 +828,45 @@ def fetch_tdnet(session, code, days_back=30, limit=3):
         return []
 
 
+def fetch_fundamentals(session, codes):
+    """PER/PBR/時価総額/配当利回りをまとめて取得。取得不可なら空dict（表示側で非表示）"""
+    out = {}
+    headers = {"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)"}
+    for i in range(0, len(codes), 20):
+        batch = codes[i:i + 20]
+        symbols = ",".join(f"{c}.T" for c in batch)
+        try:
+            resp = session.get(
+                "https://query1.finance.yahoo.com/v7/finance/quote",
+                params={"symbols": symbols,
+                        "fields": "trailingPE,priceToBook,marketCap,"
+                                  "trailingAnnualDividendYield,epsTrailingTwelveMonths"},
+                headers=headers, timeout=20)
+            if resp.status_code != 200:
+                continue
+            for q in (resp.json().get("quoteResponse", {}).get("result") or []):
+                code = (q.get("symbol") or "").replace(".T", "")
+                per = q.get("trailingPE")
+                pbr = q.get("priceToBook")
+                mcap = q.get("marketCap")
+                dy = q.get("trailingAnnualDividendYield")
+                entry = {}
+                if per is not None:
+                    entry["per"] = round(per, 1)
+                if pbr is not None:
+                    entry["pbr"] = round(pbr, 2)
+                if mcap:
+                    entry["mcap_oku"] = round(mcap / 100_000_000)
+                if dy is not None:
+                    entry["div_yield"] = round(dy * 100, 2)
+                if entry:
+                    out[code] = entry
+        except Exception:  # noqa: BLE001
+            continue
+        time.sleep(0.5)
+    return out
+
+
 # ------------------------------------------------------------
 # 4. スクリーニング本体
 # ------------------------------------------------------------
@@ -802,6 +907,8 @@ def run_screening():
     all_results, sim_records, sim_universe = [], [], []
     slagg = {v: {"sl": v, "tp_count": 0, "sl_count": 0, "realized": 0.0,
                  "open": 0, "open_pnl": 0.0} for v in SL_VARIANTS}
+    factor_stats = {k: {"with": [0, 0], "without": [0, 0]}
+                    for k in ("gc", "rsi", "gradual")}
     done = 0
     with ThreadPoolExecutor(max_workers=CONFIG["WORKERS"]) as pool:
         futures = [pool.submit(task, s) for s in universe]
@@ -830,6 +937,7 @@ def run_screening():
                 skip_count += 1
                 all_results.append({**base, "status": "skip", "reason": reason})
                 continue
+            measure_factor_lift(days_full, days, factor_stats)
             var_trades = simulate_variants(days)
             trades = var_trades[None]
             candidates.append({**stock, **m, "days": days[-10:],
@@ -884,13 +992,25 @@ def run_screening():
     portfolio = simulate_portfolio(sim_universe)
     slstats = [slagg[v] for v in SL_VARIANTS]
 
-    print("TDnet適時開示の見出しを取得中...")
+    # 地合い（日経平均の200日線と直近20日の変化）
+    market = None
+    mkt_days = fetch_daily(session, "^N225", "")
+    if mkt_days and len(mkt_days) >= 210:
+        mc = [d["close"] for d in mkt_days]
+        ma200 = sum(mc[-200:]) / 200
+        market = {"above200": mc[-1] > ma200,
+                  "chg20": round((mc[-1] / mc[-21] - 1) * 100, 1)}
+
+    print("TDnet適時開示とファンダメンタル指標を取得中...")
     import requests as _rq
     td_session = _rq.Session()
+    fundamentals = fetch_fundamentals(td_session, [s["code"] for s in picked])
     for s in picked:
         s["disclosures"] = fetch_tdnet(td_session, s["code"])
+        s["fund"] = fundamentals.get(s["code"])
         time.sleep(0.25)
-    return picked, stats, all_results, sim_records, portfolio, slstats
+    extras = {"factor_stats": factor_stats, "market": market}
+    return picked, stats, all_results, sim_records, portfolio, slstats, extras
 
 
 # ------------------------------------------------------------
@@ -1002,6 +1122,10 @@ def make_demo_data():
             s["long"]["w_bottom"] = {"neck": round(close * 1.02, 1)}
         if rng.random() < 0.2:
             s["long"]["climax"] = {"date": "2026-08-08"}
+        s["fund"] = {"per": round(rng.uniform(6, 35), 1),
+                     "pbr": round(rng.uniform(0.5, 4.0), 2),
+                     "mcap_oku": rng.randint(80, 40000),
+                     "div_yield": round(rng.uniform(0, 4.5), 2)}
         s["vol_ratio"] = rng.uniform(0.5, 3.5)
         s["cheap_streak"] = rng.randint(0, 6)
         s["prev_change"] = rng.uniform(-4, 2)
@@ -1051,14 +1175,26 @@ def make_demo_data():
     slstats = [
         {"sl": None, "tp_count": 610, "sl_count": 0, "realized": 4200000,
          "open": 180, "open_pnl": -2900000},
+        {"sl": 3.0, "tp_count": 420, "sl_count": 380, "realized": 1150000,
+         "open": 40, "open_pnl": -260000},
         {"sl": 5.0, "tp_count": 480, "sl_count": 260, "realized": 1900000,
          "open": 60, "open_pnl": -420000},
         {"sl": 8.0, "tp_count": 540, "sl_count": 150, "realized": 2600000,
          "open": 85, "open_pnl": -700000},
-        {"sl": 12.0, "tp_count": 575, "sl_count": 80, "realized": 3200000,
-         "open": 120, "open_pnl": -1500000},
+        {"sl": 10.0, "tp_count": 560, "sl_count": 110, "realized": 2900000,
+         "open": 100, "open_pnl": -1050000},
+        {"sl": 15.0, "tp_count": 585, "sl_count": 55, "realized": 3400000,
+         "open": 140, "open_pnl": -2000000},
     ]
-    return picked, stats, all_results, sim_records, portfolio, slstats
+    extras = {
+        "factor_stats": {
+            "gc": {"with": [420, 260], "without": [380, 170]},
+            "rsi": {"with": [310, 195], "without": [490, 235]},
+            "gradual": {"with": [520, 320], "without": [280, 110]},
+        },
+        "market": {"above200": True, "chg20": 2.4},
+    }
+    return picked, stats, all_results, sim_records, portfolio, slstats, extras
 
 
 # ------------------------------------------------------------
@@ -1105,6 +1241,7 @@ def build_output(picked, stats):
             "reasons": s.get("reasons", []),
             "comment": make_comment(s),
             "disclosures": s.get("disclosures", []),
+            "fund": s.get("fund"),
             "long": {k: v for k, v in (s.get("long") or {}).items() if k != "spark"},
             "spark": (s.get("long") or {}).get("spark", []),
             "cost": round(s["close"] * 100),
@@ -1274,6 +1411,14 @@ if (capIn){
   allChk.addEventListener('change', applyCap);
   applyCap();
 }
+
+function openSBI(code, e){
+  if (e){ e.preventDefault(); e.stopPropagation(); }
+  const go = () => { location.href = 'shortcuts://run-shortcut?name=' + encodeURIComponent('SBIへ'); };
+  if (navigator.clipboard && navigator.clipboard.writeText){
+    navigator.clipboard.writeText(code).then(go).catch(go);
+  } else { go(); }
+}
 </script>'''
 
 
@@ -1293,6 +1438,17 @@ def render_html(data):
     cfg = data["config"]
     universe = stats.get("universe", 0)
     excluded = stats.get("dead_excluded", 0)
+    mkt = data.get("market")
+    if mkt:
+        if mkt["above200"]:
+            market_banner = (f'<div class="mkt ok">地合い: 上昇基調（日経平均が200日線の上・'
+                             f'直近20日 {mkt["chg20"]:+.1f}%）</div>')
+        else:
+            market_banner = (f'<div class="mkt ng">地合い警戒: 日経平均が200日線の下（直近20日 '
+                             f'{mkt["chg20"]:+.1f}%）。全体が下落基調の間は、押し目買いの成功率が'
+                             f'下がります。買いは普段より慎重に</div>')
+    else:
+        market_banner = ""
 
     def latest_block(s):
         days = s.get("days", [])
@@ -1336,6 +1492,28 @@ def render_html(data):
                        f'<span class="num">{yen(s["low1y"])} 〜 {yen(s["high1y"])}円</span></div>')
         reasons_html = "".join(
             f'<div class="reason">・{html.escape(r)}</div>' for r in s.get("reasons", []))
+        fund_html = ""
+        fu = s.get("fund")
+        if fu:
+            frows = []
+            if fu.get("per") is not None:
+                tag = ("割安圏" if fu["per"] < 10 else "標準的" if fu["per"] <= 20 else "割高圏")
+                frows.append(f'<div class="fact"><span>PER（株価収益率）</span>'
+                             f'<span class="num">{fu["per"]:.1f}倍 <small>{tag}</small></span></div>')
+            if fu.get("pbr") is not None:
+                tag = ("解散価値割れ" if fu["pbr"] < 1 else "標準的" if fu["pbr"] <= 3 else "割高圏")
+                frows.append(f'<div class="fact"><span>PBR（株価純資産倍率）</span>'
+                             f'<span class="num">{fu["pbr"]:.2f}倍 <small>{tag}</small></span></div>')
+            if fu.get("div_yield") is not None:
+                frows.append(f'<div class="fact"><span>配当利回り（実績）</span>'
+                             f'<span class="num">{fu["div_yield"]:.2f}%</span></div>')
+            if fu.get("mcap_oku"):
+                frows.append(f'<div class="fact"><span>時価総額</span>'
+                             f'<span class="num">{fu["mcap_oku"]:,}億円</span></div>')
+            if frows:
+                fund_html = ('<div class="nhead">ファンダメンタル指標</div>' + "".join(frows)
+                             + '<div class="discnote">読み方は「使い方」ページ参照。低PER・低PBRには'
+                               '業績悪化を織り込んだ「割安の罠」もあるため、単独では判断しないこと。</div>')
         tech_html = ""
         svg = spark_svg(s.get("spark"), s.get("long"))
         if svg:
@@ -1375,6 +1553,7 @@ def render_html(data):
         <div class="nhead">選ばれた根拠（スコア {s["score"]:.0f}点）</div>
         {reasons_html}
         {tech_html}
+        {fund_html}
         {disc_html}
         {latest_block(s)}
         <div class="fact"><span>100株の必要資金</span><span class="num">{s["cost"] / 10000:,.1f}万円</span></div>
@@ -1384,7 +1563,10 @@ def render_html(data):
         {range1y}
         <div class="nhead">ノート（新しい順）</div>
         {day_rows(s)}
-        <a class="ylink" href="{yahoo_url}" target="_blank" rel="noopener">Yahoo!ファイナンスでこの銘柄の詳細を見る →</a>
+        <div class="linkrow">
+          <a class="ylink" href="{yahoo_url}" target="_blank" rel="noopener">Yahoo!ファイナンス →</a>
+          <button class="ylink sbi" onclick="openSBI('{s["code"]}', event)">SBI証券アプリで見る</button>
+        </div>
       </div>
       </details>""")
 
@@ -1462,8 +1644,11 @@ def render_html(data):
   .nhead{{font-size:10.5px; font-weight:800; color:#7a6a45; letter-spacing:.06em; margin:12px 0 4px;}}
   .nrow{{display:flex; gap:10px; font-size:11.5px; padding:4px 0;}}
   .nrow .nd{{width:58px; font-weight:700; flex:none;}}
-  .ylink{{display:block; margin-top:12px; font-size:12px; font-weight:700; color:#2e4d7b;
-    text-decoration:none; text-align:center; background:#eef2f8; border-radius:9px; padding:9px;}}
+  .linkrow{{display:flex; gap:8px; margin-top:12px;}}
+  .ylink{{flex:1; display:block; font-size:12px; font-weight:700; color:#2e4d7b;
+    text-decoration:none; text-align:center; background:#eef2f8; border-radius:9px;
+    padding:9px; border:none; cursor:pointer;}}
+  .ylink.sbi{{color:#1a5c37; background:#e9f3ea;}}
 __NAVCSS__
   .pnav{{display:flex; gap:8px; padding:0 0 10px;}}
   .pnav a{{flex:1; font-size:12px; font-weight:700; color:#4a3f28; text-decoration:none;
@@ -1509,6 +1694,10 @@ __NAVCSS__
   .disc .num{{color:var(--ink2); font-weight:700; margin-right:4px;}}
   .discnote{{font-size:10px; color:var(--ink3); line-height:1.6; padding:5px 0 2px;}}
   .spark{{margin:4px 0 2px;}}
+  .mkt{{font-size:11.5px; font-weight:700; border-radius:10px; padding:9px 12px;
+    margin-bottom:10px; line-height:1.6;}}
+  .mkt.ok{{background:#e9f3ea; color:#3a5a40;}}
+  .mkt.ng{{background:var(--mild-bg); color:#8a5a17;}}
 </style>
 </head>
 <body>
@@ -1517,6 +1706,7 @@ __NAVCSS__
   <div class="s">{date_str} {dt.hour:02d}:{dt.minute:02d} 記帳{"（取引時間中・当日分は途中経過）" if is_intraday else ""} ・ 根拠スコア順 ・ タップで根拠とノート ・ 判断はご自身で</div>
 </header>
 __NAV__
+{market_banner}
 <details class="crit">
   <summary>この厳選{cfg["TOP_N"]}銘柄の選定基準（タップで開閉）<span class="chev">›</span></summary>
   <div class="critbody">
@@ -1629,7 +1819,7 @@ __SCRIPT__
 """
 
 
-def render_backtest(sim_records, dt, portfolio=None, slstats=None):
+def render_backtest(sim_records, dt, portfolio=None, slstats=None, factor_stats=None):
     """「◎で買って+5000円で売る」仮想実行の検証レポートページ"""
     closed, open_pos = [], []
     for rec in sim_records:
@@ -1675,23 +1865,56 @@ def render_backtest(sim_records, dt, portfolio=None, slstats=None):
                     '持ち越しの含み損も増えます。次の段の伸び幅が小さければ、まだ増額の必要はない、'
                     'という読み方ができます。</div></div>')
     if slstats:
+        totals = [a["realized"] + a["open_pnl"] for a in slstats]
+        best_i = max(range(len(slstats)), key=lambda i: totals[i])
+        max_abs = max(abs(t) for t in totals) or 1
         body.append('<div class="card"><h2>損切りルールの効果比較（利確+'
                     f'{CONFIG["TP_PCT"]:.0f}%共通・資金無制限）</h2>')
-        for a in slstats:
+        for idx, a in enumerate(slstats):
             label = "損切りなし（おばあさん流）" if a["sl"] is None else f'損切り −{a["sl"]:.0f}%'
             key = "none" if a["sl"] is None else f'{a["sl"]:.0f}'
-            total = a["realized"] + a["open_pnl"]
+            total = totals[idx]
+            closed_n = a["tp_count"] + a["sl_count"]
+            winrate = a["tp_count"] / closed_n * 100 if closed_n else 0
             tcls = "plus" if total >= 0 else "minus"
             tsign = "+" if total >= 0 else "−"
             osign = "+" if a["open_pnl"] >= 0 else "−"
+            barw = abs(total) / max_abs * 100
+            barcls = "barp" if total >= 0 else "barm"
+            best = '<span class="best">★ この1年の最適</span>' if idx == best_i else ""
             body.append(
                 f'<div class="tier" data-sl="{key}">'
-                f'<div class="tname">{label}</div>'
-                f'<div class="tfacts num">トータル <b class="{tcls}">{tsign}{abs(total):,.0f}円</b>'
-                f' ／ 利確 {a["tp_count"]:,}回 ・ 損切り {a["sl_count"]:,}回（確定損益 計 {a["realized"]:+,.0f}円）'
-                f' ／ 持ち越し {a["open"]:,}件 {osign}{abs(a["open_pnl"]):,.0f}円</div></div>')
-        body.append('<div class="tiernote">損切りは「塩漬け（持ち越しの含み損）」を小さな確定損に置き換える保険です。'
-                    'トータル損益で比べて、自分の損切り%を決めてください。あなたの設定（持ち株管理で入力した%）に印が付きます。</div></div>')
+                f'<div class="tname">{label}{best}</div>'
+                f'<div class="barwrap"><div class="{barcls}" style="width:{barw:.0f}%"></div>'
+                f'<span class="barv num {tcls}">{tsign}{abs(total):,.0f}円</span></div>'
+                f'<div class="tfacts num">勝率{winrate:.0f}%（利確{a["tp_count"]:,}・損切り{a["sl_count"]:,}）'
+                f' ／ 持ち越し{a["open"]:,}件 {osign}{abs(a["open_pnl"]):,.0f}円</div></div>')
+        body.append('<div class="tiernote">棒の長さ＝トータル損益（確定+含み）。★が過去1年での最適設定です。'
+                    'ただし過去1年に最適だった数字が来年も最適とは限らないため、★と自分の設定（印付き）が'
+                    '大きくズレていないかを確認する使い方が健全です。</div></div>')
+
+    if factor_stats:
+        labels = {"gc": "ゴールデンクロス中（50日線＞200日線）",
+                  "rsi": "RSI(14)が40以下（売られすぎ）",
+                  "gradual": "じわ下げ（直近に1日4%超の急落なし）"}
+        body.append('<div class="card"><h2>どの根拠が本当に効いているか（この1年の全買いシグナル実測）</h2>')
+        for key, label in labels.items():
+            f = factor_stats.get(key)
+            if not f:
+                continue
+            wn, ww = f["with"]
+            on, ow = f["without"]
+            wr = ww / wn * 100 if wn else 0
+            orate = ow / on * 100 if on else 0
+            diff = wr - orate
+            cls = "plus" if diff >= 0 else "minus"
+            body.append(
+                f'<div class="fact"><span>{label}</span>'
+                f'<span class="v num">勝率 {wr:.0f}% vs 非該当 {orate:.0f}%'
+                f'（<b class="{cls}">{diff:+.0f}pt</b>・{wn:,}回中）</span></div>')
+        body.append('<div class="tiernote">「勝ち」＝買いシグナルの後40営業日以内に利確ライン到達。'
+                    '差がプラスの要因は採点で重視する価値があり、差が無い/マイナスの要因は配点を見直す根拠になります。'
+                    '毎晩の実行で更新される、採点ルール自身の成績表です。</div></div>')
     body.append('<div class="card"><h2>参考: 資金無制限で全シグナルを拾った場合の内訳</h2>')
     body.append(f'<div class="fact"><span>買いに入った回数</span><span class="v num">{n_all:,}回</span></div>')
     body.append(f'<div class="fact"><span>利確ライン（+{CONFIG["TP_PCT"]:.0f}%）で売れた回数</span><span class="v num">{n_closed:,}回（{win_rate:.0f}%）</span></div>')
@@ -1734,6 +1957,12 @@ def render_backtest(sim_records, dt, portfolio=None, slstats=None):
   .tname{font-size:13px; font-weight:800;}
   .tfacts{font-size:11px; color:var(--ink2); margin-top:3px; line-height:1.6;}
   .tiernote{font-size:11px; color:#8a5a17; line-height:1.7; padding-top:8px;}
+  .best{color:#c62f2f; font-size:10.5px; margin-left:8px;}
+  .barwrap{position:relative; background:#f0ead9; border-radius:6px; height:18px;
+    margin:4px 0 2px; overflow:hidden;}
+  .barp{height:100%; background:#7fae86; border-radius:6px;}
+  .barm{height:100%; background:#d98c8c; border-radius:6px;}
+  .barv{position:absolute; right:8px; top:1.5px; font-size:11px; font-weight:800;}
 """
     script = """<script>
 const CAP_KEY = 'kabuobaa_capital';
@@ -2107,6 +2336,28 @@ def render_guide(dt):
 <div class="gtext">持ち金・売りルール・★お気に入り・持ち株・合言葉の記憶は、<b>すべて閲覧している端末の中にだけ</b>保存されます。
 公開されているのは銘柄と株価という公開情報のみ。iPhoneとMacで設定は共有されないため、端末ごとに入力してください。</div></div>
 
+<div class="card"><h2>指標の読み方（最低限これだけ）</h2>
+<div class="gstep"><b>PER（株価収益率）</b> 株価が「1年分の利益の何年分か」。目安は10倍未満=割安圏・10〜20倍=標準・20倍超=割高圏（成長期待が高いほど高くなる）。
+<b>注意:</b> 業績悪化で利益が減ると見かけのPERは上がり、逆に一時的な特別利益で下がることもある。業種によって水準が大きく違うので、同業と比べるのが基本</div>
+<div class="gstep"><b>PBR（株価純資産倍率）</b> 株価が「会社の純資産の何倍か」。1倍未満は理論上「会社を解散した方が高い」水準で割安のサインだが、
+<b>低いまま放置される「割安の罠」</b>も多い（稼ぐ力がない・資産の質が悪い等）。1倍割れ+業績健全なら注目、が正しい使い方</div>
+<div class="gstep"><b>配当利回り（実績）</b> 株価に対する年間配当の割合。3〜4%は高配当の部類。株価下落で見かけの利回りが上がっている場合は減配リスクに注意</div>
+<div class="gstep"><b>RSI(14)</b> 直近14日の値動きの過熱感。30以下=売られすぎ（反発しやすい）、70以上=買われすぎ。下落トレンド中は30以下が続くこともある</div>
+<div class="gstep"><b>ゴールデンクロス</b> 50日平均線が200日平均線の上にある状態。長期の上昇形で、「上昇トレンド中の押し目」を拾うこの手法と相性が良い</div>
+<div class="gstep"><b>長期支持帯とタッチ回数</b> 過去に何度も反発した価格帯。定石は「〜3回目の試しまでは支持されやすく、4回目以降は割れやすい」。
+帯を明確に割ったら支持帯は無効（このシステムは自動で除外・警告します）</div>
+<div class="gstep"><b>地合いバナー</b> 帳簿上部の表示。日経平均が200日線の下にある間は市場全体が下落基調で、
+個別銘柄の押し目買いの成功率も下がる。慎重モードの合図です</div></div>
+
+<div class="card"><h2>SBI証券アプリ連携の初期設定（1回だけ・30秒）</h2>
+<div class="gstep"><b>1.</b> iPhoneの「ショートカット」アプリ（紫のアイコン・標準搭載）を開く</div>
+<div class="gstep"><b>2.</b> 右上の「＋」→「アクションを追加」→検索欄に「Appを開く」と入力して選択</div>
+<div class="gstep"><b>3.</b> 薄い字の「App」をタップ →「SBI証券 株」を選択</div>
+<div class="gstep"><b>4.</b> 上部の名前を「<b>SBIへ</b>」に変更（この名前が合言葉になります。一字一句この通りに）→ 完了</div>
+<div class="gstep">以後、帳簿の銘柄内の「SBI証券アプリで見る」を押すと、銘柄コードが自動でコピーされた状態で
+SBIアプリが起動します。SBIアプリの銘柄検索に<b>長押し→ペースト</b>すれば表示完了。
+※SBIアプリは外部から銘柄画面へ直接飛ぶ入口を公開していないため、これが最短の動線です</div></div>
+
 <div class="card"><h2>更新タイミングとよくある質問</h2>
 <div class="gstep"><b>いつ更新される？</b> 平日9:40〜14:40の毎時（取引時間中の途中経過）、15:45（大引け後）、
 20:30（夜の確定記帳・銘柄入れ替えの基準）。実行に10〜20分かかるため、表示は最大1時間ほど前の値です</div>
@@ -2409,11 +2660,12 @@ def main():
 
     if args.demo:
         print("デモモード: ダミーデータでページを生成します")
-        picked, stats, all_results, sim_records, portfolio, slstats = make_demo_data()
+        picked, stats, all_results, sim_records, portfolio, slstats, extras = make_demo_data()
     else:
-        picked, stats, all_results, sim_records, portfolio, slstats = run_screening()
+        picked, stats, all_results, sim_records, portfolio, slstats, extras = run_screening()
 
     data = build_output(picked, stats)
+    data["market"] = extras.get("market")
 
     DOCS.mkdir(exist_ok=True)
     (DOCS / ".nojekyll").write_text("", encoding="utf-8")
@@ -2434,7 +2686,8 @@ def main():
     (DOCS / "universe.html").write_text(
         render_universe(all_results, stats, dt_now), encoding="utf-8")
     (DOCS / "backtest.html").write_text(
-        render_backtest(sim_records, dt_now, portfolio, slstats), encoding="utf-8")
+        render_backtest(sim_records, dt_now, portfolio, slstats,
+                        extras.get("factor_stats")), encoding="utf-8")
     (DOCS / "holdings.html").write_text(render_holdings(dt_now), encoding="utf-8")
     (DOCS / "guide.html").write_text(render_guide(dt_now), encoding="utf-8")
 
