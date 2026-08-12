@@ -55,6 +55,11 @@ CONFIG = {
     "DEAD_DRAWDOWN": 0.40,       # 1年高値からの下落率がこれ以上 → 除外
     "DEAD_BELOW_MA_RATIO": 0.90, # 直近60営業日のうちこの割合以上で200日平均線を下回る → 除外
 
+    # 「下げの質」による除外（落ちるナイフ・荒れ銘柄を拾わないため）
+    "KNIFE_DROP_1D": 8.0,        # 直近10日に1日でこの%以上の急落 → 除外（材料落ちの疑い）
+    "MAX_VOL20": 4.5,            # 直近20日の日次変動の標準偏差がこの%以上 → 除外（値動きが荒すぎ）
+    "MIN_POS_1Y": 0.12,          # 1年の値幅の下から12%未満の位置 → 除外（安値圏を更新中）
+
     # 通信
     "WORKERS": 6,            # 同時に取得する並列数（上げすぎるとブロックされる）
     "THROTTLE_SEC": 0.1,     # 各作業員が1銘柄ごとに入れる待ち時間（礼儀）
@@ -278,6 +283,31 @@ def compute_metrics(days):
 
     turnover = sum(d["close"] * d["volume"] for d in days[-n:]) / len(recent)
 
+    # 下げの質: 日次リターン・ギャップ・変動の荒さ・1年レンジ内の位置・下げ止まり
+    import statistics
+    rets10, rets20 = [], []
+    for i in range(max(1, len(days) - 20), len(days)):
+        pc = days[i - 1]["close"]
+        if pc > 0:
+            r = (days[i]["close"] - pc) / pc * 100
+            rets20.append(r)
+            if i >= len(days) - 10:
+                rets10.append(r)
+    worst_1d = min(rets10) if rets10 else 0.0
+    vol20 = statistics.pstdev(rets20) if len(rets20) >= 5 else 0.0
+    pos1y = ((latest["close"] - low1y) / (high1y - low1y)
+             if high1y > low1y else 0.5)
+    # 下げの集中度: 20日の下げ幅のうち最悪の1日が占める割合（1に近いほど崩落型）
+    worst20 = abs(min(rets20)) if rets20 else 0.0
+    concentration = min(worst20 / drop_pct, 1.0) if drop_pct > 0.5 else 0.0
+    # 下げ止まりの兆し: 直近日が前日終値以上、または安値を切り上げ
+    stabilizing = (len(days) >= 3 and
+                   (days[-1]["close"] >= days[-2]["close"] or
+                    days[-1]["low"] >= days[-2]["low"]))
+    ma200_above = None
+    if len(closes) >= 200:
+        ma200_above = latest["close"] > sum(closes[-200:]) / 200
+
     return {
         "open": latest["open"], "high": latest["high"],
         "low": latest["low"], "close": latest["close"],
@@ -288,6 +318,9 @@ def compute_metrics(days):
         "below_ma_ratio": below_ratio,
         "turnover": turnover,
         "records": len(days),
+        "worst_1d": worst_1d, "vol20": vol20, "pos1y": pos1y,
+        "concentration": concentration, "stabilizing": stabilizing,
+        "ma200_above": ma200_above,
     }
 
 
@@ -304,6 +337,14 @@ def classify(metrics):
         return "dead", f"1年高値から{metrics['drawdown_1y']*100:.0f}%下落"
     if metrics["below_ma_ratio"] >= c["DEAD_BELOW_MA_RATIO"]:
         return "dead", "長期の下落トレンド継続中"
+    if metrics["worst_1d"] <= -c["KNIFE_DROP_1D"]:
+        return "dead", f"直近10日に1日で{abs(metrics['worst_1d']):.0f}%の急落あり（材料落ちの疑い）"
+    if metrics["vol20"] >= c["MAX_VOL20"]:
+        return "dead", f"日々の値動きが±{metrics['vol20']:.1f}%と荒すぎる"
+    if metrics["pos1y"] <= c["MIN_POS_1Y"]:
+        return "dead", "1年の安値圏を更新中（下げ止まり前）"
+    if not metrics["stabilizing"]:
+        return "dead", "下げ止まり未確認（前日から安値を切り下げ中）"
     return "ok", ""
 
 
@@ -333,58 +374,80 @@ def score_stock(s):
     reasons = []
     score = 0.0
 
-    # 1. いま安いか（主基準）
-    pt = s["drop_pct"] * 10
+    # 1. いま安いか（主基準だが、深すぎる下げは加点を頭打ちに）
+    capped = min(s["drop_pct"], 8.0)
+    pt = capped * 8
     score += pt
-    reasons.append(f"直近20日高値から −{s['drop_pct']:.1f}%（安さの主基準 +{pt:.0f}点）")
+    reasons.append(f"直近20日高値から −{s['drop_pct']:.1f}%（安さの主基準 +{pt:.0f}点・8%で頭打ち）")
     if s.get("usual"):
         vs = (s["usual"] - s["close"]) / s["usual"] * 100
         if vs > 0:
-            pt = min(vs * 5, 25)
+            pt = min(vs * 4, 20)
             score += pt
             reasons.append(f"普段の値段（20日平均）より {vs:.1f}%安い（+{pt:.0f}点）")
 
-    # 2. この銘柄で手法が効いてきた実績
+    # 2. 下げの「質」: じわ下げ か 崩落か
+    conc = s.get("concentration", 0)
+    if conc < 0.45:
+        score += 15
+        reasons.append("下げが複数日に分散した「じわ下げ」で、1日の急落で作られた安さではない（+15点）")
+    elif conc < 0.7:
+        score += 5
+        reasons.append("下げはやや急だが崩落型ではない（+5点）")
+    else:
+        reasons.append("下げの大半が特定の1日に集中（急落型・加点なし）")
+    vol = s.get("vol20", 0)
+    if 0 < vol <= 2.5:
+        score += 10
+        reasons.append(f"日々の値動きが±{vol:.1f}%と穏やかで読みやすい（+10点）")
+
+    # 3. トレンドの地合い: 上昇トレンド中の押し目が理想形
+    if s.get("ma200_above"):
+        score += 20
+        reasons.append("200日平均線より上での下げ＝上昇トレンド中の一時的な押し目（+20点）")
+    dd = s["drawdown_1y"] * 100
+    if dd <= 15:
+        score += 12
+        reasons.append(f"1年高値からの下落 −{dd:.0f}% で長期トレンド健全（+12点）")
+    elif dd <= 25:
+        score += 6
+        reasons.append(f"1年高値からの下落 −{dd:.0f}%（+6点）")
+    pos = s.get("pos1y")
+    if pos is not None and 0.25 <= pos <= 0.65:
+        score += 10
+        reasons.append(f"1年の値幅の中腹（下から{pos*100:.0f}%）での下げ。底抜けでも高値掴みでもない位置（+10点）")
+
+    # 4. この銘柄で手法が効いてきた実績（株価が高いほど+50円は簡単なので割り引く）
     t = s.get("sim") or {}
     wins = t.get("wins", 0)
+    req_pct = 50.0 / s["close"] * 100 if s["close"] > 0 else 0
     if wins > 0:
-        pt = min(wins, 10) * 6
-        score += pt
-        reasons.append(f"過去1年、同じ買い方で {wins}回 +5,000円に到達（+{pt:.0f}点）")
+        base_pt = min(wins, 10) * 5
+        if req_pct < 0.8:
+            base_pt *= 0.5
+            note = "（値がさ株で+50円は小幅のため半分に割引）"
+        else:
+            note = ""
+        score += base_pt
+        reasons.append(f"過去1年、同じ買い方で {wins}回 +5,000円に到達{note}（+{base_pt:.0f}点）")
         ah = t.get("avg_held")
         if ah is not None and ah <= 10:
-            score += 15
-            reasons.append(f"+5,000円まで平均 {ah:.0f}営業日と回転が速い（+15点）")
-        elif ah is not None and ah <= 20:
-            score += 8
-            reasons.append(f"+5,000円まで平均 {ah:.0f}営業日（+8点）")
+            score += 10
+            reasons.append(f"+5,000円まで平均 {ah:.0f}営業日と回転が速い（+10点）")
     else:
         reasons.append("過去1年はこの買い方の成立実績なし（加点なし）")
     if t.get("open_loss"):
         score -= 15
         reasons.append("ただし直近の仮想買いが塩漬け中（−15点）")
 
-    # 3. 長期トレンドの健全さ
-    dd = s["drawdown_1y"] * 100
-    if dd <= 15:
-        score += 15
-        reasons.append(f"1年高値からの下落 −{dd:.0f}% で長期トレンド健全（+15点）")
-    elif dd <= 25:
-        score += 8
-        reasons.append(f"1年高値からの下落 −{dd:.0f}%（+8点）")
-    else:
-        reasons.append(f"1年高値から −{dd:.0f}%。除外基準（{int(CONFIG['DEAD_DRAWDOWN']*100)}%）内だが深め（加点なし）")
-
-    # 4. 売り買いのしやすさ
+    # 5. 売り買いのしやすさ
     tv = s.get("turnover", 0)
     if tv >= 1_000_000_000:
-        score += 15
-        reasons.append(f"1日平均 {tv/100_000_000:.0f}億円の売買があり注文が通りやすい（+15点）")
+        score += 12
+        reasons.append(f"1日平均 {tv/100_000_000:.0f}億円の売買があり注文が通りやすい（+12点）")
     elif tv >= 100_000_000:
-        score += 8
-        reasons.append(f"1日平均 {tv/100_000_000:.1f}億円の売買（+8点）")
-    else:
-        reasons.append("売買代金は最低ライン付近。約定しづらい可能性（加点なし）")
+        score += 6
+        reasons.append(f"1日平均 {tv/100_000_000:.1f}億円の売買（+6点）")
 
     return score, reasons
 
@@ -667,6 +730,12 @@ def make_demo_data():
         s["sim"] = {"wins": rng.randint(0, 9),
                     "avg_held": rng.uniform(4, 28),
                     "open_loss": rng.random() < 0.3}
+        s["worst_1d"] = rng.uniform(-6, -1)
+        s["vol20"] = rng.uniform(0.8, 3.5)
+        s["pos1y"] = rng.uniform(0.2, 0.7)
+        s["concentration"] = rng.uniform(0.1, 0.8)
+        s["stabilizing"] = True
+        s["ma200_above"] = rng.random() < 0.6
         s["score"], s["reasons"] = score_stock(s)
     picked.sort(key=lambda s: s["score"], reverse=True)
     stats = {"universe": 3912, "dead_excluded": 214, "skipped": 1480, "failed": 3}
@@ -771,6 +840,7 @@ def build_output(picked, stats):
         "config": {k: CONFIG[k] for k in
                    ("TOP_N", "SHORTLIST_N", "RECENT_DAYS", "CHEAP_PCT", "MILD_PCT",
                     "DEAD_DRAWDOWN", "DEAD_BELOW_MA_RATIO",
+                    "KNIFE_DROP_1D", "MAX_VOL20", "MIN_POS_1Y",
                     "MIN_RECORDS", "MIN_PRICE", "MIN_TURNOVER")},
         "stocks": stocks_out,
     }
@@ -1044,8 +1114,8 @@ def render_html(data):
   <div class="critbody">
     <div class="step"><b>1. 対象</b> 東証プライム・スタンダード・グロースの全銘柄（{universe:,}銘柄）</div>
     <div class="step"><b>2. 土俵に上げない</b> 上場から日足{cfg["MIN_RECORDS"]}日未満 ／ 株価{cfg["MIN_PRICE"]}円未満 ／ 直近{cfg["RECENT_DAYS"]}日の平均売買代金{int(cfg["MIN_TURNOVER"]/10000):,}万円未満（売りたい時に売れない銘柄を避ける）</div>
-    <div class="step"><b>3. 「終わった株」を除外</b> 1年高値から{int(cfg["DEAD_DRAWDOWN"]*100)}%以上下落 、または直近60営業日の{int(cfg["DEAD_BELOW_MA_RATIO"]*100)}%以上で200日平均線割れ（ピーク価格から下がり続けている銘柄。本日{excluded:,}銘柄）</div>
-    <div class="step"><b>4. 根拠スコアで採点</b> 残った銘柄を「いまの安さ（20日高値からの下落率・普段との差）」「過去1年でこの買い方が+5,000円を取れた実績と速さ」「長期トレンドの健全さ」「売買のしやすさ」の4観点で採点し、上位{cfg["SHORTLIST_N"]}銘柄を候補に</div>
+    <div class="step"><b>3. 危ない下げ方を除外</b> ①1年高値から{int(cfg["DEAD_DRAWDOWN"]*100)}%以上下落・長期の下落トレンド継続（終わった株） ②直近10日に1日{cfg["KNIFE_DROP_1D"]:.0f}%超の急落（決算ミス等の材料落ち=落ちるナイフ） ③日々の値動きが±{cfg["MAX_VOL20"]:.1f}%超の荒い銘柄 ④1年安値圏を更新中 ⑤下げ止まり未確認（前日から安値切り下げ中）——本日計{excluded:,}銘柄を除外</div>
+    <div class="step"><b>4. 根拠スコアで採点</b> 残った銘柄を「いまの安さ」「下げの質（じわ下げか急落か・値動きの穏やかさ）」「トレンドの地合い（200日線の上の押し目か・1年レンジ内の位置）」「過去1年でこの買い方が+5,000円を取れた実績（値がさ株は割引）」「売買のしやすさ」の5観点で採点し、上位{cfg["SHORTLIST_N"]}銘柄を候補に</div>
     <div class="step"><b>5. 厳選{cfg["TOP_N"]}銘柄</b> 候補のうち、持ち金設定があれば「100株買える銘柄」だけを対象に、スコア上位{cfg["TOP_N"]}銘柄を表示。各銘柄の点数の内訳はタップで確認できます</div>
     <div class="step"><b>6. 目安ラベル</b> ◎=高値から{cfg["CHEAP_PCT"]:.0f}%以上安い ／ ○={cfg["MILD_PCT"]:.0f}%以上安い ／ 「普段の値段」={cfg["RECENT_DAYS"]}日の終値平均</div>
     <div class="step" style="color:#8a5a17;">基準は毎回の実行時点の設定で、この文章も自動で追随します。個々の銘柄の判定理由は「全銘柄の判定一覧」で確認できます。</div>
@@ -1062,7 +1132,7 @@ def render_html(data):
 {body_rows}
 </div>
 <footer>
-  対象 {universe:,}銘柄 ／ 右肩下がりのため除外 {excluded:,}銘柄<br>
+  対象 {universe:,}銘柄 ／ 右肩下がり・急落直後・荒い値動き等で除外 {excluded:,}銘柄<br>
   ◎=直近{data["config"]["RECENT_DAYS"]}日高値から{data["config"]["CHEAP_PCT"]:.0f}%以上安い ・ ○={data["config"]["MILD_PCT"]:.0f}%以上安い<br>
   データ: Yahoo Finance ・ このページは判断材料の表示のみ
 </footer>
@@ -1242,7 +1312,7 @@ if (capIn){
 STATUS_DEF = {
     "picked": ("候補", "#fdeeee", "#c62f2f", "根拠スコア上位の厳選候補（帳簿に表示）"),
     "bench":  ("圏外", "#eef0f4", "#4b4f57", "対象内だがスコアが候補圏に届かず"),
-    "dead":   ("除外", "#efe6f5", "#6b4487", "終わった株ルールで除外"),
+    "dead":   ("除外", "#efe6f5", "#6b4487", "終わった株・急落直後・荒い値動き・下げ止まり未確認で除外"),
     "skip":   ("対象外", "#fdf3e3", "#b06a00", "土俵に上げない条件に該当"),
     "fail":   ("失敗", "#e8e8e8", "#666", "データ取得失敗"),
 }
@@ -1359,8 +1429,9 @@ document.getElementById('q').addEventListener('input', apply);
             + "".join(chips)
             + '<div class="list">' + "\n".join(rows) + "</div>")
     footnote = ("「対象外」は上場間もない・株価100円未満・売買代金が少ない、のいずれか。"
-                "「除外」は1年高値から40%以上下落、または長期の下落トレンド継続（ピクセラ型）。"
-                "判定は毎回の実行で更新されます。")
+                "「除外」は終わった株（1年高値から大幅下落・長期下落トレンド）に加え、"
+                "直近の急落（落ちるナイフ）・荒すぎる値動き・1年安値圏更新中・下げ止まり未確認を含みます。"
+                "各行に個別の理由を表示。判定は毎回の実行で更新されます。")
     return (SUBPAGE_TEMPLATE
             .replace("__TITLE__", "全銘柄の判定一覧")
             .replace("__SUBTITLE__", subtitle)
