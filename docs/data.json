@@ -1,5 +1,5 @@
 {
- "generated_at": "2026-08-13T02:35:33.613823+09:00",
+ "generated_at": "2026-08-13T02:40:32.354737+09:00",
  "date_label": "8/13",
  "stats": {
   "universe": 3754,
@@ -12202,7 +12202,7 @@
    ],
    "cost": 641000,
    "level": "cheap",
-   "is_new": true,
+   "is_new": false,
    "days": [
     {
      "date": "2026-08-12",
@@ -12936,7 +12936,7 @@
    ],
    "cost": 237900,
    "level": "cheap",
-   "is_new": true,
+   "is_new": false,
    "days": [
     {
      "date": "2026-08-12",
@@ -15078,7 +15078,7 @@
    ],
    "cost": 66900,
    "level": "cheap",
-   "is_new": true,
+   "is_new": false,
    "days": [
     {
      "date": "2026-08-12",
@@ -18689,7 +18689,7 @@
    ],
    "cost": 84200,
    "level": "cheap",
-   "is_new": true,
+   "is_new": false,
    "days": [
     {
      "date": "2026-08-12",
@@ -21140,7 +21140,7 @@
    ],
    "cost": 345500,
    "level": "cheap",
-   "is_new": true,
+   "is_new": false,
    "days": [
     {
      "date": "2026-08-12",
@@ -22558,7 +22558,7 @@
    ],
    "cost": 853200,
    "level": "cheap",
-   "is_new": true,
+   "is_new": false,
    "days": [
     {
      "date": "2026-08-12",
@@ -23279,7 +23279,7 @@
    ],
    "cost": 158300,
    "level": "cheap",
-   "is_new": true,
+   "is_new": false,
    "days": [
     {
      "date": "2026-08-12",
@@ -24009,7 +24009,7 @@
    ],
    "cost": 491300,
    "level": "cheap",
-   "is_new": true,
+   "is_new": false,
    "days": [
     {
      "date": "2026-08-12",
@@ -26890,7 +26890,7 @@
    ],
    "cost": 164800,
    "level": "cheap",
-   "is_new": true,
+   "is_new": false,
    "days": [
     {
      "date": "2026-08-12",
@@ -27612,7 +27612,7 @@
    ],
    "cost": 769300,
    "level": "cheap",
-   "is_new": true,
+   "is_new": false,
    "days": [
     {
      "date": "2026-08-12",
