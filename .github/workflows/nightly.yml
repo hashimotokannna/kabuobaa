@@ -1,0 +1,35 @@
+name: nightly-screener
+
+on:
+  schedule:
+    # 平日 JST 20:30 (= UTC 11:30) に実行
+    - cron: "30 11 * * 1-5"
+  workflow_dispatch: {}   # 手動実行ボタンも有効化
+
+permissions:
+  contents: write
+
+jobs:
+  screen:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: 依存パッケージをインストール
+        run: pip install -r requirements.txt
+
+      - name: スクリーニング実行
+        run: python screener.py
+
+      - name: 結果をコミット
+        run: |
+          git config user.name "kabuobaa-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add docs/
+          git diff --cached --quiet || git commit -m "夜間記帳 $(date +'%Y-%m-%d')"
+          git push
