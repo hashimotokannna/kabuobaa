@@ -172,6 +172,28 @@ def fetch_daily(session, code, suffix=".T"):
             dedup = {}
             for day in days:
                 dedup[day["date"]] = day
+
+            # 当日分の補完:
+            # 長期レンジの日足配列は最新営業日の反映が遅れることがある。
+            # 同じ応答のmeta（Yahooサイトの画面と同じ「現在の気配」）から
+            # 最新営業日の四本値を拾い、日足配列に無ければ追加する。
+            meta = result.get("meta") or {}
+            mtime = meta.get("regularMarketTime")
+            mclose = meta.get("regularMarketPrice")
+            if mtime and mclose is not None:
+                mdate = datetime.fromtimestamp(mtime, JST).date().isoformat()
+                if mdate not in dedup:
+                    mopen = meta.get("regularMarketOpen")
+                    mhigh = meta.get("regularMarketDayHigh")
+                    mlow = meta.get("regularMarketDayLow")
+                    dedup[mdate] = {
+                        "date": mdate,
+                        "open": mopen if mopen is not None else mclose,
+                        "high": mhigh if mhigh is not None else mclose,
+                        "low": mlow if mlow is not None else mclose,
+                        "close": mclose,
+                        "volume": meta.get("regularMarketVolume") or 0,
+                    }
             return [dedup[k] for k in sorted(dedup)]
         except Exception as e:  # noqa: BLE001
             last_err = e
