@@ -3,389 +3,68 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="robots" content="noindex, nofollow">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="default">
-<title>Kabuobaa - 今夜の24銘柄</title>
+<link rel="apple-touch-icon" href="icon.png">
+<link rel="icon" type="image/png" href="icon.png">
+<title>Kabuobaa</title>
 <style>
-  :root{
-    --ink:#1c1c1e; --ink2:#6e6e73; --ink3:#aeaeb2;
-    --paper:#faf6ec; --paper-line:#e7e0cf;
-    --bg:#f2f2f7; --line:#e5e5ea;
-    --cheap:#c62f2f; --cheap-bg:#fdeeee;
-    --mild:#b06a00; --mild-bg:#fdf3e3;
-  }
   *{box-sizing:border-box; margin:0; padding:0;}
-  body{
-    font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Noto Sans JP",sans-serif;
-    background:var(--bg); color:var(--ink);
-    max-width:560px; margin:0 auto; padding:14px 12px 40px;
-  }
-  .num{font-family:ui-monospace,"SF Mono",Menlo,monospace; font-variant-numeric:tabular-nums;}
-  header{padding:6px 4px 12px;}
-  header .t{font-size:22px; font-weight:800;}
-  header .s{font-size:12px; color:var(--ink2); margin-top:3px;}
-  .ledger{background:var(--paper); border-radius:14px; padding:4px 0;
-    box-shadow:0 1px 3px rgba(0,0,0,.06);}
-  .sec{font-size:12px; font-weight:800; color:#7a6a45; letter-spacing:.06em;
-    padding:14px 14px 6px; display:flex; justify-content:space-between; align-items:baseline;}
-  .sec .cnt{font-weight:600; color:#a99a76; font-size:10.5px;}
-  .row{display:flex; align-items:center; gap:9px; padding:9px 14px;
-    border-top:1px solid var(--paper-line); text-decoration:none; color:inherit;}
-  .rk{width:22px; font-size:12px; color:#a99a76; font-weight:700; text-align:right; flex:none;}
-  .nm{flex:1; min-width:0;}
-  .n1{font-size:13.5px; font-weight:700; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
-  .n2{font-size:10.5px; color:var(--ink2); margin-top:2px;}
-  .px{text-align:right; flex:none;}
-  .p1{font-size:14.5px; font-weight:700;}
-  .p1 small{font-size:10px; font-weight:600; color:var(--ink2);}
-  .p2{font-size:10.5px; margin-top:2px;}
-  .drop{color:var(--cheap); font-weight:700;}
-  .chip{display:inline-block; font-size:9.5px; font-weight:600; border-radius:5px;
-    padding:1.5px 5px; vertical-align:1px; margin-left:2px;}
-  .chip.prime{background:#e8eef8; color:#2e4d7b;}
-  .chip.std{background:#e9f3ea; color:#3a5a40;}
-  .chip.growth{background:#f4ecf9; color:#6b4487;}
-  .chip.local{background:#f7efe4; color:#8a5a17;}
-  .new{display:inline-block; font-size:9px; font-weight:800; color:#b06a00;
-    background:var(--mild-bg); border-radius:4px; padding:1px 4px; margin-left:4px; vertical-align:1px;}
-  .badge{font-size:12px; font-weight:800; border-radius:6px; padding:3px 7px; white-space:nowrap;}
-  .badge.cheap{color:var(--cheap); background:var(--cheap-bg);}
-  .badge.mild{color:var(--mild); background:var(--mild-bg);}
-  footer{padding:16px 8px; font-size:10.5px; color:var(--ink3); text-align:center; line-height:1.7;}
+  body{font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans",sans-serif;
+    background:#faf6ec; min-height:100vh; display:flex; align-items:center;
+    justify-content:center; padding:24px;}
+  .card{width:100%; max-width:320px; text-align:center;}
+  .mark{font-size:44px; font-weight:800; color:#1c1c1e;}
+  .mark span{color:#c62f2f;}
+  .msg{font-size:13px; color:#6e6e73; margin:10px 0 22px;}
+  input{width:100%; font-size:16px; padding:12px 14px; border:1.5px solid #d9d2bf;
+    border-radius:10px; background:#fff; text-align:center;}
+  input:focus{outline:none; border-color:#8a7a55;}
+  button{width:100%; margin-top:10px; font-size:15px; font-weight:700; color:#fff;
+    background:#1c1c1e; border:none; border-radius:10px; padding:12px;}
+  label{display:flex; align-items:center; justify-content:center; gap:6px;
+    font-size:12px; color:#6e6e73; margin-top:14px;}
+  .err{color:#c62f2f; font-size:12px; font-weight:700; margin-top:12px; min-height:16px;}
 </style>
 </head>
 <body>
-<header>
-  <div class="t">今夜の24銘柄</div>
-  <div class="s">8/12（水）の終値で記帳済み ・ 業種別 ・ 判断はご自身で</div>
-</header>
-<div class="ledger">
-<div class="sec">情報通信・サービス<span class="cnt">5銘柄</span></div>
-
-      <div class="row">
-        <div class="rk num">1</div>
-        <div class="nm">
-          <div class="n1">NTT <span class="chip prime">プライム</span></div>
-          <div class="n2 num">9432 ・ 普段 3,029円 ・ 総合1位</div>
-        </div>
-        <div class="px">
-          <div class="p1 num">2,970<small>円</small></div>
-          <div class="p2 num drop">高値から −9.2%</div>
-        </div>
-        <div><span class="badge cheap">◎</span></div>
-      </div>
-
-      <div class="row">
-        <div class="rk num">2</div>
-        <div class="nm">
-          <div class="n1">エムスリー <span class="chip prime">プライム</span></div>
-          <div class="n2 num">2413 ・ 普段 740円 ・ 総合2位</div>
-        </div>
-        <div class="px">
-          <div class="p1 num">735<small>円</small></div>
-          <div class="p2 num drop">高値から −8.5%</div>
-        </div>
-        <div><span class="badge cheap">◎</span></div>
-      </div>
-
-      <div class="row">
-        <div class="rk num">3</div>
-        <div class="nm">
-          <div class="n1">ジャパンM&amp;A <span class="chip growth">グロース</span></div>
-          <div class="n2 num">7095 ・ 普段 2,947円 ・ 総合4位</div>
-        </div>
-        <div class="px">
-          <div class="p1 num">2,880<small>円</small></div>
-          <div class="p2 num drop">高値から −8.2%</div>
-        </div>
-        <div><span class="badge cheap">◎</span></div>
-      </div>
-
-      <div class="row">
-        <div class="rk num">4</div>
-        <div class="nm">
-          <div class="n1">NTTデータG <span class="chip prime">プライム</span></div>
-          <div class="n2 num">9613 ・ 普段 3,070円 ・ 総合21位</div>
-        </div>
-        <div class="px">
-          <div class="p1 num">3,037<small>円</small></div>
-          <div class="p2 num drop">高値から −3.4%</div>
-        </div>
-        <div><span class="badge mild">○</span></div>
-      </div>
-
-      <div class="row">
-        <div class="rk num">5</div>
-        <div class="nm">
-          <div class="n1">ANYCOLOR <span class="chip growth">グロース</span></div>
-          <div class="n2 num">5032 ・ 普段 832円 ・ 総合24位</div>
-        </div>
-        <div class="px">
-          <div class="p1 num">810<small>円</small></div>
-          <div class="p2 num drop">高値から −2.9%</div>
-        </div>
-        <div></div>
-      </div>
-<div class="sec">電機・精密<span class="cnt">4銘柄</span></div>
-
-      <div class="row">
-        <div class="rk num">1</div>
-        <div class="nm">
-          <div class="n1">エレコム <span class="chip prime">プライム</span></div>
-          <div class="n2 num">6750 ・ 普段 9,380円 ・ 総合3位</div>
-        </div>
-        <div class="px">
-          <div class="p1 num">9,070<small>円</small></div>
-          <div class="p2 num drop">高値から −8.3%</div>
-        </div>
-        <div><span class="badge cheap">◎</span></div>
-      </div>
-
-      <div class="row">
-        <div class="rk num">2</div>
-        <div class="nm">
-          <div class="n1">ニデック <span class="chip prime">プライム</span></div>
-          <div class="n2 num">6594 ・ 普段 2,391円 ・ 総合7位</div>
-        </div>
-        <div class="px">
-          <div class="p1 num">2,347<small>円</small></div>
-          <div class="p2 num drop">高値から −6.7%</div>
-        </div>
-        <div><span class="badge cheap">◎</span></div>
-      </div>
-
-      <div class="row">
-        <div class="rk num">3</div>
-        <div class="nm">
-          <div class="n1">京セラ <span class="chip prime">プライム</span></div>
-          <div class="n2 num">6971 ・ 普段 2,347円 ・ 総合8位</div>
-        </div>
-        <div class="px">
-          <div class="p1 num">2,338<small>円</small></div>
-          <div class="p2 num drop">高値から −6.5%</div>
-        </div>
-        <div><span class="badge cheap">◎</span></div>
-      </div>
-
-      <div class="row">
-        <div class="rk num">4</div>
-        <div class="nm">
-          <div class="n1">SCREEN <span class="chip prime">プライム</span></div>
-          <div class="n2 num">7735 ・ 普段 1,529円 ・ 総合20位</div>
-        </div>
-        <div class="px">
-          <div class="p1 num">1,478<small>円</small></div>
-          <div class="p2 num drop">高値から −3.6%</div>
-        </div>
-        <div><span class="badge mild">○</span></div>
-      </div>
-<div class="sec">自動車・輸送機<span class="cnt">3銘柄</span></div>
-
-      <div class="row">
-        <div class="rk num">1</div>
-        <div class="nm">
-          <div class="n1">SUBARU <span class="chip prime">プライム</span></div>
-          <div class="n2 num">7270 ・ 普段 773円 ・ 総合6位</div>
-        </div>
-        <div class="px">
-          <div class="p1 num">745<small>円</small></div>
-          <div class="p2 num drop">高値から −7.8%</div>
-        </div>
-        <div><span class="badge cheap">◎</span></div>
-      </div>
-
-      <div class="row">
-        <div class="rk num">2</div>
-        <div class="nm">
-          <div class="n1">デンソー <span class="chip prime">プライム</span></div>
-          <div class="n2 num">6902 ・ 普段 813円 ・ 総合19位</div>
-        </div>
-        <div class="px">
-          <div class="p1 num">791<small>円</small></div>
-          <div class="p2 num drop">高値から −4.0%</div>
-        </div>
-        <div><span class="badge mild">○</span></div>
-      </div>
-
-      <div class="row">
-        <div class="rk num">3</div>
-        <div class="nm">
-          <div class="n1">トヨタ自動車 <span class="chip prime">プライム</span></div>
-          <div class="n2 num">7203 ・ 普段 10,267円 ・ 総合22位</div>
-        </div>
-        <div class="px">
-          <div class="p1 num">9,900<small>円</small></div>
-          <div class="p2 num drop">高値から −3.3%</div>
-        </div>
-        <div><span class="badge mild">○</span></div>
-      </div>
-<div class="sec">食品・小売<span class="cnt">3銘柄</span></div>
-
-      <div class="row">
-        <div class="rk num">1</div>
-        <div class="nm">
-          <div class="n1">ツルハHD <span class="chip prime">プライム</span></div>
-          <div class="n2 num">3391 ・ 普段 3,182円 ・ 総合9位</div>
-        </div>
-        <div class="px">
-          <div class="p1 num">3,077<small>円</small></div>
-          <div class="p2 num drop">高値から −6.2%</div>
-        </div>
-        <div><span class="badge cheap">◎</span></div>
-      </div>
-
-      <div class="row">
-        <div class="rk num">2</div>
-        <div class="nm">
-          <div class="n1">味の素 <span class="chip prime">プライム</span></div>
-          <div class="n2 num">2802 ・ 普段 1,473円 ・ 総合10位</div>
-        </div>
-        <div class="px">
-          <div class="p1 num">1,417<small>円</small></div>
-          <div class="p2 num drop">高値から −6.1%</div>
-        </div>
-        <div><span class="badge cheap">◎</span></div>
-      </div>
-
-      <div class="row">
-        <div class="rk num">3</div>
-        <div class="nm">
-          <div class="n1">ファーマフーズ <span class="chip std">スタンダード</span></div>
-          <div class="n2 num">2929 ・ 普段 827円 ・ 総合14位</div>
-        </div>
-        <div class="px">
-          <div class="p1 num">794<small>円</small></div>
-          <div class="p2 num drop">高値から −5.6%</div>
-        </div>
-        <div><span class="badge cheap">◎</span></div>
-      </div>
-<div class="sec">生活・その他製品<span class="cnt">3銘柄</span></div>
-
-      <div class="row">
-        <div class="rk num">1</div>
-        <div class="nm">
-          <div class="n1">ブリヂストン <span class="chip prime">プライム</span></div>
-          <div class="n2 num">5108 ・ 普段 2,418円 ・ 総合15位</div>
-        </div>
-        <div class="px">
-          <div class="p1 num">2,399<small>円</small></div>
-          <div class="p2 num drop">高値から −5.5%</div>
-        </div>
-        <div><span class="badge cheap">◎</span></div>
-      </div>
-
-      <div class="row">
-        <div class="rk num">2</div>
-        <div class="nm">
-          <div class="n1">SHOEI <span class="chip prime">プライム</span></div>
-          <div class="n2 num">7839 ・ 普段 1,461円 ・ 総合16位</div>
-        </div>
-        <div class="px">
-          <div class="p1 num">1,461<small>円</small></div>
-          <div class="p2 num drop">高値から −5.3%</div>
-        </div>
-        <div><span class="badge cheap">◎</span></div>
-      </div>
-
-      <div class="row">
-        <div class="rk num">3</div>
-        <div class="nm">
-          <div class="n1">王子HD <span class="chip prime">プライム</span></div>
-          <div class="n2 num">3861 ・ 普段 5,279円 ・ 総合23位</div>
-        </div>
-        <div class="px">
-          <div class="p1 num">5,143<small>円</small></div>
-          <div class="p2 num drop">高値から −2.9%</div>
-        </div>
-        <div></div>
-      </div>
-<div class="sec">化学・医薬<span class="cnt">2銘柄</span></div>
-
-      <div class="row">
-        <div class="rk num">1</div>
-        <div class="nm">
-          <div class="n1">信越化学工業 <span class="chip prime">プライム</span></div>
-          <div class="n2 num">4063 ・ 普段 780円 ・ 総合5位</div>
-        </div>
-        <div class="px">
-          <div class="p1 num">753<small>円</small></div>
-          <div class="p2 num drop">高値から −8.1%</div>
-        </div>
-        <div><span class="badge cheap">◎</span></div>
-      </div>
-
-      <div class="row">
-        <div class="rk num">2</div>
-        <div class="nm">
-          <div class="n1">中外製薬 <span class="chip prime">プライム</span></div>
-          <div class="n2 num">4519 ・ 普段 9,662円 ・ 総合13位</div>
-        </div>
-        <div class="px">
-          <div class="p1 num">9,387<small>円</small></div>
-          <div class="p2 num drop">高値から −5.7%</div>
-        </div>
-        <div><span class="badge cheap">◎</span></div>
-      </div>
-<div class="sec">運輸・卸売<span class="cnt">2銘柄</span></div>
-
-      <div class="row">
-        <div class="rk num">1</div>
-        <div class="nm">
-          <div class="n1">日本郵船 <span class="chip prime">プライム</span></div>
-          <div class="n2 num">9101 ・ 普段 9,971円 ・ 総合17位</div>
-        </div>
-        <div class="px">
-          <div class="p1 num">9,709<small>円</small></div>
-          <div class="p2 num drop">高値から −4.6%</div>
-        </div>
-        <div><span class="badge mild">○</span></div>
-      </div>
-
-      <div class="row">
-        <div class="rk num">2</div>
-        <div class="nm">
-          <div class="n1">神戸物産 <span class="chip prime">プライム</span></div>
-          <div class="n2 num">3038 ・ 普段 808円 ・ 総合18位</div>
-        </div>
-        <div class="px">
-          <div class="p1 num">771<small>円</small></div>
-          <div class="p2 num drop">高値から −4.5%</div>
-        </div>
-        <div><span class="badge mild">○</span></div>
-      </div>
-<div class="sec">建設・不動産<span class="cnt">1銘柄</span></div>
-
-      <div class="row">
-        <div class="rk num">1</div>
-        <div class="nm">
-          <div class="n1">積水ハウス <span class="chip prime">プライム</span></div>
-          <div class="n2 num">1928 ・ 普段 2,300円 ・ 総合11位</div>
-        </div>
-        <div class="px">
-          <div class="p1 num">2,273<small>円</small></div>
-          <div class="p2 num drop">高値から −5.9%</div>
-        </div>
-        <div><span class="badge cheap">◎</span></div>
-      </div>
-<div class="sec">金融<span class="cnt">1銘柄</span></div>
-
-      <div class="row">
-        <div class="rk num">1</div>
-        <div class="nm">
-          <div class="n1">三菱UFJ FG <span class="chip prime">プライム</span></div>
-          <div class="n2 num">8306 ・ 普段 9,480円 ・ 総合12位</div>
-        </div>
-        <div class="px">
-          <div class="p1 num">9,260<small>円</small></div>
-          <div class="p2 num drop">高値から −5.9%</div>
-        </div>
-        <div><span class="badge cheap">◎</span></div>
-      </div>
+<div class="card">
+  <div class="mark">株<span>◎</span></div>
+  <div class="msg">合言葉を入れてノートを開く</div>
+  <input id="pw" type="password" placeholder="パスワード" autocomplete="current-password">
+  <button onclick="go()">開く</button>
+  <label><input id="rem" type="checkbox" checked style="width:auto"> この端末では次回から自動で開く</label>
+  <div class="err" id="err"></div>
 </div>
-<footer>
-  対象 3,912銘柄 ／ 右肩下がりのため除外 214銘柄<br>
-  ◎=直近20日高値から5%以上安い ・ ○=3%以上安い<br>
-  データ: Yahoo Finance ・ このページは判断材料の表示のみ
-</footer>
+<script>
+const SALT="UEIQBhXKUSeGMlO9A40nAw==", IV="apxTc89TTOHeoD1O", CT="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", ITERS=310000;
+const b64 = s => Uint8Array.from(atob(s), c => c.charCodeAt(0));
+async function tryOpen(pw){
+  const enc = new TextEncoder();
+  const mat = await crypto.subtle.importKey("raw", enc.encode(pw), "PBKDF2", false, ["deriveKey"]);
+  const key = await crypto.subtle.deriveKey(
+    {name:"PBKDF2", salt:b64(SALT), iterations:ITERS, hash:"SHA-256"},
+    mat, {name:"AES-GCM", length:256}, false, ["decrypt"]);
+  const plain = await crypto.subtle.decrypt({name:"AES-GCM", iv:b64(IV)}, key, b64(CT));
+  document.open(); document.write(new TextDecoder().decode(plain)); document.close();
+}
+async function go(){
+  const pw = document.getElementById("pw").value;
+  const err = document.getElementById("err");
+  err.textContent = "";
+  try{
+    if(document.getElementById("rem").checked) localStorage.setItem("kabuobaa_pw", pw);
+    await tryOpen(pw);
+  }catch(e){
+    localStorage.removeItem("kabuobaa_pw");
+    err.textContent = "合言葉が違うようです";
+  }
+}
+document.getElementById("pw").addEventListener("keydown", e => { if(e.key === "Enter") go(); });
+(async () => {
+  const saved = localStorage.getItem("kabuobaa_pw");
+  if(saved){ try{ await tryOpen(saved); }catch(e){ localStorage.removeItem("kabuobaa_pw"); } }
+})();
+</script>
 </body>
 </html>
