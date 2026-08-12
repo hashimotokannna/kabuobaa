@@ -55,7 +55,8 @@ CONFIG = {
     "DEAD_BELOW_MA_RATIO": 0.90, # 直近60営業日のうちこの割合以上で200日平均線を下回る → 除外
 
     # 通信
-    "THROTTLE_SEC": 0.35,    # 1銘柄ごとの待ち時間（Yahoo様への礼儀）
+    "WORKERS": 6,            # 同時に取得する並列数（上げすぎるとブロックされる）
+    "THROTTLE_SEC": 0.1,     # 各作業員が1銘柄ごとに入れる待ち時間（礼儀）
     "RETRIES": 3,
 }
 
@@ -247,33 +248,60 @@ def level_of(drop_pct):
 # ------------------------------------------------------------
 # 4. スクリーニング本体
 # ------------------------------------------------------------
-def run_screening():
+_thread_local = None
+
+
+def _get_session():
+    """スレッドごとに専用の通信セッションを持たせる"""
+    global _thread_local
+    import threading
     import requests
+    if _thread_local is None:
+        _thread_local = threading.local()
+    if not hasattr(_thread_local, "session"):
+        _thread_local.session = requests.Session()
+    return _thread_local.session
+
+
+def run_screening():
+    from concurrent.futures import ThreadPoolExecutor, as_completed
 
     print("上場銘柄一覧を取得中...")
     universe = fetch_universe()
+
+    # テストモード: 環境変数 TEST_LIMIT に数字が入っていたら先頭N銘柄だけ
+    limit = int(os.environ.get("TEST_LIMIT", "0") or 0)
+    if limit > 0:
+        universe = universe[:limit]
+        print(f"  ★テストモード: 先頭{limit}銘柄のみで実行します")
     print(f"  対象: {len(universe)}銘柄")
 
-    session = requests.Session()
-    candidates, dead_count, skip_count, fail_count = [], 0, 0, 0
-
-    for i, stock in enumerate(universe, 1):
-        if i % 200 == 0:
-            print(f"  {i}/{len(universe)} 取得済み...")
-        days = fetch_daily(session, stock["code"], stock["suffix"])
+    def task(stock):
+        days = fetch_daily(_get_session(), stock["code"], stock["suffix"])
         time.sleep(CONFIG["THROTTLE_SEC"])
-        if not days:
-            fail_count += 1
-            continue
-        m = compute_metrics(days)
-        status, _reason = classify(m)
-        if status == "dead":
-            dead_count += 1
-            continue
-        if status == "skip":
-            skip_count += 1
-            continue
-        candidates.append({**stock, **m})
+        return stock, days
+
+    candidates, dead_count, skip_count, fail_count = [], 0, 0, 0
+    done = 0
+    with ThreadPoolExecutor(max_workers=CONFIG["WORKERS"]) as pool:
+        futures = [pool.submit(task, s) for s in universe]
+        for fut in as_completed(futures):
+            done += 1
+            if done % 200 == 0:
+                print(f"  {done}/{len(universe)} 取得済み...")
+            stock, days = fut.result()
+            if not days:
+                fail_count += 1
+                continue
+            m = compute_metrics(days)
+            status, _reason = classify(m)
+            if status == "dead":
+                dead_count += 1
+                continue
+            if status == "skip":
+                skip_count += 1
+                continue
+            candidates.append({**stock, **m})
 
     candidates.sort(key=lambda s: s["drop_pct"], reverse=True)
     picked = candidates[:CONFIG["TOP_N"]]
