@@ -929,19 +929,35 @@ def render_universe(all_results, stats, dt):
     chips.append("</div>")
     chips.append('<input id="q" class="search" type="search" placeholder="銘柄名・コードで検索">')
 
-    rows = []
-    for r in sorted(all_results, key=lambda x: x["code"]):
+    # 業種カテゴリでまとめる（メイン帳簿と同じ分類）
+    chip_class = {"プライム": "prime", "スタンダード": "std", "グロース": "growth"}
+    groups = {}
+    for r in all_results:
+        g = SECTOR_GROUPS.get(r.get("sector", ""), DEFAULT_GROUP)
+        groups.setdefault(g, []).append(r)
+    ordered_groups = sorted(groups.items(), key=lambda kv: len(kv[1]), reverse=True)
+
+    def row_html(r):
         label, bg, fg, _d = STATUS_DEF[r["status"]]
+        mchip = chip_class.get(r.get("market", ""), "local")
         close = f'{r["close"]:,.0f}円' if r.get("close") is not None else "−"
         drop = f'−{r["drop_pct"]:.1f}%' if r.get("drop_pct") is not None else ""
         reason = html.escape(r.get("reason") or "")
         reason_html = f'<span class="why">{reason}</span>' if reason else ""
-        rows.append(
+        return (
             f'<div class="urow" data-s="{r["status"]}" data-t="{html.escape(r["name"].lower())} {r["code"]}">'
             f'<span class="st" style="background:{bg}; color:{fg}">{label}</span>'
             f'<span class="un"><b>{html.escape(r["name"])}</b> '
-            f'<span class="num uc">{r["code"]}</span> ・ {html.escape(r.get("sector", ""))}{reason_html}</span>'
+            f'<span class="chip {mchip}">{html.escape(r.get("market", "") or "−")}</span> '
+            f'<span class="num uc">{r["code"]}</span>{reason_html}</span>'
             f'<span class="up num">{close}<small>{drop}</small></span></div>')
+
+    rows = []
+    for g, members in ordered_groups:
+        rows.append(f'<details class="gsec" open><summary class="gh">{html.escape(g)}'
+                    f'<span class="gcnt">{len(members):,}銘柄 <span class="gchev">›</span></span></summary>')
+        rows.extend(row_html(r) for r in sorted(members, key=lambda x: x["code"]))
+        rows.append("</details>")
 
     legend = "".join(
         f'<div class="fact"><span><span class="st" style="background:{bg}; color:{fg}">{label}</span></span>'
@@ -966,6 +982,19 @@ def render_universe(all_results, stats, dt):
   .up{flex:none; text-align:right; font-weight:700; font-size:12px;}
   .up small{display:block; font-weight:600; color:var(--cheap); font-size:10px;}
   .hidden{display:none;}
+  .chip{display:inline-block; font-size:9px; font-weight:600; border-radius:5px;
+    padding:1.5px 5px; vertical-align:1px;}
+  .chip.prime{background:#e8eef8; color:#2e4d7b;}
+  .chip.std{background:#e9f3ea; color:#3a5a40;}
+  .chip.growth{background:#f4ecf9; color:#6b4487;}
+  .chip.local{background:#f7efe4; color:#8a5a17;}
+  details.gsec summary.gh{list-style:none; cursor:pointer; font-size:12px; font-weight:800;
+    color:#7a6a45; letter-spacing:.05em; padding:12px 12px 6px;
+    display:flex; justify-content:space-between; align-items:baseline;}
+  details.gsec summary.gh::-webkit-details-marker{display:none;}
+  .gcnt{font-weight:600; color:#a99a76; font-size:10.5px;}
+  .gchev{display:inline-block; color:#c9bd9d; font-weight:700; transition:transform .15s;}
+  details.gsec[open] .gchev{transform:rotate(90deg);}
 """
     script = """<script>
 const rows = Array.from(document.querySelectorAll('.urow'));
@@ -976,6 +1005,10 @@ function apply(){
     const okF = (filter === 'all' || r.dataset.s === filter);
     const okQ = (!q || r.dataset.t.includes(q));
     r.classList.toggle('hidden', !(okF && okQ));
+  }
+  for (const g of document.querySelectorAll('details.gsec')){
+    const visible = g.querySelectorAll('.urow:not(.hidden)').length;
+    g.classList.toggle('hidden', visible === 0);
   }
 }
 document.querySelectorAll('.chip').forEach(c => c.addEventListener('click', () => {
