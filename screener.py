@@ -1412,6 +1412,19 @@ if (capIn){
   applyCap();
 }
 
+function copyCode(btn, code, e){
+  if (e){ e.preventDefault(); e.stopPropagation(); }
+  const done = () => {
+    const orig = btn.textContent;
+    btn.textContent = 'コピー済み';
+    btn.classList.add('copied');
+    setTimeout(() => { btn.textContent = orig; btn.classList.remove('copied'); }, 1200);
+  };
+  if (navigator.clipboard && navigator.clipboard.writeText){
+    navigator.clipboard.writeText(code).then(done).catch(done);
+  } else { done(); }
+}
+
 function openSBI(code, e){
   if (e){ e.preventDefault(); e.stopPropagation(); }
   const go = () => { location.href = 'shortcuts://run-shortcut?name=' + encodeURIComponent('SBIへ'); };
@@ -1538,7 +1551,7 @@ def render_html(data):
         <div class="rk num">{s["rank"]}</div>
         <div class="nm">
           <div class="n1">{html.escape(s["name"])} <span class="chip {chip}">{html.escape(s["market"])}</span>{new_mark}</div>
-          <div class="n2 num">{s["code"]} ・ {html.escape(s["group"])} ・ 100株 {s["cost"] / 10000:,.1f}万円 ・ {s["score"]:.0f}点<span class="nofund">資金不足</span></div>
+          <div class="n2 num"><button class="codebtn" onclick="copyCode(this, '{s["code"]}', event)">{s["code"]} ⧉</button> ・ {html.escape(s["group"])} ・ 100株 {s["cost"] / 10000:,.1f}万円 ・ {s["score"]:.0f}点<span class="nofund">資金不足</span></div>
           {f'<div class="cmt">{html.escape(s["comment"])}</div>' if s.get("comment") else ""}
         </div>
         <div class="px">
@@ -1649,6 +1662,9 @@ def render_html(data):
     text-decoration:none; text-align:center; background:#eef2f8; border-radius:9px;
     padding:9px; border:none; cursor:pointer;}}
   .ylink.sbi{{color:#1a5c37; background:#e9f3ea;}}
+  .codebtn{{font-family:inherit; font-size:inherit; color:#2e4d7b; background:none;
+    border:none; border-bottom:1px dashed #9db3cc; padding:0 1px; cursor:pointer;}}
+  .codebtn.copied{{color:#1a5c37; border-bottom-color:#1a5c37;}}
 __NAVCSS__
   .pnav{{display:flex; gap:8px; padding:0 0 10px;}}
   .pnav a{{flex:1; font-size:12px; font-weight:700; color:#4a3f28; text-decoration:none;
