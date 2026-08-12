@@ -9,7 +9,7 @@
 <title>持ち株の管理</title>
 <style>
   :root{--ink:#1c1c1e; --ink2:#6e6e73; --ink3:#aeaeb2; --paper:#faf6ec;
-    --paper-line:#e7e0cf; --bg:#f2f2f7; --cheap:#c62f2f; --cheap-bg:#fdeeee;
+    --paper-line:#e7e0cf; --bg:#f2f2f7; --line:#e5e5ea; --cheap:#c62f2f; --cheap-bg:#fdeeee;
     --mild:#b06a00; --mild-bg:#fdf3e3;}
   *{box-sizing:border-box; margin:0; padding:0;}
   body{font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Noto Sans JP",sans-serif;
@@ -21,6 +21,13 @@
   header .s{font-size:12px; color:var(--ink2); margin-top:3px; line-height:1.6;}
   .back{display:inline-block; font-size:12px; font-weight:700; color:#2e4d7b;
     text-decoration:none; margin-bottom:8px;}
+
+  .topnav{display:flex; gap:6px; overflow-x:auto; padding:2px 0 12px;
+    -webkit-overflow-scrolling:touch;}
+  .topnav a{flex:none; font-size:12.5px; font-weight:700; color:#4a3f28;
+    text-decoration:none; background:#f4eedd; border-radius:10px; padding:8px 14px;}
+  .topnav a.act{background:#1c1c1e; color:#fff;}
+
   .card{background:var(--paper); border-radius:14px; padding:12px 14px;
     margin-bottom:12px; box-shadow:0 1px 3px rgba(0,0,0,.06);}
   .card h2{font-size:13px; font-weight:800; color:#7a6a45; letter-spacing:.05em;
@@ -59,7 +66,7 @@
 </style>
 </head>
 <body>
-<a class="back" href="index.html">‹ 帳簿にもどる</a>
+<div class="topnav"><a href="index.html">帳簿</a><a href="holdings.html" class="act">持ち株</a><a href="universe.html">全銘柄</a><a href="backtest.html">検証</a><a href="guide.html">使い方</a></div>
 <header><div class="t">持ち株の管理</div><div class="s">買った銘柄を登録すると、毎時の記帳価格と突き合わせて「売り判断かどうか」を自動表示します ・ データはこの端末にだけ保存</div></header>
 
 <div class="card">

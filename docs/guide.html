@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="robots" content="noindex, nofollow">
+<link rel="apple-touch-icon" href="icon.png">
+<link rel="icon" type="image/png" href="icon.png">
+<title>使い方</title>
+<style>
+  :root{--ink:#1c1c1e; --ink2:#6e6e73; --ink3:#aeaeb2; --paper:#faf6ec;
+    --paper-line:#e7e0cf; --bg:#f2f2f7; --line:#e5e5ea; --cheap:#c62f2f; --cheap-bg:#fdeeee;
+    --mild:#b06a00; --mild-bg:#fdf3e3;}
+  *{box-sizing:border-box; margin:0; padding:0;}
+  body{font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Noto Sans JP",sans-serif;
+    background:var(--bg); color:var(--ink); max-width:640px; margin:0 auto;
+    padding:14px 12px 40px;}
+  .num{font-family:ui-monospace,"SF Mono",Menlo,monospace; font-variant-numeric:tabular-nums;}
+  header{padding:6px 4px 12px;}
+  header .t{font-size:20px; font-weight:800;}
+  header .s{font-size:12px; color:var(--ink2); margin-top:3px; line-height:1.6;}
+  .back{display:inline-block; font-size:12px; font-weight:700; color:#2e4d7b;
+    text-decoration:none; margin-bottom:8px;}
+
+  .topnav{display:flex; gap:6px; overflow-x:auto; padding:2px 0 12px;
+    -webkit-overflow-scrolling:touch;}
+  .topnav a{flex:none; font-size:12.5px; font-weight:700; color:#4a3f28;
+    text-decoration:none; background:#f4eedd; border-radius:10px; padding:8px 14px;}
+  .topnav a.act{background:#1c1c1e; color:#fff;}
+
+  .card{background:var(--paper); border-radius:14px; padding:12px 14px;
+    margin-bottom:12px; box-shadow:0 1px 3px rgba(0,0,0,.06);}
+  .card h2{font-size:13px; font-weight:800; color:#7a6a45; letter-spacing:.05em;
+    margin-bottom:8px;}
+  .fact{display:flex; justify-content:space-between; font-size:12.5px; padding:6px 0;
+    border-bottom:1px solid #f0ead9;}
+  .fact span:first-child{color:var(--ink2);}
+  .fact .v{font-weight:700;}
+  .plus{color:#2e7d32;} .minus{color:var(--cheap);}
+  .note{font-size:11px; color:var(--ink3); line-height:1.7; padding:8px 4px;}
+  
+  .gtext{font-size:12.5px; line-height:1.9; color:var(--ink);}
+  .gstep{font-size:12.5px; line-height:1.8; color:var(--ink); padding:7px 0;
+    border-bottom:1px dashed #f0ead9;}
+  .gstep:last-child{border-bottom:none;}
+  .gstep b, .gtext b{color:#4a3f28;}
+
+</style>
+</head>
+<body>
+<div class="topnav"><a href="index.html">帳簿</a><a href="holdings.html">持ち株</a><a href="universe.html">全銘柄</a><a href="backtest.html">検証</a><a href="guide.html" class="act">使い方</a></div>
+<header><div class="t">使い方</div><div class="s">このサイトの役割分担と毎日の流れ ・ 8/13（木）時点の仕様</div></header>
+
+<div class="card"><h2>これは何？</h2>
+<div class="gtext">おじいさま・おばあさまの株手法——毎日の四本値をノートに記録し、いつもより安くなったら買い、
+決めた利益で機械的に売る——をWeb化したものです。<b>下準備（記録・選定・計算）はシステムが毎日自動で行い、
+買う・売るの判断と注文は人間が行います。</b>このサイトに注文機能はありません。</div></div>
+
+<div class="card"><h2>毎日の使い方（1〜2分）</h2>
+<div class="gstep"><b>1. 夜、帳簿を開く</b> ホーム画面のアイコンから開き、合言葉を入れる（記憶させた端末は自動で開きます）</div>
+<div class="gstep"><b>2. 厳選10銘柄を眺める</b> 気になる銘柄をタップすると、選ばれた根拠（スコア内訳）・
+最新日の四本値・10日分のノート・Yahoo!ファイナンスへのリンクが開きます</div>
+<div class="gstep"><b>3. 買うと決めたら</b> 証券会社アプリで注文し、「持ち株」画面にコード・買値・株数を登録</div>
+<div class="gstep"><b>4. 売り時はシステムが監視</b> 持ち株画面が毎時の価格と突き合わせ、利確ライン・損切りライン到達を
+色付きで知らせます。赤やオレンジのカードが出たら売り注文を検討</div></div>
+
+<div class="card"><h2>画面の説明</h2>
+<div class="gstep"><b>帳簿</b> 全上場銘柄から選ばれた厳選10銘柄。持ち金を設定すると「100株買える銘柄」だけから選ばれます。
+★を付けた銘柄は常に最上部に固定。銘柄名の下の茶色い1行は、数字から機械生成した事実コメントです</div>
+<div class="gstep"><b>持ち株</b> 保有銘柄の登録と売り判断。利確（推奨+5%）・損切り（推奨−8%）の%を設定すると、
+銘柄ごとに「◯円になったら売る」に換算されます</div>
+<div class="gstep"><b>全銘柄</b> 約4,000銘柄すべての判定台帳。候補・圏外にはスコア、除外・対象外には理由が付き、
+「なぜあの銘柄が載っていないか」が調べられます</div>
+<div class="gstep"><b>検証</b> 過去1年、この手法を機械的に続けていたらの成績。持ち金別（30万〜無制限）と
+損切り%別（なし〜−12%）の比較で、自分の設定の妥当性を数字で確かめられます</div></div>
+
+<div class="card"><h2>選定の仕組み（要約）</h2>
+<div class="gtext">全銘柄から、流動性不足・低位株・上場間もない銘柄を対象外にし、
+「終わった株」（1年高値から40%以上下落など）と「危ない下げ方」
+（1日8%超の急落・荒い値動き・下げ止まり未確認）を除外。
+残りを5観点（いまの安さ・下げの質・トレンドの地合い・過去1年の利確実績・売買のしやすさ)で採点し、
+上位40銘柄を候補に、そこから10銘柄を表示します。
+詳細は帳簿の「選定基準」カードと、各銘柄の根拠表示をご覧ください。</div></div>
+
+<div class="card"><h2>設定とデータの保存場所</h2>
+<div class="gtext">持ち金・売りルール・★お気に入り・持ち株・合言葉の記憶は、<b>すべて閲覧している端末の中にだけ</b>保存されます。
+公開されているのは銘柄と株価という公開情報のみ。iPhoneとMacで設定は共有されないため、端末ごとに入力してください。</div></div>
+
+<div class="card"><h2>更新タイミングとよくある質問</h2>
+<div class="gstep"><b>いつ更新される？</b> 平日9:40〜14:40の毎時（取引時間中の途中経過）、15:45（大引け後）、
+20:30（夜の確定記帳・銘柄入れ替えの基準）。実行に10〜20分かかるため、表示は最大1時間ほど前の値です</div>
+<div class="gstep"><b>Yahooと数字が違う</b> このサイトは毎時の「写真」です。リアルタイムの板や気配は
+各銘柄のYahoo!ファイナンスリンクで確認してください</div>
+<div class="gstep"><b>昨日いた銘柄が消えた</b> 全銘柄画面でその銘柄を検索すると、今日の判定と理由が出ます</div>
+<div class="gstep"><b>データの出どころ</b> 銘柄一覧はJPX公式、株価はYahoo Finance、
+各銘柄の「会社からの発表」は東証の適時開示（TDnet）です。
+このサイトは判断材料の表示のみで、投資判断はご自身の責任で行ってください</div></div>
+
+<div class="note">仕様を変えるとこのページも自動で追随します。困ったことがあればこのページを最初に見てください。</div>
+
+</body>
+</html>

@@ -1,11 +1,12 @@
 {
- "generated_at": "2026-08-13T02:06:08.154933+09:00",
+ "generated_at": "2026-08-13T02:26:35.737632+09:00",
  "date_label": "8/13",
  "stats": {
   "universe": 3754,
   "dead_excluded": 1024,
   "skipped": 1857,
-  "failed": 0
+  "failed": 0,
+  "cutoff_score": 150.1
  },
  "config": {
   "TOP_N": 10,
@@ -57,6 +58,23 @@
     "1日平均 115億円の売買があり注文が通りやすい（+12点）"
    ],
    "comment": "◎水準の安さが11日続く",
+   "disclosures": [
+    {
+     "date": "8/7",
+     "title": "2027年3月期　第1四半期決算短信〔日本基準〕(連結)(開示事項の追加及び監査法人による期中レビューの完了)",
+     "url": "https://webapi.yanoshin.jp/rd.php?https://www.release.tdnet.info/inbs/140120260806511977.pdf"
+    },
+    {
+     "date": "7/29",
+     "title": "2027年3月期　第1四半期決算短信〔日本基準〕(連結)",
+     "url": "https://webapi.yanoshin.jp/rd.php?https://www.release.tdnet.info/inbs/140120260729501435.pdf"
+    },
+    {
+     "date": "7/29",
+     "title": "2026年度第1四半期　決算説明資料",
+     "url": "https://webapi.yanoshin.jp/rd.php?https://www.release.tdnet.info/inbs/140120260729501496.pdf"
+    }
+   ],
    "cost": 272900,
    "level": "cheap",
    "is_new": false,
@@ -167,6 +185,23 @@
     "1日平均 265億円の売買があり注文が通りやすい（+12点）"
    ],
    "comment": "◎水準の安さが10日続く",
+   "disclosures": [
+    {
+     "date": "8/5",
+     "title": "2027年3月期第1四半期決算短信（監査法人による期中レビューの完了）",
+     "url": "https://webapi.yanoshin.jp/rd.php?https://www.release.tdnet.info/inbs/140120260805510442.pdf"
+    },
+    {
+     "date": "8/3",
+     "title": "2027年3月期 第1四半期決算短信〔ＩＦＲＳ〕（連結）",
+     "url": "https://webapi.yanoshin.jp/rd.php?https://www.release.tdnet.info/inbs/140120260803506140.pdf"
+    },
+    {
+     "date": "8/3",
+     "title": "自己株式の取得に係る事項の決定に関するお知らせ",
+     "url": "https://webapi.yanoshin.jp/rd.php?https://www.release.tdnet.info/inbs/140120260803506160.pdf"
+    }
+   ],
    "cost": 501600,
    "level": "cheap",
    "is_new": false,
@@ -273,6 +308,23 @@
     "1日平均 30億円の売買があり注文が通りやすい（+12点）"
    ],
    "comment": "◎水準の安さが9日続く ・ 前日比+4.3%と大きめの動き",
+   "disclosures": [
+    {
+     "date": "8/7",
+     "title": "2026年12月期 第２四半期（中間期）決算短信〔ＩＦＲＳ〕（連結）",
+     "url": "https://webapi.yanoshin.jp/rd.php?https://www.release.tdnet.info/inbs/140120260806513172.pdf"
+    },
+    {
+     "date": "8/7",
+     "title": "「中期経営計画2027-2030」策定に関するお知らせ",
+     "url": "https://webapi.yanoshin.jp/rd.php?https://www.release.tdnet.info/inbs/140120260807513701.pdf"
+    },
+    {
+     "date": "8/7",
+     "title": "株主還元方針の変更（DOE目標５%以上への引き上げ・累進配当の導入）に関するお知らせ",
+     "url": "https://webapi.yanoshin.jp/rd.php?https://www.release.tdnet.info/inbs/140120260807513765.pdf"
+    }
+   ],
    "cost": 203400,
    "level": "cheap",
    "is_new": false,
@@ -381,6 +433,23 @@
     "1日平均 6.0億円の売買（+6点）"
    ],
    "comment": "◎水準の安さが18日続く",
+   "disclosures": [
+    {
+     "date": "8/12",
+     "title": "2027年3月期 第1四半期決算短信〔日本基準〕（連結）",
+     "url": "https://webapi.yanoshin.jp/rd.php?https://www.release.tdnet.info/inbs/140120260812517972.pdf"
+    },
+    {
+     "date": "8/12",
+     "title": "2027年3月期 第1四半期決算　補足説明資料",
+     "url": "https://webapi.yanoshin.jp/rd.php?https://www.release.tdnet.info/inbs/140120260812518047.pdf"
+    },
+    {
+     "date": "8/12",
+     "title": "業績予想の修正に関するお知らせ",
+     "url": "https://webapi.yanoshin.jp/rd.php?https://www.release.tdnet.info/inbs/140120260812517956.pdf"
+    }
+   ],
    "cost": 198700,
    "level": "cheap",
    "is_new": false,
@@ -490,6 +559,7 @@
     "1日平均 7.0億円の売買（+6点）"
    ],
    "comment": "◎水準の安さが13日続く",
+   "disclosures": [],
    "cost": 365000,
    "level": "cheap",
    "is_new": false,
@@ -599,6 +669,23 @@
     "1日平均 20億円の売買があり注文が通りやすい（+12点）"
    ],
    "comment": "◎水準の安さが8日続く ・ 前日比+3.4%と大きめの動き",
+   "disclosures": [
+    {
+     "date": "8/6",
+     "title": "2027年３月期 第１四半期決算短信〔日本基準〕（連結）",
+     "url": "https://webapi.yanoshin.jp/rd.php?https://www.release.tdnet.info/inbs/140120260805510400.pdf"
+    },
+    {
+     "date": "8/6",
+     "title": "2026年度　第１四半期　決算資料",
+     "url": "https://webapi.yanoshin.jp/rd.php?https://www.release.tdnet.info/inbs/140120260805510720.pdf"
+    },
+    {
+     "date": "8/3",
+     "title": "自己株式の取得状況に関するお知らせ",
+     "url": "https://webapi.yanoshin.jp/rd.php?https://www.release.tdnet.info/inbs/140120260803506833.pdf"
+    }
+   ],
    "cost": 590300,
    "level": "cheap",
    "is_new": false,
@@ -707,6 +794,7 @@
     "1日平均 111億円の売買があり注文が通りやすい（+12点）"
    ],
    "comment": "◎水準の安さが17日続く",
+   "disclosures": [],
    "cost": 576300,
    "level": "cheap",
    "is_new": false,
@@ -816,6 +904,23 @@
     "1日平均 274億円の売買があり注文が通りやすい（+12点）"
    ],
    "comment": "",
+   "disclosures": [
+    {
+     "date": "8/7",
+     "title": "業績連動型株式報酬制度の継続に伴う自己株式処分に関するお知らせ",
+     "url": "https://webapi.yanoshin.jp/rd.php?https://www.release.tdnet.info/inbs/140120260806512616.pdf"
+    },
+    {
+     "date": "8/7",
+     "title": "自己株式の取得状況に関するお知らせ",
+     "url": "https://webapi.yanoshin.jp/rd.php?https://www.release.tdnet.info/inbs/140120260806512648.pdf"
+    },
+    {
+     "date": "8/7",
+     "title": "2027年3月期　第1四半期決算短信〔IFRS〕（連結）",
+     "url": "https://webapi.yanoshin.jp/rd.php?https://www.release.tdnet.info/inbs/140120260806511956.pdf"
+    }
+   ],
    "cost": 283300,
    "level": "cheap",
    "is_new": false,
@@ -924,6 +1029,7 @@
     "1日平均 17億円の売買があり注文が通りやすい（+12点）"
    ],
    "comment": "◎水準の安さが10日続く ・ 1年の高値圏からの一服 ・ 前日比+7.3%と大きめの動き",
+   "disclosures": [],
    "cost": 168800,
    "level": "cheap",
    "is_new": false,
@@ -1033,6 +1139,7 @@
     "1日平均 14億円の売買があり注文が通りやすい（+12点）"
    ],
    "comment": "◎水準の安さが11日続く",
+   "disclosures": [],
    "cost": 404500,
    "level": "cheap",
    "is_new": false,
@@ -1139,6 +1246,7 @@
     "1日平均 7.3億円の売買（+6点）"
    ],
    "comment": "◎水準の安さが20日続く",
+   "disclosures": [],
    "cost": 289600,
    "level": "cheap",
    "is_new": false,
@@ -1246,6 +1354,13 @@
     "1日平均 2.7億円の売買（+6点）"
    ],
    "comment": "◎水準の安さが16日続く",
+   "disclosures": [
+    {
+     "date": "7/30",
+     "title": "2027年3月期 第1四半期決算短信〔日本基準〕(連結)",
+     "url": "https://webapi.yanoshin.jp/rd.php?https://www.release.tdnet.info/inbs/140120260729501827.pdf"
+    }
+   ],
    "cost": 88200,
    "level": "cheap",
    "is_new": false,
@@ -1353,6 +1468,7 @@
     "1日平均 83億円の売買があり注文が通りやすい（+12点）"
    ],
    "comment": "◎水準の安さが11日続く ・ 200日線の下",
+   "disclosures": [],
    "cost": 542200,
    "level": "cheap",
    "is_new": false,
@@ -1462,6 +1578,13 @@
     "1日平均 2.8億円の売買（+6点）"
    ],
    "comment": "◎水準の安さが5日続く",
+   "disclosures": [
+    {
+     "date": "7/30",
+     "title": "2027年３月期 第１四半期決算短信〔日本基準〕(連結)",
+     "url": "https://webapi.yanoshin.jp/rd.php?https://www.release.tdnet.info/inbs/140120260729501524.pdf"
+    }
+   ],
    "cost": 369500,
    "level": "cheap",
    "is_new": false,
@@ -1569,6 +1692,7 @@
     "過去1年、同じ買い方で 3回 利確ライン（+5%）に到達（+15点）"
    ],
    "comment": "◎水準の安さが8日続く",
+   "disclosures": [],
    "cost": 186300,
    "level": "cheap",
    "is_new": false,
@@ -1675,6 +1799,23 @@
     "1日平均 5.2億円の売買（+6点）"
    ],
    "comment": "1年の高値圏からの一服",
+   "disclosures": [
+    {
+     "date": "8/12",
+     "title": "譲渡制限付株式報酬としての自己株式の処分の払込完了に関するお知らせ",
+     "url": "https://webapi.yanoshin.jp/rd.php?https://www.release.tdnet.info/inbs/140120260807514764.pdf"
+    },
+    {
+     "date": "8/7",
+     "title": "2027年3月期 第1四半期決算短信〔日本基準〕(連結)",
+     "url": "https://webapi.yanoshin.jp/rd.php?https://www.release.tdnet.info/inbs/140120260805510189.pdf"
+    },
+    {
+     "date": "7/24",
+     "title": "譲渡制限付株式報酬としての自己株式の処分に関するお知らせ",
+     "url": "https://webapi.yanoshin.jp/rd.php?https://www.release.tdnet.info/inbs/140120260723597968.pdf"
+    }
+   ],
    "cost": 340500,
    "level": "cheap",
    "is_new": false,
@@ -1783,6 +1924,7 @@
     "1日平均 1.8億円の売買（+6点）"
    ],
    "comment": "◎水準の安さが20日続く ・ 200日線の下",
+   "disclosures": [],
    "cost": 14200,
    "level": "cheap",
    "is_new": false,
@@ -1892,6 +2034,7 @@
     "1日平均 1.5億円の売買（+6点）"
    ],
    "comment": "◎水準の安さが20日続く",
+   "disclosures": [],
    "cost": 139800,
    "level": "cheap",
    "is_new": false,
@@ -2000,6 +2143,7 @@
     "1日平均 27億円の売買があり注文が通りやすい（+12点）"
    ],
    "comment": "◎水準の安さが4日続く",
+   "disclosures": [],
    "cost": 610000,
    "level": "cheap",
    "is_new": false,
@@ -2108,6 +2252,23 @@
     "1日平均 17億円の売買があり注文が通りやすい（+12点）"
    ],
    "comment": "◎水準の安さが8日続く",
+   "disclosures": [
+    {
+     "date": "8/7",
+     "title": "2027年３月期第１四半期決算短信〔日本基準〕（連結）（監査法人による期中レビューの完了）",
+     "url": "https://webapi.yanoshin.jp/rd.php?https://www.release.tdnet.info/inbs/140120260806512409.pdf"
+    },
+    {
+     "date": "7/30",
+     "title": "2027年３月期 第１四半期決算短信〔日本基準〕（連結）",
+     "url": "https://webapi.yanoshin.jp/rd.php?https://www.release.tdnet.info/inbs/140120260729502339.pdf"
+    },
+    {
+     "date": "7/30",
+     "title": "日清製粉グループ 第１四半期連結累計期間決算、通期連結業績予想",
+     "url": "https://webapi.yanoshin.jp/rd.php?https://www.release.tdnet.info/inbs/140120260729502431.pdf"
+    }
+   ],
    "cost": 201150,
    "level": "cheap",
    "is_new": false,
@@ -2216,6 +2377,23 @@
     "1日平均 355億円の売買があり注文が通りやすい（+12点）"
    ],
    "comment": "◎水準の安さが7日続く",
+   "disclosures": [
+    {
+     "date": "8/12",
+     "title": "2027年3月期 第1四半期決算短信〔ＩＦＲＳ〕（連結）",
+     "url": "https://webapi.yanoshin.jp/rd.php?https://www.release.tdnet.info/inbs/140120260812517826.pdf"
+    },
+    {
+     "date": "8/12",
+     "title": "2027年3月期　第1四半期決算参考資料",
+     "url": "https://webapi.yanoshin.jp/rd.php?https://www.release.tdnet.info/inbs/140120260812517926.pdf"
+    },
+    {
+     "date": "8/4",
+     "title": "自己株式の取得状況に関するお知らせ（2026年5月20日開催の取締役会決議分）",
+     "url": "https://webapi.yanoshin.jp/rd.php?https://www.release.tdnet.info/inbs/140120260803507381.pdf"
+    }
+   ],
    "cost": 775100,
    "level": "cheap",
    "is_new": false,
@@ -2324,6 +2502,18 @@
     "1日平均 20億円の売買があり注文が通りやすい（+12点）"
    ],
    "comment": "◎水準の安さが10日続く ・ 1年の高値圏からの一服",
+   "disclosures": [
+    {
+     "date": "8/10",
+     "title": "自己株式の取得状況に関するお知らせ",
+     "url": "https://webapi.yanoshin.jp/rd.php?https://www.release.tdnet.info/inbs/140120260803506167.pdf"
+    },
+    {
+     "date": "8/7",
+     "title": "2027年３月期　第１四半期決算短信〔日本基準〕（連結）",
+     "url": "https://webapi.yanoshin.jp/rd.php?https://www.release.tdnet.info/inbs/140120260806512471.pdf"
+    }
+   ],
    "cost": 149500,
    "level": "cheap",
    "is_new": false,
@@ -2432,6 +2622,23 @@
     "1日平均 4.3億円の売買（+6点）"
    ],
    "comment": "◎水準の安さが6日続く",
+   "disclosures": [
+    {
+     "date": "7/30",
+     "title": "2027年３月期第１四半期決算短信〔日本基準〕(連結)",
+     "url": "https://webapi.yanoshin.jp/rd.php?https://www.release.tdnet.info/inbs/140120260729502062.pdf"
+    },
+    {
+     "date": "7/30",
+     "title": "2027年３月期　第1四半期　FACT BOOK",
+     "url": "https://webapi.yanoshin.jp/rd.php?https://www.release.tdnet.info/inbs/140120260729502009.pdf"
+    },
+    {
+     "date": "7/30",
+     "title": "固定資産の譲渡に伴う特別利益の計上及び連結業績予想の修正に関するお知らせ",
+     "url": "https://webapi.yanoshin.jp/rd.php?https://www.release.tdnet.info/inbs/140120260729501953.pdf"
+    }
+   ],
    "cost": 105900,
    "level": "cheap",
    "is_new": false,
@@ -2538,6 +2745,7 @@
     "1日平均 26億円の売買があり注文が通りやすい（+12点）"
    ],
    "comment": "1年の高値圏からの一服",
+   "disclosures": [],
    "cost": 212200,
    "level": "cheap",
    "is_new": false,
@@ -2646,6 +2854,23 @@
     "1日平均 9.8億円の売買（+6点）"
    ],
    "comment": "◎水準の安さが8日続く",
+   "disclosures": [
+    {
+     "date": "8/12",
+     "title": "2027年3月期第1四半期決算短信の開示が 四半期末後45日を超えることに関するお知らせ",
+     "url": "https://webapi.yanoshin.jp/rd.php?https://www.release.tdnet.info/inbs/140120260812518318.pdf"
+    },
+    {
+     "date": "8/7",
+     "title": "2027年３月期第１四半期 決算発表の延期に関するお知らせ",
+     "url": "https://webapi.yanoshin.jp/rd.php?https://www.release.tdnet.info/inbs/140120260807515457.pdf"
+    },
+    {
+     "date": "7/21",
+     "title": "（開示事項の経過）当社子会社（タカラバイオ株式会社）による収益改善に向けた構造改革の実施に関するお知らせ",
+     "url": "https://webapi.yanoshin.jp/rd.php?https://www.release.tdnet.info/inbs/140120260721596365.pdf"
+    }
+   ],
    "cost": 202750,
    "level": "cheap",
    "is_new": false,
@@ -2754,9 +2979,21 @@
     "1日平均 4.2億円の売買（+6点）"
    ],
    "comment": "◎水準の安さが17日続く",
+   "disclosures": [
+    {
+     "date": "8/4",
+     "title": "2027年３月期　第１四半期決算短信〔日本基準〕（連結）",
+     "url": "https://webapi.yanoshin.jp/rd.php?https://www.release.tdnet.info/inbs/140120260803507621.pdf"
+    },
+    {
+     "date": "7/22",
+     "title": "譲渡制限付株式報酬としての自己株式の処分の払込完了に関するお知らせ",
+     "url": "https://webapi.yanoshin.jp/rd.php?https://www.release.tdnet.info/inbs/140120260721597107.pdf"
+    }
+   ],
    "cost": 376500,
    "level": "cheap",
-   "is_new": true,
+   "is_new": false,
    "days": [
     {
      "date": "2026-08-12",
@@ -2861,9 +3098,10 @@
     "1日平均 7.7億円の売買（+6点）"
    ],
    "comment": "◎水準の安さが11日続く",
+   "disclosures": [],
    "cost": 91500,
    "level": "cheap",
-   "is_new": true,
+   "is_new": false,
    "days": [
     {
      "date": "2026-08-12",
@@ -2969,6 +3207,18 @@
     "1日平均 4.6億円の売買（+6点）"
    ],
    "comment": "◎水準の安さが14日続く",
+   "disclosures": [
+    {
+     "date": "7/23",
+     "title": "固定資産の信託設定及び信託受益権の譲渡 並びに賃貸借契約の締結、特別利益（固定資産売却益）の計上に関するお知らせ",
+     "url": "https://webapi.yanoshin.jp/rd.php?https://www.release.tdnet.info/inbs/140120260723598248.pdf"
+    },
+    {
+     "date": "7/23",
+     "title": "特別損失（固定資産の減損損失）の計上に関するお知らせ",
+     "url": "https://webapi.yanoshin.jp/rd.php?https://www.release.tdnet.info/inbs/140120260723598261.pdf"
+    }
+   ],
    "cost": 205600,
    "level": "cheap",
    "is_new": false,
@@ -3076,6 +3326,23 @@
     "1日平均 5.3億円の売買（+6点）"
    ],
    "comment": "1年の高値圏からの一服",
+   "disclosures": [
+    {
+     "date": "8/5",
+     "title": "2027年3月期 第1四半期決算短信〔日本基準〕（連結）（公認会計士等による期中レビューの完了）",
+     "url": "https://webapi.yanoshin.jp/rd.php?https://www.release.tdnet.info/inbs/140120260804508941.pdf"
+    },
+    {
+     "date": "7/30",
+     "title": "2027年3月期 第1四半期決算短信〔日本基準〕（連結）",
+     "url": "https://webapi.yanoshin.jp/rd.php?https://www.release.tdnet.info/inbs/140120260728500524.pdf"
+    },
+    {
+     "date": "7/22",
+     "title": "譲渡制限付株式報酬としての自己株式の処分の払込完了に関するお知らせ",
+     "url": "https://webapi.yanoshin.jp/rd.php?https://www.release.tdnet.info/inbs/140120260722597199.pdf"
+    }
+   ],
    "cost": 110000,
    "level": "cheap",
    "is_new": false,
@@ -3185,6 +3452,13 @@
     "1日平均 23億円の売買があり注文が通りやすい（+12点）"
    ],
    "comment": "◎水準の安さが17日続く",
+   "disclosures": [
+    {
+     "date": "8/6",
+     "title": "2027年３月期 第１四半期決算短信〔IFRS〕（連結）",
+     "url": "https://webapi.yanoshin.jp/rd.php?https://www.release.tdnet.info/inbs/140120260806511243.pdf"
+    }
+   ],
    "cost": 196950,
    "level": "cheap",
    "is_new": false,
@@ -3292,6 +3566,18 @@
     "1日平均 15億円の売買があり注文が通りやすい（+12点）"
    ],
    "comment": "◎水準の安さが11日続く ・ 1年の高値圏からの一服 ・ 前日比+4.2%と大きめの動き",
+   "disclosures": [
+    {
+     "date": "8/7",
+     "title": "2027年3月期 第1四半期決算短信〔日本基準〕（連結）",
+     "url": "https://webapi.yanoshin.jp/rd.php?https://www.release.tdnet.info/inbs/140120260805509726.pdf"
+    },
+    {
+     "date": "7/28",
+     "title": "株式報酬型ストック・オプションの発行内容確定に関するお知らせ",
+     "url": "https://webapi.yanoshin.jp/rd.php?https://www.release.tdnet.info/inbs/140120260724599393.pdf"
+    }
+   ],
    "cost": 761000,
    "level": "cheap",
    "is_new": false,
@@ -3400,6 +3686,7 @@
     "1日平均 5.5億円の売買（+6点）"
    ],
    "comment": "◎水準の安さが4日続く ・ 200日線の下",
+   "disclosures": [],
    "cost": 386000,
    "level": "cheap",
    "is_new": false,
@@ -3506,9 +3793,26 @@
     "1日平均 1.1億円の売買（+6点）"
    ],
    "comment": "出来高が普段の37.7倍に急増 ・ ◎水準の安さが20日続く ・ 前日比+7.4%と大きめの動き",
+   "disclosures": [
+    {
+     "date": "8/12",
+     "title": "業績予想及び配当予想の修正に関するお知らせ",
+     "url": "https://webapi.yanoshin.jp/rd.php?https://www.release.tdnet.info/inbs/140120260810517320.pdf"
+    },
+    {
+     "date": "8/12",
+     "title": "2026年12月期 第2四半期（中間期）決算短信〔日本基準〕(連結)",
+     "url": "https://webapi.yanoshin.jp/rd.php?https://www.release.tdnet.info/inbs/140120260810517342.pdf"
+    },
+    {
+     "date": "8/12",
+     "title": "2026年12月期 第2四半期（中間期）決算説明会資料",
+     "url": "https://webapi.yanoshin.jp/rd.php?https://www.release.tdnet.info/inbs/140120260810517344.pdf"
+    }
+   ],
    "cost": 35000,
    "level": "cheap",
-   "is_new": true,
+   "is_new": false,
    "days": [
     {
      "date": "2026-08-12",
@@ -3615,6 +3919,23 @@
     "1日平均 29億円の売買があり注文が通りやすい（+12点）"
    ],
    "comment": "◎水準の安さが8日続く",
+   "disclosures": [
+    {
+     "date": "8/7",
+     "title": "2027年3月期　第1四半期決算短信〔日本基準〕（連結）",
+     "url": "https://webapi.yanoshin.jp/rd.php?https://www.release.tdnet.info/inbs/140120260804508843.pdf"
+    },
+    {
+     "date": "8/7",
+     "title": "2027年3月期　第1四半期決算説明資料",
+     "url": "https://webapi.yanoshin.jp/rd.php?https://www.release.tdnet.info/inbs/140120260804508848.pdf"
+    },
+    {
+     "date": "8/7",
+     "title": "2026年6月　月次営業概況（速報）に関するお知らせ",
+     "url": "https://webapi.yanoshin.jp/rd.php?https://www.release.tdnet.info/inbs/140120260804508854.pdf"
+    }
+   ],
    "cost": 169750,
    "level": "cheap",
    "is_new": false,
@@ -3724,9 +4045,26 @@
     "1日平均 18億円の売買があり注文が通りやすい（+12点）"
    ],
    "comment": "◎水準の安さが8日続く ・ 200日線の下",
+   "disclosures": [
+    {
+     "date": "8/12",
+     "title": "(訂正)「2027年３月期第１四半期決算短信〔日本基準〕（連結）」の一部訂正について",
+     "url": "https://webapi.yanoshin.jp/rd.php?https://www.release.tdnet.info/inbs/140120260812518317.pdf"
+    },
+    {
+     "date": "8/7",
+     "title": "第三者割当増資における発行株式数の確定に関するお知らせ",
+     "url": "https://webapi.yanoshin.jp/rd.php?https://www.release.tdnet.info/inbs/140120260729502527.pdf"
+    },
+    {
+     "date": "8/7",
+     "title": "2027年３月期　第１四半期決算短信〔日本基準〕（連結）",
+     "url": "https://webapi.yanoshin.jp/rd.php?https://www.release.tdnet.info/inbs/140120260806513605.pdf"
+    }
+   ],
    "cost": 317000,
    "level": "cheap",
-   "is_new": true,
+   "is_new": false,
    "days": [
     {
      "date": "2026-08-12",
@@ -3832,6 +4170,18 @@
     "1日平均 27億円の売買があり注文が通りやすい（+12点）"
    ],
    "comment": "",
+   "disclosures": [
+    {
+     "date": "8/3",
+     "title": "2026年12月期 第２四半期（中間期）決算短信〔IFRS〕（連結）",
+     "url": "https://webapi.yanoshin.jp/rd.php?https://www.release.tdnet.info/inbs/140120260710591300.pdf"
+    },
+    {
+     "date": "8/3",
+     "title": "決算短信補足資料 -2026年12月期 第2四半期（中間期）決算-",
+     "url": "https://webapi.yanoshin.jp/rd.php?https://www.release.tdnet.info/inbs/140120260710591645.pdf"
+    }
+   ],
    "cost": 259200,
    "level": "mild",
    "is_new": false,
@@ -3940,6 +4290,18 @@
     "1日平均 1.2億円の売買（+6点）"
    ],
    "comment": "◎水準の安さが17日続く",
+   "disclosures": [
+    {
+     "date": "7/31",
+     "title": "地震の影響に関するお知らせ（第２報）",
+     "url": "https://webapi.yanoshin.jp/rd.php?https://www.release.tdnet.info/inbs/140120260731504768.pdf"
+    },
+    {
+     "date": "7/30",
+     "title": "地震の影響に関するお知らせ",
+     "url": "https://webapi.yanoshin.jp/rd.php?https://www.release.tdnet.info/inbs/140120260730502828.pdf"
+    }
+   ],
    "cost": 169900,
    "level": "cheap",
    "is_new": false,
@@ -4046,6 +4408,23 @@
     "1日平均 7.2億円の売買（+6点）"
    ],
    "comment": "◎水準の安さが3日続く ・ 1年の高値圏からの一服",
+   "disclosures": [
+    {
+     "date": "8/7",
+     "title": "2027年３月期第１四半期決算短信〔日本基準〕（連結）",
+     "url": "https://webapi.yanoshin.jp/rd.php?https://www.release.tdnet.info/inbs/140120260806512663.pdf"
+    },
+    {
+     "date": "8/7",
+     "title": "業績予想の修正に関するお知らせ",
+     "url": "https://webapi.yanoshin.jp/rd.php?https://www.release.tdnet.info/inbs/140120260804508101.pdf"
+    },
+    {
+     "date": "7/27",
+     "title": "2027年３月期第１四半期末の有価証券含み損に関するお知らせ",
+     "url": "https://webapi.yanoshin.jp/rd.php?https://www.release.tdnet.info/inbs/140120260724599251.pdf"
+    }
+   ],
    "cost": 270100,
    "level": "cheap",
    "is_new": false,
@@ -4155,6 +4534,23 @@
     "1日平均 54億円の売買があり注文が通りやすい（+12点）"
    ],
    "comment": "◎水準の安さが8日続く",
+   "disclosures": [
+    {
+     "date": "7/31",
+     "title": "2027年3月期 第1四半期決算短信〔日本基準〕（連結）",
+     "url": "https://webapi.yanoshin.jp/rd.php?https://www.release.tdnet.info/inbs/140120260730503686.pdf"
+    },
+    {
+     "date": "7/31",
+     "title": "2027年3月期 第1四半期決算補足説明資料",
+     "url": "https://webapi.yanoshin.jp/rd.php?https://www.release.tdnet.info/inbs/140120260730503742.pdf"
+    },
+    {
+     "date": "7/16",
+     "title": "自己株式の取得状況及び取得終了に関するお知らせ",
+     "url": "https://webapi.yanoshin.jp/rd.php?https://www.release.tdnet.info/inbs/140120260716595055.pdf"
+    }
+   ],
    "cost": 462500,
    "level": "cheap",
    "is_new": false,
@@ -4263,9 +4659,10 @@
     "1日平均 32億円の売買があり注文が通りやすい（+12点）"
    ],
    "comment": "◎水準の安さが18日続く ・ 前日比+5.1%と大きめの動き",
+   "disclosures": [],
    "cost": 359600,
    "level": "cheap",
-   "is_new": true,
+   "is_new": false,
    "days": [
     {
      "date": "2026-08-12",
