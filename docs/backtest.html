@@ -48,6 +48,12 @@
   .tname{font-size:13px; font-weight:800;}
   .tfacts{font-size:11px; color:var(--ink2); margin-top:3px; line-height:1.6;}
   .tiernote{font-size:11px; color:#8a5a17; line-height:1.7; padding-top:8px;}
+  .best{color:#c62f2f; font-size:10.5px; margin-left:8px;}
+  .barwrap{position:relative; background:#f0ead9; border-radius:6px; height:18px;
+    margin:4px 0 2px; overflow:hidden;}
+  .barp{height:100%; background:#7fae86; border-radius:6px;}
+  .barm{height:100%; background:#d98c8c; border-radius:6px;}
+  .barv{position:absolute; right:8px; top:1.5px; font-size:11px; font-weight:800;}
 
 </style>
 </head>
@@ -63,11 +69,18 @@
 <div class="tier" data-budget="inf"><div class="tname num">無制限（参考）</div><div class="tfacts num">確定 <b class="plus">+69,421,255円</b>（4344勝） ／ 資金不足で見送り 0回 ／ 持ち越し724件 <b class="minus">−17,985,603円</b> ／ 最大同時851銘柄</div></div>
 <div class="tiernote">持ち金を増やすと「見送り」が減って確定益が伸びる一方、持ち越しの含み損も増えます。次の段の伸び幅が小さければ、まだ増額の必要はない、という読み方ができます。</div></div>
 <div class="card"><h2>損切りルールの効果比較（利確+5%共通・資金無制限）</h2>
-<div class="tier" data-sl="none"><div class="tname">損切りなし（おばあさん流）</div><div class="tfacts num">トータル <b class="plus">+47,039,179円</b> ／ 利確 4,041回 ・ 損切り 0回（確定損益 計 +64,337,882円） ／ 持ち越し 710件 −17,298,703円</div></div>
-<div class="tier" data-sl="5"><div class="tname">損切り −5%</div><div class="tfacts num">トータル <b class="plus">+24,131,760円</b> ／ 利確 9,466回 ・ 損切り 7,675回（確定損益 計 +22,791,030円） ／ 持ち越し 473件 +1,340,730円</div></div>
-<div class="tier" data-sl="8"><div class="tname">損切り −8%</div><div class="tfacts num">トータル <b class="plus">+27,058,329円</b> ／ 利確 8,179回 ・ 損切り 3,730回（確定損益 計 +26,488,459円） ／ 持ち越し 515件 +569,870円</div></div>
-<div class="tier" data-sl="12"><div class="tname">損切り −12%</div><div class="tfacts num">トータル <b class="plus">+34,882,803円</b> ／ 利確 6,911回 ・ 損切り 1,774回（確定損益 計 +35,423,886円） ／ 持ち越し 547件 −541,083円</div></div>
-<div class="tiernote">損切りは「塩漬け（持ち越しの含み損）」を小さな確定損に置き換える保険です。トータル損益で比べて、自分の損切り%を決めてください。あなたの設定（持ち株管理で入力した%）に印が付きます。</div></div>
+<div class="tier" data-sl="none"><div class="tname">損切りなし（おばあさん流）<span class="best">★ この1年の最適</span></div><div class="barwrap"><div class="barp" style="width:100%"></div><span class="barv num plus">+47,039,179円</span></div><div class="tfacts num">勝率100%（利確4,041・損切り0） ／ 持ち越し710件 −17,298,703円</div></div>
+<div class="tier" data-sl="3"><div class="tname">損切り −3%</div><div class="barwrap"><div class="barp" style="width:42%"></div><span class="barv num plus">+19,969,870円</span></div><div class="tfacts num">勝率41%（利確10,152・損切り14,394） ／ 持ち越し430件 +1,694,200円</div></div>
+<div class="tier" data-sl="5"><div class="tname">損切り −5%</div><div class="barwrap"><div class="barp" style="width:51%"></div><span class="barv num plus">+24,131,760円</span></div><div class="tfacts num">勝率55%（利確9,466・損切り7,675） ／ 持ち越し473件 +1,340,730円</div></div>
+<div class="tier" data-sl="8"><div class="tname">損切り −8%</div><div class="barwrap"><div class="barp" style="width:58%"></div><span class="barv num plus">+27,058,329円</span></div><div class="tfacts num">勝率69%（利確8,179・損切り3,730） ／ 持ち越し515件 +569,870円</div></div>
+<div class="tier" data-sl="10"><div class="tname">損切り −10%</div><div class="barwrap"><div class="barp" style="width:67%"></div><span class="barv num plus">+31,323,951円</span></div><div class="tfacts num">勝率75%（利確7,492・損切り2,525） ／ 持ち越し525件 −26,173円</div></div>
+<div class="tier" data-sl="15"><div class="tname">損切り −15%</div><div class="barwrap"><div class="barp" style="width:83%"></div><span class="barv num plus">+38,937,276円</span></div><div class="tfacts num">勝率85%（利確6,228・損切り1,098） ／ 持ち越し576件 −1,972,277円</div></div>
+<div class="tiernote">棒の長さ＝トータル損益（確定+含み）。★が過去1年での最適設定です。ただし過去1年に最適だった数字が来年も最適とは限らないため、★と自分の設定（印付き）が大きくズレていないかを確認する使い方が健全です。</div></div>
+<div class="card"><h2>どの根拠が本当に効いているか（この1年の全買いシグナル実測）</h2>
+<div class="fact"><span>ゴールデンクロス中（50日線＞200日線）</span><span class="v num">勝率 73% vs 非該当 74%（<b class="minus">-0pt</b>・65,101回中）</span></div>
+<div class="fact"><span>RSI(14)が40以下（売られすぎ）</span><span class="v num">勝率 73% vs 非該当 74%（<b class="minus">-1pt</b>・37,946回中）</span></div>
+<div class="fact"><span>じわ下げ（直近に1日4%超の急落なし）</span><span class="v num">勝率 72% vs 非該当 76%（<b class="minus">-4pt</b>・51,753回中）</span></div>
+<div class="tiernote">「勝ち」＝買いシグナルの後40営業日以内に利確ライン到達。差がプラスの要因は採点で重視する価値があり、差が無い/マイナスの要因は配点を見直す根拠になります。毎晩の実行で更新される、採点ルール自身の成績表です。</div></div>
 <div class="card"><h2>参考: 資金無制限で全シグナルを拾った場合の内訳</h2>
 <div class="fact"><span>買いに入った回数</span><span class="v num">4,751回</span></div>
 <div class="fact"><span>利確ライン（+5%）で売れた回数</span><span class="v num">4,041回（85%）</span></div>
