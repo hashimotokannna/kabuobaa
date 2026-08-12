@@ -24,6 +24,7 @@ import base64
 import html
 import json
 import math
+import os
 import random
 import sys
 import time
@@ -458,6 +459,7 @@ def render_html(data):
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="robots" content="noindex, nofollow">
 <link rel="apple-touch-icon" href="icon.png">
 <link rel="icon" type="image/png" href="icon.png">
 <title>Kabuobaa - 今夜の{len(stocks)}銘柄</title>
@@ -525,6 +527,107 @@ def render_html(data):
 </body>
 </html>
 """
+
+
+# ------------------------------------------------------------
+# 施錠（パスワード付き公開）
+# GitHubのSecretsに PAGE_PASSWORD を登録すると、ページ全体を
+# AES-256-GCMで暗号化して公開する。正しいパスワードを入れた
+# ブラウザの中でだけ復号されるので、ソースを見ても解読できない。
+# ------------------------------------------------------------
+PBKDF2_ITERS = 310000
+
+LOCK_TEMPLATE = """<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="robots" content="noindex, nofollow">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<link rel="apple-touch-icon" href="icon.png">
+<link rel="icon" type="image/png" href="icon.png">
+<title>Kabuobaa</title>
+<style>
+  *{box-sizing:border-box; margin:0; padding:0;}
+  body{font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans",sans-serif;
+    background:#faf6ec; min-height:100vh; display:flex; align-items:center;
+    justify-content:center; padding:24px;}
+  .card{width:100%; max-width:320px; text-align:center;}
+  .mark{font-size:44px; font-weight:800; color:#1c1c1e;}
+  .mark span{color:#c62f2f;}
+  .msg{font-size:13px; color:#6e6e73; margin:10px 0 22px;}
+  input{width:100%; font-size:16px; padding:12px 14px; border:1.5px solid #d9d2bf;
+    border-radius:10px; background:#fff; text-align:center;}
+  input:focus{outline:none; border-color:#8a7a55;}
+  button{width:100%; margin-top:10px; font-size:15px; font-weight:700; color:#fff;
+    background:#1c1c1e; border:none; border-radius:10px; padding:12px;}
+  label{display:flex; align-items:center; justify-content:center; gap:6px;
+    font-size:12px; color:#6e6e73; margin-top:14px;}
+  .err{color:#c62f2f; font-size:12px; font-weight:700; margin-top:12px; min-height:16px;}
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="mark">株<span>◎</span></div>
+  <div class="msg">合言葉を入れてノートを開く</div>
+  <input id="pw" type="password" placeholder="パスワード" autocomplete="current-password">
+  <button onclick="go()">開く</button>
+  <label><input id="rem" type="checkbox" checked style="width:auto"> この端末では次回から自動で開く</label>
+  <div class="err" id="err"></div>
+</div>
+<script>
+const SALT="__SALT__", IV="__IV__", CT="__CT__", ITERS=__ITERS__;
+const b64 = s => Uint8Array.from(atob(s), c => c.charCodeAt(0));
+async function tryOpen(pw){
+  const enc = new TextEncoder();
+  const mat = await crypto.subtle.importKey("raw", enc.encode(pw), "PBKDF2", false, ["deriveKey"]);
+  const key = await crypto.subtle.deriveKey(
+    {name:"PBKDF2", salt:b64(SALT), iterations:ITERS, hash:"SHA-256"},
+    mat, {name:"AES-GCM", length:256}, false, ["decrypt"]);
+  const plain = await crypto.subtle.decrypt({name:"AES-GCM", iv:b64(IV)}, key, b64(CT));
+  document.open(); document.write(new TextDecoder().decode(plain)); document.close();
+}
+async function go(){
+  const pw = document.getElementById("pw").value;
+  const err = document.getElementById("err");
+  err.textContent = "";
+  try{
+    if(document.getElementById("rem").checked) localStorage.setItem("kabuobaa_pw", pw);
+    await tryOpen(pw);
+  }catch(e){
+    localStorage.removeItem("kabuobaa_pw");
+    err.textContent = "合言葉が違うようです";
+  }
+}
+document.getElementById("pw").addEventListener("keydown", e => { if(e.key === "Enter") go(); });
+(async () => {
+  const saved = localStorage.getItem("kabuobaa_pw");
+  if(saved){ try{ await tryOpen(saved); }catch(e){ localStorage.removeItem("kabuobaa_pw"); } }
+})();
+</script>
+</body>
+</html>
+"""
+
+
+def render_locked(inner_html, password):
+    """ページ全体をAES-256-GCMで暗号化し、パスワード入力画面に包んで返す"""
+    from cryptography.hazmat.primitives import hashes
+    from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
+    from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+    salt = os.urandom(16)
+    iv = os.urandom(12)
+    kdf = PBKDF2HMAC(algorithm=hashes.SHA256(), length=32, salt=salt,
+                     iterations=PBKDF2_ITERS)
+    key = kdf.derive(password.encode("utf-8"))
+    ct = AESGCM(key).encrypt(iv, inner_html.encode("utf-8"), None)
+    return (LOCK_TEMPLATE
+            .replace("__SALT__", base64.b64encode(salt).decode())
+            .replace("__IV__", base64.b64encode(iv).decode())
+            .replace("__CT__", base64.b64encode(ct).decode())
+            .replace("__ITERS__", str(PBKDF2_ITERS)))
+
+
 
 
 # ホーム画面用アイコン（PNGをbase64で埋め込み。実行時にdocs/icon.pngとして書き出す）
@@ -708,7 +811,14 @@ def main():
     (DOCS / "icon.png").write_bytes(base64.b64decode(ICON_B64))
     (DOCS / "data.json").write_text(
         json.dumps(data, ensure_ascii=False, indent=1), encoding="utf-8")
-    (DOCS / "index.html").write_text(render_html(data), encoding="utf-8")
+    html_out = render_html(data)
+    password = os.environ.get("PAGE_PASSWORD", "").strip()
+    if password:
+        html_out = render_locked(html_out, password)
+        print("施錠モード: パスワード付きで公開します")
+    else:
+        print("注意: PAGE_PASSWORD が未設定のため、施錠なしで公開します")
+    (DOCS / "index.html").write_text(html_out, encoding="utf-8")
 
     print(f"完了: {len(data['stocks'])}銘柄を選定 "
           f"(除外 {stats.get('dead_excluded', 0)}銘柄) → docs/index.html")
