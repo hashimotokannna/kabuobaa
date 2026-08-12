@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="robots" content="noindex, nofollow">
+<link rel="apple-touch-icon" href="icon.png">
+<link rel="icon" type="image/png" href="icon.png">
+<title>手法の検証レポート</title>
+<style>
+  :root{--ink:#1c1c1e; --ink2:#6e6e73; --ink3:#aeaeb2; --paper:#faf6ec;
+    --paper-line:#e7e0cf; --bg:#f2f2f7; --cheap:#c62f2f; --cheap-bg:#fdeeee;
+    --mild:#b06a00; --mild-bg:#fdf3e3;}
+  *{box-sizing:border-box; margin:0; padding:0;}
+  body{font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Noto Sans JP",sans-serif;
+    background:var(--bg); color:var(--ink); max-width:640px; margin:0 auto;
+    padding:14px 12px 40px;}
+  .num{font-family:ui-monospace,"SF Mono",Menlo,monospace; font-variant-numeric:tabular-nums;}
+  header{padding:6px 4px 12px;}
+  header .t{font-size:20px; font-weight:800;}
+  header .s{font-size:12px; color:var(--ink2); margin-top:3px; line-height:1.6;}
+  .back{display:inline-block; font-size:12px; font-weight:700; color:#2e4d7b;
+    text-decoration:none; margin-bottom:8px;}
+  .card{background:var(--paper); border-radius:14px; padding:12px 14px;
+    margin-bottom:12px; box-shadow:0 1px 3px rgba(0,0,0,.06);}
+  .card h2{font-size:13px; font-weight:800; color:#7a6a45; letter-spacing:.05em;
+    margin-bottom:8px;}
+  .fact{display:flex; justify-content:space-between; font-size:12.5px; padding:6px 0;
+    border-bottom:1px solid #f0ead9;}
+  .fact span:first-child{color:var(--ink2);}
+  .fact .v{font-weight:700;}
+  .plus{color:#2e7d32;} .minus{color:var(--cheap);}
+  .note{font-size:11px; color:var(--ink3); line-height:1.7; padding:8px 4px;}
+  
+</style>
+</head>
+<body>
+<a class="back" href="index.html">‹ 帳簿にもどる</a>
+<header><div class="t">手法の検証レポート</div><div class="s">8/13（木）時点 ・ 過去1年の日足で仮想実行 ・ ルール: ◎（20日高値から5%安）になったら翌日の始値で100株買い → +5,000円の指値で売る</div></header>
+<div class="card"><h2>この1年、手法をそのまま機械的に続けていたら</h2>
+<div class="fact"><span>買いに入った回数</span><span class="v num">177回</span></div>
+<div class="fact"><span>+5,000円で売れた回数</span><span class="v num">162回（92%）</span></div>
+<div class="fact"><span>確定した利益の合計</span><span class="v num plus">+810,000円</span></div>
+<div class="fact"><span>+5,000円までの平均日数</span><span class="v num">約10営業日</span></div>
+<div class="fact"><span>まだ売れていない持ち越し</span><span class="v num">15件（うち含み損 12件）</span></div>
+<div class="fact"><span>持ち越し分の含み損益 合計</span><span class="v num minus">−402,200円</span></div>
+</div>
+<div class="card"><h2>月別・+5,000円が取れた回数</h2>
+<div class="fact"><span class="num">2025/09</span><span class="v num">5回</span></div>
+<div class="fact"><span class="num">2025/10</span><span class="v num">21回</span></div>
+<div class="fact"><span class="num">2025/11</span><span class="v num">12回</span></div>
+<div class="fact"><span class="num">2025/12</span><span class="v num">15回</span></div>
+<div class="fact"><span class="num">2026/01</span><span class="v num">11回</span></div>
+<div class="fact"><span class="num">2026/02</span><span class="v num">17回</span></div>
+<div class="fact"><span class="num">2026/03</span><span class="v num">15回</span></div>
+<div class="fact"><span class="num">2026/04</span><span class="v num">15回</span></div>
+<div class="fact"><span class="num">2026/05</span><span class="v num">20回</span></div>
+<div class="fact"><span class="num">2026/06</span><span class="v num">7回</span></div>
+<div class="fact"><span class="num">2026/07</span><span class="v num">17回</span></div>
+<div class="fact"><span class="num">2026/08</span><span class="v num">7回</span></div>
+</div>
+<div class="card"><h2>塩漬け注意リスト（含み損の大きい持ち越し）</h2>
+<div class="fact"><span>日鉄鉱業 <span class="num">1515</span>（02/16買い・119日経過）</span><span class="v num minus">−108,500円</span></div>
+<div class="fact"><span>タマホーム <span class="num">1419</span>（04/14買い・80日経過）</span><span class="v num minus">−71,700円</span></div>
+<div class="fact"><span>ＪＥＳＣＯホールディングス <span class="num">1434</span>（05/18買い・60日経過）</span><span class="v num minus">−71,200円</span></div>
+<div class="fact"><span>ミライト・ワン <span class="num">1417</span>（05/19買い・59日経過）</span><span class="v num minus">−53,200円</span></div>
+<div class="fact"><span>グリーンエナジー＆カンパニー <span class="num">1436</span>（05/28買い・52日経過）</span><span class="v num minus">−42,700円</span></div>
+<div class="fact"><span>ニッスイ <span class="num">1332</span>（03/04買い・108日経過）</span><span class="v num minus">−18,000円</span></div>
+<div class="fact"><span>ソラコム <span class="num">147A</span>（01/05買い・147日経過）</span><span class="v num minus">−14,200円</span></div>
+<div class="fact"><span>ＪＳＨ <span class="num">150A</span>（07/24買い・12日経過）</span><span class="v num minus">−12,000円</span></div>
+<div class="fact"><span>インターライフホールディングス <span class="num">1418</span>（01/07買い・145日経過）</span><span class="v num minus">−8,500円</span></div>
+<div class="fact"><span>ＳＡＡＦホールディングス <span class="num">1447</span>（02/16買い・119日経過）</span><span class="v num minus">−8,300円</span></div>
+<div class="fact"><span>ウエストホールディングス <span class="num">1407</span>（08/10買い・1日経過）</span><span class="v num minus">−5,900円</span></div>
+<div class="fact"><span>ユキグニファクトリー <span class="num">1375</span>（08/05買い・4日経過）</span><span class="v num minus">−500円</span></div>
+<div class="fact"><span>ＶＲＡＩＮ　Ｓｏｌｕｔｉｏｎ <span class="num">135A</span>（08/12買い・0日経過）</span><span class="v num minus">+0円</span></div>
+<div class="fact"><span>サカタのタネ <span class="num">1377</span>（08/07買い・2日経過）</span><span class="v num minus">+2,500円</span></div>
+<div class="fact"><span>ホクト <span class="num">1379</span>（08/04買い・5日経過）</span><span class="v num minus">+10,000円</span></div>
+</div>
+<div class="note">この検証は「いまの対象銘柄」の過去1年をなぞった簡易計算です。手数料・税金は含みません。買値は翌営業日の始値、売りは+50円/株に到達した日に成立と仮定。同時に何銘柄でも買える前提のため、実際の資金では全部は買えません。傾向を掴む道具としてお使いください。</div>
+
+</body>
+</html>
