@@ -4,7 +4,12 @@ on:
   schedule:
     # 平日 JST 20:30 (= UTC 11:30) に実行
     - cron: "30 11 * * 1-5"
-  workflow_dispatch: {}   # 手動実行ボタンも有効化
+  workflow_dispatch:      # 手動実行ボタンも有効化
+    inputs:
+      limit:
+        description: "テスト用: 銘柄数を絞る（例: 50）。空欄なら全銘柄"
+        required: false
+        default: ""
 
 permissions:
   contents: write
@@ -26,6 +31,7 @@ jobs:
       - name: スクリーニング実行
         env:
           PAGE_PASSWORD: ${{ secrets.PAGE_PASSWORD }}
+          TEST_LIMIT: ${{ inputs.limit }}
         run: python screener.py
 
       - name: 結果をコミット
