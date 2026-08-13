@@ -936,6 +936,7 @@ def run_screening():
                  "open": 0, "open_pnl": 0.0} for v in SL_VARIANTS}
     factor_stats = {k: {"with": [0, 0], "without": [0, 0]}
                     for k in ("gc", "rsi", "gradual")}
+    detail_map = {}
     done = 0
     with ThreadPoolExecutor(max_workers=CONFIG["WORKERS"]) as pool:
         futures = [pool.submit(task, s) for s in universe]
@@ -956,6 +957,11 @@ def run_screening():
             status, reason = classify(m)
             base["close"] = round(m["close"], 1)
             base["drop_pct"] = round(m["drop_pct"], 2)
+            long_m = compute_long_metrics(days_full)
+            detail_map[stock["code"]] = {
+                **stock, **m, "status": status, "reason": reason,
+                "days": days[-10:], "long": long_m,
+            }
             if status == "dead":
                 dead_count += 1
                 all_results.append({**base, "status": "dead", "reason": reason})
@@ -968,7 +974,7 @@ def run_screening():
             var_trades = simulate_variants(days)
             trades = var_trades[None]
             candidates.append({**stock, **m, "days": days[-10:],
-                               "long": compute_long_metrics(days_full),
+                               "long": long_m,
                                "sim": sim_summary(trades)})
             all_results.append({**base, "status": "ok", "reason": ""})
             if trades:
@@ -1031,16 +1037,26 @@ def run_screening():
     print("TDnet適時開示とファンダメンタル指標を取得中...")
     import requests as _rq
     td_session = _rq.Session()
-    # ファンダは候補全銘柄分（画面側のPER/PBR基準による除外に使う）
-    fundamentals = fetch_fundamentals(td_session, [c["code"] for c in candidates])
+    # ファンダは詳細を持つ全銘柄分（画面側の基準除外+全銘柄詳細に使う）
+    fundamentals = fetch_fundamentals(td_session, list(detail_map.keys()))
     fund_ok = len(fundamentals) > 0
     for c in candidates:
         c["fund"] = fundamentals.get(c["code"])
+    rank_map2 = {s["code"]: i + 1 for i, s in enumerate(picked)}
+    for c in candidates:
+        e = detail_map.get(c["code"])
+        if e is not None:
+            e["score"] = c.get("score")
+            e["reasons"] = c.get("reasons", [])
+            e["sim"] = c.get("sim")
+            e["cand_rank"] = rank_map2.get(c["code"])
+    for code, e in detail_map.items():
+        e["fund"] = fundamentals.get(code)
     for s in picked:
         s["disclosures"] = fetch_tdnet(td_session, s["code"])
         time.sleep(0.25)
     extras = {"factor_stats": factor_stats, "market": market,
-              "fund_available": fund_ok}
+              "fund_available": fund_ok, "detail_map": detail_map}
     return picked, stats, all_results, sim_records, portfolio, slstats, extras
 
 
@@ -1218,7 +1234,15 @@ def make_demo_data():
         {"sl": 15.0, "tp_count": 585, "sl_count": 55, "realized": 3400000,
          "open": 140, "open_pnl": -2000000},
     ]
+    detail_map = {}
+    for s in picked:
+        detail_map[s["code"]] = {**s, "status": "picked",
+                                 "reason": "", "cand_rank": 1}
+    detail_map["6800"] = {"code": "6800", "name": "デモ右肩下がり", "market": "スタンダード",
+                          "sector": "電気機器", "suffix": ".T", "status": "dead",
+                          "reason": "1年高値から55%下落", "days": [], "long": {}}
     extras = {
+        "detail_map": detail_map,
         "factor_stats": {
             "gc": {"with": [420, 260], "without": [380, 170]},
             "rsi": {"with": [310, 195], "without": [490, 235]},
@@ -2170,12 +2194,15 @@ def render_universe(all_results, stats, dt):
             why = r.get("reason") or ""
         reason_html = (f'<span class="why">{html.escape(why)}</span>' if why else "")
         return (
-            f'<div class="urow" data-s="{r["status"]}" data-t="{html.escape(r["name"].lower())} {r["code"]}">'
+            f'<details class="udet" data-s="{r["status"]}" data-code="{r["code"]}" '
+            f'data-t="{html.escape(r["name"].lower())} {r["code"]}">'
+            f'<summary class="urow">'
             f'<span class="st" style="background:{bg}; color:{fg}">{label}</span>'
             f'<span class="un"><b>{html.escape(r["name"])}</b> '
             f'<span class="chip {mchip}">{html.escape(r.get("market", "") or "−")}</span> '
             f'<span class="num uc">{r["code"]}</span>{reason_html}</span>'
-            f'<span class="up num">{close}<small>{drop}</small></span></div>')
+            f'<span class="up num">{close}<small>{drop}</small></span></summary>'
+            f'<div class="ubody">読み込み中…</div></details>')
 
     rows = []
     for g, members in ordered_groups:
@@ -2207,6 +2234,18 @@ def render_universe(all_results, stats, dt):
   .up{flex:none; text-align:right; font-weight:700; font-size:12px;}
   .up small{display:block; font-weight:600; color:var(--cheap); font-size:10px;}
   .hidden{display:none;}
+  details.udet summary.urow{list-style:none; cursor:pointer;}
+  details.udet summary.urow::-webkit-details-marker{display:none;}
+  details.udet[open] summary.urow{background:#f4eedd;}
+  .ubody{background:#fffdf6; border-top:1px dashed var(--paper-line); padding:10px 14px 14px;}
+  .nhead{font-size:10.5px; font-weight:800; color:#7a6a45; letter-spacing:.06em; margin:10px 0 4px;}
+  .reason{font-size:11px; color:var(--ink2); line-height:1.7; padding:2px 0;}
+  .nrow{display:flex; gap:10px; font-size:11.5px; padding:4px 0;}
+  .nrow .nd{width:58px; font-weight:700; flex:none;}
+  .spark{margin:4px 0 2px;}
+  .discnote{font-size:10px; color:var(--ink3); line-height:1.6; padding:5px 0 2px;}
+  .ylink{display:block; margin-top:10px; font-size:12px; font-weight:700; color:#2e4d7b;
+    text-decoration:none; text-align:center; background:#eef2f8; border-radius:9px; padding:9px;}
   .chip{display:inline-block; font-size:9px; font-weight:600; border-radius:5px;
     padding:1.5px 5px; vertical-align:1px;}
   .chip.prime{background:#e8eef8; color:#2e4d7b;}
@@ -2222,7 +2261,7 @@ def render_universe(all_results, stats, dt):
   details.gsec[open] .gchev{transform:rotate(90deg);}
 """
     script = """<script>
-const rows = Array.from(document.querySelectorAll('.urow'));
+const rows = Array.from(document.querySelectorAll('details.udet'));
 let filter = 'all';
 function apply(){
   const q = document.getElementById('q').value.trim().toLowerCase();
@@ -2232,10 +2271,20 @@ function apply(){
     r.classList.toggle('hidden', !(okF && okQ));
   }
   for (const g of document.querySelectorAll('details.gsec')){
-    const visible = g.querySelectorAll('.urow:not(.hidden)').length;
+    const visible = g.querySelectorAll('details.udet:not(.hidden)').length;
     g.classList.toggle('hidden', visible === 0);
   }
 }
+// タップで銘柄別詳細をオンデマンド読み込み
+rows.forEach(r => r.addEventListener('toggle', () => {
+  if (!r.open || r.dataset.loaded) return;
+  r.dataset.loaded = '1';
+  const body = r.querySelector('.ubody');
+  fetch('details/' + r.dataset.code + '.json')
+    .then(resp => { if (!resp.ok) throw new Error(); return resp.json(); })
+    .then(j => { body.innerHTML = j.html; })
+    .catch(() => { body.textContent = 'この銘柄の詳細データはありません（取得失敗銘柄など）'; });
+}));
 document.querySelectorAll('.fbtn').forEach(c => c.addEventListener('click', () => {
   document.querySelectorAll('.fbtn').forEach(x => x.classList.remove('on'));
   c.classList.add('on'); filter = c.dataset.f; apply();
@@ -2512,6 +2561,80 @@ SBIアプリが起動します。SBIアプリの銘柄検索に<b>長押し→�
             .replace("__FOOTNOTE__", footnote)
             .replace("__EXTRA_CSS__", extra_css)
             .replace("__SCRIPT__", ""))
+
+
+STATUS_LABEL = {"picked": "厳選候補", "ok": "候補", "bench": "圏外",
+                "dead": "除外", "skip": "対象外", "fail": "取得失敗"}
+
+
+def render_stock_detail(e):
+    """1銘柄の詳細HTML断片（全銘柄一覧のタップ展開用）"""
+    parts = []
+    status = e.get("status", "")
+    if e.get("cand_rank"):
+        parts.append(f'<div class="nhead">候補{e["cand_rank"]}位 ・ スコア {e.get("score", 0):.0f}点</div>')
+        for r in e.get("reasons", []):
+            parts.append(f'<div class="reason">・{html.escape(r)}</div>')
+    elif e.get("score") is not None:
+        parts.append(f'<div class="nhead">スコア {e["score"]:.0f}点（候補圏外）</div>')
+        for r in e.get("reasons", []):
+            parts.append(f'<div class="reason">・{html.escape(r)}</div>')
+    elif status == "dead":
+        parts.append(f'<div class="nhead">除外理由</div>'
+                     f'<div class="reason">・{html.escape(e.get("reason", ""))}</div>')
+    elif status == "skip":
+        parts.append(f'<div class="nhead">対象外の理由</div>'
+                     f'<div class="reason">・{html.escape(e.get("reason", ""))}</div>')
+
+    fu = e.get("fund")
+    if fu:
+        parts.append('<div class="nhead">ファンダメンタル指標</div>')
+        if fu.get("per") is not None:
+            parts.append(f'<div class="fact"><span>PER</span><span class="num">{fu["per"]:.1f}倍</span></div>')
+        if fu.get("pbr") is not None:
+            parts.append(f'<div class="fact"><span>PBR</span><span class="num">{fu["pbr"]:.2f}倍</span></div>')
+        if fu.get("div_yield") is not None:
+            parts.append(f'<div class="fact"><span>配当利回り</span><span class="num">{fu["div_yield"]:.2f}%</span></div>')
+        if fu.get("mcap_oku"):
+            parts.append(f'<div class="fact"><span>時価総額</span><span class="num">{fu["mcap_oku"]:,}億円</span></div>')
+
+    lg = e.get("long") or {}
+    svg = spark_svg(lg.get("spark"), lg)
+    if svg:
+        z = lg.get("zone")
+        zline = (f'赤い帯=長期支持帯 {z["zone_low"]:,.0f}〜{z["zone_top"]:,.0f}円（▲=反発地点 ・ ●=いま）'
+                 if z else "●=いま（3年週足）")
+        parts.append(f'<div class="nhead">3年の値動きと支持帯</div><div class="spark">{svg}</div>'
+                     f'<div class="discnote">{zline}</div>')
+
+    days = e.get("days") or []
+    if days:
+        weekdays = "月火水木金土日"
+        parts.append('<div class="nhead">ノート（新しい順）</div>')
+        for d in reversed(days):
+            dt2 = datetime.fromisoformat(d["date"])
+            label = f"{dt2.month}/{dt2.day}({weekdays[dt2.weekday()]})"
+            parts.append(f'<div class="nrow num"><span class="nd">{label}</span>'
+                         f'<span>始:{d["open"]:,.0f} 高:{d["high"]:,.0f} '
+                         f'安:{d["low"]:,.0f} 終:{d["close"]:,.0f}</span></div>')
+
+    yahoo_url = f'https://finance.yahoo.co.jp/quote/{e["code"]}{e.get("suffix", ".T")}'
+    parts.append(f'<a class="ylink" href="{yahoo_url}" target="_blank" rel="noopener">'
+                 f'Yahoo!ファイナンスで詳細を見る →</a>')
+    return "".join(parts)
+
+
+def write_details(detail_map):
+    ddir = DOCS / "details"
+    ddir.mkdir(exist_ok=True)
+    for code, e in detail_map.items():
+        try:
+            payload = {"html": render_stock_detail(e)}
+            (ddir / f"{code}.json").write_text(
+                json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+        except Exception:  # noqa: BLE001
+            continue
+    print(f"  銘柄別詳細: {len(detail_map):,}件を書き出し")
 
 
 # ------------------------------------------------------------
@@ -2815,6 +2938,17 @@ def main():
                         extras.get("factor_stats")), encoding="utf-8")
     (DOCS / "holdings.html").write_text(render_holdings(dt_now), encoding="utf-8")
     (DOCS / "guide.html").write_text(render_guide(dt_now), encoding="utf-8")
+    write_details(extras.get("detail_map") or {})
+
+    # 選定履歴（1行/実行の軽量ログ。公開ブランチ上で引き継がれる）
+    hdir = DOCS / "history"
+    hdir.mkdir(exist_ok=True)
+    with open(hdir / "picks.jsonl", "a", encoding="utf-8") as f:
+        f.write(json.dumps({
+            "at": data["generated_at"][:16],
+            "picked": [s["code"] for s in data["stocks"][:CONFIG["TOP_N"]]],
+            "cutoff": stats.get("cutoff_score"),
+        }, ensure_ascii=False) + "\n")
 
     # 持ち株管理用: 全銘柄の最新価格表（銘柄名・終値・日付のみの公開情報）
     prices = {}
