@@ -44,7 +44,7 @@ CONFIG = {
 
     # 選定
     "TOP_N": 10,             # 画面に出す厳選銘柄数
-    "SHORTLIST_N": 40,       # 候補として用意する数（持ち金で外れる分の予備を含む）
+    "SHORTLIST_N": 60,       # 候補として用意する数（持ち金・PER等の基準で外れる分の予備を含む）
     "RECENT_DAYS": 20,       # 「普段の値段」とみなす直近営業日数
     "CHEAP_PCT": 5.0,        # ◎かなり安い: 直近高値からこの%以上下落
     "MILD_PCT": 3.0,         # ○安め: 直近高値からこの%以上下落
@@ -323,6 +323,14 @@ def compute_metrics(days):
             break
     prev_change = rets20[-1] if rets20 else None
 
+    # 夜間ギャップ: 前日終値→翌朝始値の乖離の平均（夜の指値が守りやすいか）
+    gaps = []
+    for i in range(max(1, len(days) - 20), len(days)):
+        pc = days[i - 1]["close"]
+        if pc > 0:
+            gaps.append(abs(days[i]["open"] - pc) / pc * 100)
+    gap_avg = sum(gaps) / len(gaps) if gaps else None
+
     return {
         "open": latest["open"], "high": latest["high"],
         "low": latest["low"], "close": latest["close"],
@@ -337,7 +345,7 @@ def compute_metrics(days):
         "concentration": concentration, "stabilizing": stabilizing,
         "ma200_above": ma200_above,
         "vol_ratio": vol_ratio, "cheap_streak": cheap_streak,
-        "prev_change": prev_change,
+        "prev_change": prev_change, "gap_avg": gap_avg,
     }
 
 
@@ -443,9 +451,17 @@ def score_stock(s):
         score += base_pt
         reasons.append(f"過去1年、同じ買い方で {wins}回 利確ライン（+{tp:.0f}%）に到達（+{base_pt:.0f}点）")
         ah = t.get("avg_held")
-        if ah is not None and ah <= 10:
-            score += 10
-            reasons.append(f"利確まで平均 {ah:.0f}営業日と回転が速い（+10点）")
+        if ah is not None:
+            if ah <= 7:
+                score += 15
+                reasons.append(f"利確まで平均 {ah:.0f}営業日。短期回転スタイルに最適（+15点）")
+            elif ah <= 15:
+                score += 8
+                reasons.append(f"利確まで平均 {ah:.0f}営業日（+8点）")
+            elif ah > 25:
+                score -= 5
+                reasons.append(f"利確まで平均 {ah:.0f}営業日と資金拘束が長め。"
+                               f"短期回転スタイルでは機会損失（−5点）")
     else:
         reasons.append("過去1年はこの買い方の成立実績なし（加点なし）")
     if t.get("open_loss"):
@@ -485,6 +501,17 @@ def score_stock(s):
     if lg.get("climax"):
         score += 6
         reasons.append("直近に出来高急増+長い下ヒゲ（セリングクライマックス=投げ売り一巡の兆候 +6点）")
+
+    # 5.5 夜1回の判断スタイルとの相性（翌朝の窓開けの小ささ）
+    ga = s.get("gap_avg")
+    if ga is not None:
+        if ga <= 1.0:
+            score += 8
+            reasons.append(f"夜間ギャップ（翌朝の窓開け）平均±{ga:.1f}%と小さく、"
+                           f"夜に決めた指値が翌朝も有効に働きやすい（+8点）")
+        elif ga >= 2.5:
+            score -= 5
+            reasons.append(f"夜間ギャップ平均±{ga:.1f}%と大きく、夜の判断が翌朝ズレやすい（−5点）")
 
     # 6. 売り買いのしやすさ
     tv = s.get("turnover", 0)
@@ -832,8 +859,8 @@ def fetch_fundamentals(session, codes):
     """PER/PBR/時価総額/配当利回りをまとめて取得。取得不可なら空dict（表示側で非表示）"""
     out = {}
     headers = {"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)"}
-    for i in range(0, len(codes), 20):
-        batch = codes[i:i + 20]
+    for i in range(0, len(codes), 50):
+        batch = codes[i:i + 50]
         symbols = ",".join(f"{c}.T" for c in batch)
         try:
             resp = session.get(
@@ -1004,12 +1031,16 @@ def run_screening():
     print("TDnet適時開示とファンダメンタル指標を取得中...")
     import requests as _rq
     td_session = _rq.Session()
-    fundamentals = fetch_fundamentals(td_session, [s["code"] for s in picked])
+    # ファンダは候補全銘柄分（画面側のPER/PBR基準による除外に使う）
+    fundamentals = fetch_fundamentals(td_session, [c["code"] for c in candidates])
+    fund_ok = len(fundamentals) > 0
+    for c in candidates:
+        c["fund"] = fundamentals.get(c["code"])
     for s in picked:
         s["disclosures"] = fetch_tdnet(td_session, s["code"])
-        s["fund"] = fundamentals.get(s["code"])
         time.sleep(0.25)
-    extras = {"factor_stats": factor_stats, "market": market}
+    extras = {"factor_stats": factor_stats, "market": market,
+              "fund_available": fund_ok}
     return picked, stats, all_results, sim_records, portfolio, slstats, extras
 
 
@@ -1129,6 +1160,7 @@ def make_demo_data():
         s["vol_ratio"] = rng.uniform(0.5, 3.5)
         s["cheap_streak"] = rng.randint(0, 6)
         s["prev_change"] = rng.uniform(-4, 2)
+        s["gap_avg"] = rng.uniform(0.3, 3.0)
         s["score"], s["reasons"] = score_stock(s)
     picked.sort(key=lambda s: s["score"], reverse=True)
     stats = {"universe": 3912, "dead_excluded": 214, "skipped": 1480, "failed": 3,
@@ -1193,6 +1225,7 @@ def make_demo_data():
             "gradual": {"with": [520, 320], "without": [280, 110]},
         },
         "market": {"above200": True, "chg20": 2.4},
+        "fund_available": True,
     }
     return picked, stats, all_results, sim_records, portfolio, slstats, extras
 
@@ -1351,10 +1384,32 @@ try { favs = new Set(JSON.parse(localStorage.getItem(FAV_KEY) || '[]')); } catch
 
 function saveFavs(){ localStorage.setItem(FAV_KEY, JSON.stringify(Array.from(favs))); }
 
+const PERMAX_KEY = 'kabuobaa_permax', PBRMAX_KEY = 'kabuobaa_pbrmax', LOSS_KEY = 'kabuobaa_loss';
+const perIn = document.getElementById('permax');
+const pbrIn = document.getElementById('pbrmax');
+const lossChk = document.getElementById('losschk');
+
+function ruleCheck(r){
+  // 返り値: '' なら基準内。文字列なら除外理由
+  if (r.dataset.hasfund !== '1') return '';  // データ無しは判定不能=除外しない
+  const perMax = parseFloat(perIn.value) || 30;
+  const pbrMax = parseFloat(pbrIn.value) || 5;
+  const per = r.dataset.per === '' ? null : parseFloat(r.dataset.per);
+  const pbr = r.dataset.pbr === '' ? null : parseFloat(r.dataset.pbr);
+  if (lossChk.checked && per === null) return '赤字の可能性（PERなし）';
+  if (per !== null && per > perMax) return 'PER ' + per + '倍 > 上限' + perMax;
+  if (per !== null && per < 0) return 'PERマイナス（赤字）';
+  if (pbr !== null && pbr > pbrMax) return 'PBR ' + pbr + '倍 > 上限' + pbrMax;
+  return '';
+}
+
 function applyCap(){
   const man = parseFloat(capIn.value) || 0;
   const cap = man * 10000;
   localStorage.setItem(CAP_KEY, capIn.value || '');
+  localStorage.setItem(PERMAX_KEY, perIn.value || '');
+  localStorage.setItem(PBRMAX_KEY, pbrIn.value || '');
+  localStorage.setItem(LOSS_KEY, lossChk.checked ? '1' : '');
   const ledger = document.querySelector('.ledger');
   const rows = Array.from(document.querySelectorAll('details.drow'));
 
@@ -1369,15 +1424,19 @@ function applyCap(){
     const cost = parseFloat(r.dataset.cost);
     const afford = cap <= 0 || cost <= cap;
     const isFav = favs.has(r.querySelector('.fav').dataset.code);
+    const why = ruleCheck(r);
     r.classList.toggle('over', !afford);
+    r.classList.toggle('ruled', why !== '');
+    const tag = r.querySelector('.ruleout');
+    if (tag) tag.textContent = why ? '基準外: ' + why : '';
     let visible;
     if (allChk.checked){
       visible = true;
     } else if (isFav){
-      visible = true;  // お気に入りは資金に関わらず常に表示
+      visible = true;  // お気に入りは基準に関わらず常に表示
       shown++;
     } else {
-      visible = afford && shown < TOPN;
+      visible = afford && why === '' && shown < TOPN;
       if (visible) shown++;
     }
     r.classList.toggle('caphidden', !visible);
@@ -1407,7 +1466,12 @@ document.querySelectorAll('.fav').forEach(b => b.addEventListener('click', e => 
 
 if (capIn){
   capIn.value = localStorage.getItem(CAP_KEY) || '';
-  capIn.addEventListener('input', applyCap);
+  perIn.value = localStorage.getItem(PERMAX_KEY) || '';
+  pbrIn.value = localStorage.getItem(PBRMAX_KEY) || '';
+  lossChk.checked = localStorage.getItem(LOSS_KEY) !== '';
+  if (localStorage.getItem(LOSS_KEY) === null) lossChk.checked = true;
+  [capIn, perIn, pbrIn].forEach(el => el.addEventListener('input', applyCap));
+  lossChk.addEventListener('change', applyCap);
   allChk.addEventListener('change', applyCap);
   applyCap();
 }
@@ -1546,12 +1610,12 @@ def render_html(data):
                          f'<div class="discnote">決算・業績修正などの発表直後は値動きが大きくなりがちです。'
                          f'見出しをタップすると原文（PDF）が開きます。</div>')
         rows_html.append(f"""
-      <details class="drow" data-cost="{s["cost"]}">
+      <details class="drow" data-cost="{s["cost"]}" data-per="{(s.get("fund") or {}).get("per", "")}" data-pbr="{(s.get("fund") or {}).get("pbr", "")}" data-hasfund="{1 if s.get("fund") else 0}">
       <summary class="row">
         <div class="rk num">{s["rank"]}</div>
         <div class="nm">
           <div class="n1">{html.escape(s["name"])} <span class="chip {chip}">{html.escape(s["market"])}</span>{new_mark}</div>
-          <div class="n2 num"><button class="codebtn" onclick="copyCode(this, '{s["code"]}', event)">{s["code"]} ⧉</button> ・ {html.escape(s["group"])} ・ 100株 {s["cost"] / 10000:,.1f}万円 ・ {s["score"]:.0f}点<span class="nofund">資金不足</span></div>
+          <div class="n2 num"><button class="codebtn" onclick="copyCode(this, '{s["code"]}', event)">{s["code"]} ⧉</button> ・ {html.escape(s["group"])} ・ 100株 {s["cost"] / 10000:,.1f}万円 ・ {s["score"]:.0f}点<span class="nofund">資金不足</span><span class="ruleout"></span></div>
           {f'<div class="cmt">{html.escape(s["comment"])}</div>' if s.get("comment") else ""}
         </div>
         <div class="px">
@@ -1665,6 +1729,10 @@ def render_html(data):
   .codebtn{{font-family:inherit; font-size:inherit; color:#2e4d7b; background:none;
     border:none; border-bottom:1px dashed #9db3cc; padding:0 1px; cursor:pointer;}}
   .codebtn.copied{{color:#1a5c37; border-bottom-color:#1a5c37;}}
+  .ruleout{{display:none; color:#fff; background:#6b4487; font-size:9px; font-weight:800;
+    border-radius:4px; padding:1px 4px; margin-left:6px; vertical-align:1px;}}
+  details.drow.ruled summary.row{{opacity:.45;}}
+  details.drow.ruled .ruleout{{display:inline;}}
 __NAVCSS__
   .pnav{{display:flex; gap:8px; padding:0 0 10px;}}
   .pnav a{{flex:1; font-size:12px; font-weight:700; color:#4a3f28; text-decoration:none;
@@ -1732,6 +1800,7 @@ __NAV__
     <div class="step"><b>4. 根拠スコアで採点</b> 残った銘柄を「いまの安さ」「下げの質（じわ下げか急落か・値動きの穏やかさ）」「トレンドの地合い（200日線の上の押し目か・1年レンジ内の位置）」「過去1年でこの買い方が利確+{cfg["TP_PCT"]:.0f}%を取れた実績」「10年データの長期テクニカル（支持帯の反発実績と試行回数・ゴールデンクロス・RSI売られすぎ・W底・セリクラ兆候）」「売買のしやすさ」の6観点で採点し、上位{cfg["SHORTLIST_N"]}銘柄を候補に</div>
     <div class="step"><b>5. 厳選{cfg["TOP_N"]}銘柄</b> 候補のうち、持ち金設定があれば「100株買える銘柄」だけを対象に、スコア上位{cfg["TOP_N"]}銘柄を表示。各銘柄の点数の内訳はタップで確認できます</div>
     <div class="step"><b>6. 目安ラベル</b> ◎=高値から{cfg["CHEAP_PCT"]:.0f}%以上安い ／ ○={cfg["MILD_PCT"]:.0f}%以上安い ／ 「普段の値段」={cfg["RECENT_DAYS"]}日の終値平均</div>
+    <div class="step"><b>7. 投資スタイル調整</b> この採点は「夜1回の判断・短期回転（数日〜数週間）・50万円規模」向けに調整。夜間ギャップ（翌朝の窓開け）が小さい銘柄を加点、利確まで平均25日超の資金拘束銘柄を減点。PER・PBR・赤字の除外基準は上の設定パネルであなたが決められます</div>
     <div class="step" style="color:#8a5a17;">基準は毎回の実行時点の設定で、この文章も自動で追随します。個々の銘柄の判定理由は「全銘柄の判定一覧」で確認できます。</div>
   </div>
 </details>
@@ -1739,8 +1808,13 @@ __NAV__
   <div class="caprow">持ち金 <input id="cap" class="capin num" type="number" inputmode="numeric"
     placeholder="50"> 万円
     <label class="caponly"><input id="showall" type="checkbox"> 候補{len(stocks)}銘柄すべて表示</label></div>
-  <div class="capnote">この端末にだけ保存されます。設定すると「100株買える銘柄」の中からスコア上位{cfg["TOP_N"]}銘柄が選ばれます。
-  検証レポートの「持ち金別シミュレーション」とも連動します。</div>
+  <div class="caprow" style="margin-top:8px;">除外基準:
+    PER <input id="permax" class="capin num" type="number" inputmode="decimal" placeholder="30"> 倍超
+    ／ PBR <input id="pbrmax" class="capin num" type="number" inputmode="decimal" step="0.5" placeholder="5"> 倍超
+    <label class="caponly"><input id="losschk" type="checkbox" checked> 赤字も除外</label></div>
+  <div class="capnote">すべてこの端末にだけ保存。持ち金で「買える銘柄」、除外基準で「論外の銘柄」を外した中から、
+  スコア上位{cfg["TOP_N"]}銘柄が選ばれます（未入力は推奨値 PER30倍・PBR5倍で判定）。基準外の銘柄は
+  「候補すべて表示」で理由付きの薄表示になります。</div>
 </div>
 <div class="ledger">
 {body_rows}
@@ -1753,8 +1827,8 @@ __NAV__
 __CAPJS__
 </body>
 </html>
-""".replace("__CAPJS__", CAP_JS.replace("__TOPN__", str(cfg["TOP_N"]))) \
-       .replace("__NAVCSS__", NAV_CSS.replace("{", "{").replace("}", "}")) \
+""".replace("__CAPJS__", CAP_JS.replace("__TOPN__", str(cfg["TOP_N"])) + NAV_JS) \
+       .replace("__NAVCSS__", NAV_CSS) \
        .replace("__NAV__", nav_html("index"))
 
 
@@ -1774,6 +1848,30 @@ NAV_ITEMS = [
     ("backtest.html", "検証", "backtest"),
     ("guide.html", "使い方", "guide"),
 ]
+
+
+NAV_JS = """<script>
+(function(){
+  const order = ['index.html', 'holdings.html', 'universe.html', 'backtest.html', 'guide.html'];
+  let here = location.pathname.split('/').pop();
+  if (!here) here = 'index.html';
+  const idx = order.indexOf(here);
+  if (idx < 0) return;
+  let sx = 0, sy = 0, st = 0;
+  document.addEventListener('touchstart', e => {
+    const t = e.touches[0]; sx = t.clientX; sy = t.clientY; st = Date.now();
+  }, {passive: true});
+  document.addEventListener('touchend', e => {
+    const t = e.changedTouches[0];
+    const dx = t.clientX - sx, dy = t.clientY - sy;
+    if (Date.now() - st > 600) return;
+    if (Math.abs(dx) < 80 || Math.abs(dy) > 50 || Math.abs(dx) < Math.abs(dy) * 2) return;
+    if (e.target.closest('.topnav, .chips, .filters, input, textarea, .spark')) return;
+    const j = dx < 0 ? idx + 1 : idx - 1;
+    if (j >= 0 && j < order.length) location.href = order[j];
+  }, {passive: true});
+})();
+</script>"""
 
 
 def nav_html(active):
@@ -1830,6 +1928,7 @@ __NAV__
 __BODY__
 <div class="note">__FOOTNOTE__</div>
 __SCRIPT__
+__NAVJS__
 </body>
 </html>
 """
@@ -2015,6 +2114,7 @@ if (capIn){
 </script>"""
     return (SUBPAGE_TEMPLATE
             .replace("__NAVCSS__", NAV_CSS)
+            .replace("__NAVJS__", NAV_JS)
             .replace("__NAV__", nav_html("backtest"))
             .replace("__TITLE__", "手法の検証レポート")
             .replace("__SUBTITLE__", subtitle)
@@ -2156,6 +2256,7 @@ document.getElementById('q').addEventListener('input', apply);
                 "各行に個別の理由を表示。判定は毎回の実行で更新されます。")
     return (SUBPAGE_TEMPLATE
             .replace("__NAVCSS__", NAV_CSS)
+            .replace("__NAVJS__", NAV_JS)
             .replace("__NAV__", nav_html("universe"))
             .replace("__TITLE__", "全銘柄の判定一覧")
             .replace("__SUBTITLE__", subtitle)
@@ -2304,6 +2405,7 @@ render();
                 "実際の売り注文は証券会社アプリで行ってください。")
     return (SUBPAGE_TEMPLATE
             .replace("__NAVCSS__", NAV_CSS)
+            .replace("__NAVJS__", NAV_JS)
             .replace("__NAV__", nav_html("holdings"))
             .replace("__TITLE__", "持ち株の管理")
             .replace("__SUBTITLE__", subtitle)
@@ -2365,6 +2467,12 @@ def render_guide(dt):
 <div class="gstep"><b>地合いバナー</b> 帳簿上部の表示。日経平均が200日線の下にある間は市場全体が下落基調で、
 個別銘柄の押し目買いの成功率も下がる。慎重モードの合図です</div></div>
 
+<div class="card"><h2>操作のコツ</h2>
+<div class="gstep"><b>スワイプで画面切り替え</b> 画面を左右にスワイプすると、帳簿⇄持ち株⇄全銘柄⇄検証⇄使い方 を行き来できます（上部のタブでも移動可）</div>
+<div class="gstep"><b>除外基準の設定</b> 帳簿の設定パネルでPER上限・PBR上限・赤字除外を決めると、基準外の銘柄は選定から自動で外れ、
+基準内の銘柄が繰り上がります。未入力なら推奨値（PER30倍・PBR5倍・赤字除外ON）で判定。何が外れたかは「候補すべて表示」で理由付きで確認できます</div>
+<div class="gstep"><b>銘柄コードのコピー</b> 一覧のコード（例: 2489 ⧉）をタップすると即コピーされます</div></div>
+
 <div class="card"><h2>SBI証券アプリ連携の初期設定（1回だけ・30秒）</h2>
 <div class="gstep"><b>1.</b> iPhoneの「ショートカット」アプリ（紫のアイコン・標準搭載）を開く</div>
 <div class="gstep"><b>2.</b> 右上の「＋」→「アクションを追加」→検索欄に「Appを開く」と入力して選択</div>
@@ -2396,6 +2504,7 @@ SBIアプリが起動します。SBIアプリの銘柄検索に<b>長押し→�
     footnote = "仕様を変えるとこのページも自動で追随します。困ったことがあればこのページを最初に見てください。"
     return (SUBPAGE_TEMPLATE
             .replace("__NAVCSS__", NAV_CSS)
+            .replace("__NAVJS__", NAV_JS)
             .replace("__NAV__", nav_html("guide"))
             .replace("__TITLE__", "使い方")
             .replace("__SUBTITLE__", subtitle)
