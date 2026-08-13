@@ -1,5 +1,5 @@
 {
- "generated_at": "2026-08-13T16:03:22.849607+09:00",
+ "generated_at": "2026-08-13T17:06:52.856517+09:00",
  "date_label": "8/13",
  "stats": {
   "universe": 3754,
@@ -18098,7 +18098,7 @@
    ],
    "cost": 14200,
    "level": "cheap",
-   "is_new": true,
+   "is_new": false,
    "days": [
     {
      "date": "2026-08-13",
@@ -21017,7 +21017,7 @@
    ],
    "cost": 589000,
    "level": "cheap",
-   "is_new": true,
+   "is_new": false,
    "days": [
     {
      "date": "2026-08-13",
@@ -27339,7 +27339,7 @@
    ],
    "cost": 476600,
    "level": "cheap",
-   "is_new": true,
+   "is_new": false,
    "days": [
     {
      "date": "2026-08-13",
