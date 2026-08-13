@@ -79,7 +79,7 @@
 「終わった株」（1年高値から40%以上下落など）と「危ない下げ方」
 （1日8%超の急落・荒い値動き・下げ止まり未確認）を除外。
 残りを5観点（いまの安さ・下げの質・トレンドの地合い・過去1年の利確実績・売買のしやすさ)で採点し、
-上位40銘柄を候補に、そこから10銘柄を表示します。
+上位60銘柄を候補に、そこから10銘柄を表示します。
 詳細は帳簿の「選定基準」カードと、各銘柄の根拠表示をご覧ください。</div></div>
 
 <div class="card"><h2>設定とデータの保存場所</h2>
@@ -98,6 +98,12 @@
 帯を明確に割ったら支持帯は無効（このシステムは自動で除外・警告します）</div>
 <div class="gstep"><b>地合いバナー</b> 帳簿上部の表示。日経平均が200日線の下にある間は市場全体が下落基調で、
 個別銘柄の押し目買いの成功率も下がる。慎重モードの合図です</div></div>
+
+<div class="card"><h2>操作のコツ</h2>
+<div class="gstep"><b>スワイプで画面切り替え</b> 画面を左右にスワイプすると、帳簿⇄持ち株⇄全銘柄⇄検証⇄使い方 を行き来できます（上部のタブでも移動可）</div>
+<div class="gstep"><b>除外基準の設定</b> 帳簿の設定パネルでPER上限・PBR上限・赤字除外を決めると、基準外の銘柄は選定から自動で外れ、
+基準内の銘柄が繰り上がります。未入力なら推奨値（PER30倍・PBR5倍・赤字除外ON）で判定。何が外れたかは「候補すべて表示」で理由付きで確認できます</div>
+<div class="gstep"><b>銘柄コードのコピー</b> 一覧のコード（例: 2489 ⧉）をタップすると即コピーされます</div></div>
 
 <div class="card"><h2>SBI証券アプリ連携の初期設定（1回だけ・30秒）</h2>
 <div class="gstep"><b>1.</b> iPhoneの「ショートカット」アプリ（紫のアイコン・標準搭載）を開く</div>
@@ -120,5 +126,27 @@ SBIアプリが起動します。SBIアプリの銘柄検索に<b>長押し→�
 
 <div class="note">仕様を変えるとこのページも自動で追随します。困ったことがあればこのページを最初に見てください。</div>
 
+<script>
+(function(){
+  const order = ['index.html', 'holdings.html', 'universe.html', 'backtest.html', 'guide.html'];
+  let here = location.pathname.split('/').pop();
+  if (!here) here = 'index.html';
+  const idx = order.indexOf(here);
+  if (idx < 0) return;
+  let sx = 0, sy = 0, st = 0;
+  document.addEventListener('touchstart', e => {
+    const t = e.touches[0]; sx = t.clientX; sy = t.clientY; st = Date.now();
+  }, {passive: true});
+  document.addEventListener('touchend', e => {
+    const t = e.changedTouches[0];
+    const dx = t.clientX - sx, dy = t.clientY - sy;
+    if (Date.now() - st > 600) return;
+    if (Math.abs(dx) < 80 || Math.abs(dy) > 50 || Math.abs(dx) < Math.abs(dy) * 2) return;
+    if (e.target.closest('.topnav, .chips, .filters, input, textarea, .spark')) return;
+    const j = dx < 0 ? idx + 1 : idx - 1;
+    if (j >= 0 && j < order.length) location.href = order[j];
+  }, {passive: true});
+})();
+</script>
 </body>
 </html>
