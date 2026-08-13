@@ -62,63 +62,63 @@
 <header><div class="t">手法の検証レポート</div><div class="s">8/13（木）時点 ・ 過去1年の日足で仮想実行 ・ ルール: ◎（20日高値から5%安）になったら翌日の始値で100株買い → 買値+5%の指値で売る</div></header>
 <div class="card"><h2>持ち金別・現実シミュレーション（この1年）</h2>
 <div class="capset">あなたの持ち金 <input id="cap" class="capin num" type="number" inputmode="numeric" placeholder="50"> 万円（この端末にだけ保存）</div>
-<div class="tier" data-budget="300000"><div class="tname num">30万円</div><div class="tfacts num">確定 <b class="plus">+31,940円</b>（9勝） ／ 資金不足で見送り 80,444回 ／ 持ち越し6件 <b class="minus">−7,140円</b> ／ 最大同時7銘柄</div></div>
-<div class="tier" data-budget="500000"><div class="tname num">50万円</div><div class="tfacts num">確定 <b class="plus">+150,851円</b>（58勝） ／ 資金不足で見送り 79,540回 ／ 持ち越し15件 <b class="minus">−26,870円</b> ／ 最大同時17銘柄</div></div>
-<div class="tier" data-budget="1000000"><div class="tname num">100万円</div><div class="tfacts num">確定 <b class="plus">+307,885円</b>（107勝） ／ 資金不足で見送り 78,595回 ／ 持ち越し21件 <b class="minus">−35,830円</b> ／ 最大同時24銘柄</div></div>
-<div class="tier" data-budget="2000000"><div class="tname num">200万円</div><div class="tfacts num">確定 <b class="plus">+615,400円</b>（158勝） ／ 資金不足で見送り 76,981回 ／ 持ち越し32件 <b class="minus">−218,933円</b> ／ 最大同時35銘柄</div></div>
-<div class="tier" data-budget="inf"><div class="tname num">無制限（参考）</div><div class="tfacts num">確定 <b class="plus">+78,412,910円</b>（4632勝） ／ 資金不足で見送り 0回 ／ 持ち越し665件 <b class="minus">−19,513,375円</b> ／ 最大同時809銘柄</div></div>
+<div class="tier" data-budget="300000"><div class="tname num">30万円</div><div class="tfacts num">確定 <b class="plus">+31,940円</b>（9勝） ／ 資金不足で見送り 82,846回 ／ 持ち越し6件 <b class="minus">−9,760円</b> ／ 最大同時7銘柄</div></div>
+<div class="tier" data-budget="500000"><div class="tname num">50万円</div><div class="tfacts num">確定 <b class="plus">+204,365円</b>（85勝） ／ 資金不足で見送り 81,863回 ／ 持ち越し14件 <b class="minus">−17,200円</b> ／ 最大同時17銘柄</div></div>
+<div class="tier" data-budget="1000000"><div class="tname num">100万円</div><div class="tfacts num">確定 <b class="plus">+305,164円</b>（109勝） ／ 資金不足で見送り 81,015回 ／ 持ち越し22件 <b class="minus">−39,580円</b> ／ 最大同時25銘柄</div></div>
+<div class="tier" data-budget="2000000"><div class="tname num">200万円</div><div class="tfacts num">確定 <b class="plus">+1,037,464円</b>（216勝） ／ 資金不足で見送り 79,137回 ／ 持ち越し34件 <b class="minus">−224,463円</b> ／ 最大同時39銘柄</div></div>
+<div class="tier" data-budget="inf"><div class="tname num">無制限（参考）</div><div class="tfacts num">確定 <b class="plus">+80,252,151円</b>（4755勝） ／ 資金不足で見送り 0回 ／ 持ち越し683件 <b class="minus">−18,839,105円</b> ／ 最大同時840銘柄</div></div>
 <div class="tiernote">持ち金を増やすと「見送り」が減って確定益が伸びる一方、持ち越しの含み損も増えます。次の段の伸び幅が小さければ、まだ増額の必要はない、という読み方ができます。</div></div>
 <div class="card"><h2>損切りルールの効果比較（利確+5%共通・資金無制限）</h2>
-<div class="tier" data-sl="none"><div class="tname">損切りなし（おばあさん流）<span class="best">★ この1年の最適</span></div><div class="barwrap"><div class="barp" style="width:100%"></div><span class="barv num plus">+53,284,660円</span></div><div class="tfacts num">勝率100%（利確4,270・損切り0） ／ 持ち越し647件 −18,906,625円</div></div>
-<div class="tier" data-sl="3"><div class="tname">損切り −3%</div><div class="barwrap"><div class="barp" style="width:42%"></div><span class="barv num plus">+22,258,708円</span></div><div class="tfacts num">勝率42%（利確10,086・損切り14,104） ／ 持ち越し414件 +1,644,980円</div></div>
-<div class="tier" data-sl="5"><div class="tname">損切り −5%</div><div class="barwrap"><div class="barp" style="width:53%"></div><span class="barv num plus">+27,986,523円</span></div><div class="tfacts num">勝率56%（利確9,486・損切り7,584） ／ 持ち越し430件 +1,201,730円</div></div>
-<div class="tier" data-sl="8"><div class="tname">損切り −8%</div><div class="barwrap"><div class="barp" style="width:59%"></div><span class="barv num plus">+31,658,684円</span></div><div class="tfacts num">勝率69%（利確8,193・損切り3,673） ／ 持ち越し466件 +143,000円</div></div>
-<div class="tier" data-sl="10"><div class="tname">損切り −10%</div><div class="barwrap"><div class="barp" style="width:67%"></div><span class="barv num plus">+35,509,541円</span></div><div class="tfacts num">勝率75%（利確7,536・損切り2,501） ／ 持ち越し471件 −288,253円</div></div>
-<div class="tier" data-sl="15"><div class="tname">損切り −15%</div><div class="barwrap"><div class="barp" style="width:85%"></div><span class="barv num plus">+45,230,098円</span></div><div class="tfacts num">勝率86%（利確6,339・損切り1,068） ／ 持ち越し514件 −2,709,687円</div></div>
+<div class="tier" data-sl="none"><div class="tname">損切りなし（おばあさん流）<span class="best">★ この1年の最適</span></div><div class="barwrap"><div class="barp" style="width:100%"></div><span class="barv num plus">+55,732,440円</span></div><div class="tfacts num">勝率100%（利確4,400・損切り0） ／ 持ち越し661件 −18,370,655円</div></div>
+<div class="tier" data-sl="3"><div class="tname">損切り −3%</div><div class="barwrap"><div class="barp" style="width:43%"></div><span class="barv num plus">+23,837,548円</span></div><div class="tfacts num">勝率42%（利確10,319・損切り14,319） ／ 持ち越し411件 +1,930,400円</div></div>
+<div class="tier" data-sl="5"><div class="tname">損切り −5%</div><div class="barwrap"><div class="barp" style="width:54%"></div><span class="barv num plus">+29,871,105円</span></div><div class="tfacts num">勝率56%（利確9,699・損切り7,673） ／ 持ち越し428件 +1,437,850円</div></div>
+<div class="tier" data-sl="8"><div class="tname">損切り −8%</div><div class="barwrap"><div class="barp" style="width:61%"></div><span class="barv num plus">+33,807,025円</span></div><div class="tfacts num">勝率69%（利確8,378・損切り3,706） ／ 持ち越し466件 +427,870円</div></div>
+<div class="tier" data-sl="10"><div class="tname">損切り −10%</div><div class="barwrap"><div class="barp" style="width:68%"></div><span class="barv num plus">+38,024,203円</span></div><div class="tfacts num">勝率75%（利確7,714・損切り2,505） ／ 持ち越し475件 −9,503円</div></div>
+<div class="tier" data-sl="15"><div class="tname">損切り −15%</div><div class="barwrap"><div class="barp" style="width:85%"></div><span class="barv num plus">+47,511,331円</span></div><div class="tfacts num">勝率86%（利確6,493・損切り1,069） ／ 持ち越し523件 −2,355,597円</div></div>
 <div class="tiernote">棒の長さ＝トータル損益（確定+含み）。★が過去1年での最適設定です。ただし過去1年に最適だった数字が来年も最適とは限らないため、★と自分の設定（印付き）が大きくズレていないかを確認する使い方が健全です。</div></div>
 <div class="card"><h2>どの根拠が本当に効いているか（この1年の全買いシグナル実測）</h2>
-<div class="fact"><span>ゴールデンクロス中（50日線＞200日線）</span><span class="v num">勝率 75% vs 非該当 74%（<b class="plus">+2pt</b>・65,443回中）</span></div>
-<div class="fact"><span>RSI(14)が40以下（売られすぎ）</span><span class="v num">勝率 74% vs 非該当 76%（<b class="minus">-1pt</b>・34,259回中）</span></div>
-<div class="fact"><span>じわ下げ（直近に1日4%超の急落なし）</span><span class="v num">勝率 74% vs 非該当 77%（<b class="minus">-3pt</b>・46,293回中）</span></div>
+<div class="fact"><span>ゴールデンクロス中（50日線＞200日線）</span><span class="v num">勝率 75% vs 非該当 73%（<b class="plus">+2pt</b>・67,436回中）</span></div>
+<div class="fact"><span>RSI(14)が40以下（売られすぎ）</span><span class="v num">勝率 74% vs 非該当 76%（<b class="minus">-1pt</b>・35,493回中）</span></div>
+<div class="fact"><span>じわ下げ（直近に1日4%超の急落なし）</span><span class="v num">勝率 74% vs 非該当 77%（<b class="minus">-3pt</b>・48,422回中）</span></div>
 <div class="tiernote">「勝ち」＝買いシグナルの後40営業日以内に利確ライン到達。差がプラスの要因は採点で重視する価値があり、差が無い/マイナスの要因は配点を見直す根拠になります。毎晩の実行で更新される、採点ルール自身の成績表です。</div></div>
 <div class="card"><h2>参考: 資金無制限で全シグナルを拾った場合の内訳</h2>
-<div class="fact"><span>買いに入った回数</span><span class="v num">4,917回</span></div>
-<div class="fact"><span>利確ライン（+5%）で売れた回数</span><span class="v num">4,270回（87%）</span></div>
-<div class="fact"><span>確定した利益の合計</span><span class="v num plus">+72,191,285円</span></div>
+<div class="fact"><span>買いに入った回数</span><span class="v num">5,061回</span></div>
+<div class="fact"><span>利確ライン（+5%）で売れた回数</span><span class="v num">4,400回（87%）</span></div>
+<div class="fact"><span>確定した利益の合計</span><span class="v num plus">+74,103,095円</span></div>
 <div class="fact"><span>利確までの平均日数</span><span class="v num">約21営業日</span></div>
-<div class="fact"><span>まだ売れていない持ち越し</span><span class="v num">647件（うち含み損 526件）</span></div>
-<div class="fact"><span>持ち越し分の含み損益 合計</span><span class="v num minus">−18,906,625円</span></div>
+<div class="fact"><span>まだ売れていない持ち越し</span><span class="v num">661件（うち含み損 528件）</span></div>
+<div class="fact"><span>持ち越し分の含み損益 合計</span><span class="v num minus">−18,370,655円</span></div>
 </div>
 <div class="card"><h2>月別・利確が取れた回数</h2>
-<div class="fact"><span class="num">2025/09</span><span class="v num">126回</span></div>
-<div class="fact"><span class="num">2025/10</span><span class="v num">479回</span></div>
-<div class="fact"><span class="num">2025/11</span><span class="v num">438回</span></div>
-<div class="fact"><span class="num">2025/12</span><span class="v num">342回</span></div>
-<div class="fact"><span class="num">2026/01</span><span class="v num">282回</span></div>
-<div class="fact"><span class="num">2026/02</span><span class="v num">626回</span></div>
-<div class="fact"><span class="num">2026/03</span><span class="v num">266回</span></div>
-<div class="fact"><span class="num">2026/04</span><span class="v num">324回</span></div>
-<div class="fact"><span class="num">2026/05</span><span class="v num">484回</span></div>
-<div class="fact"><span class="num">2026/06</span><span class="v num">347回</span></div>
-<div class="fact"><span class="num">2026/07</span><span class="v num">345回</span></div>
-<div class="fact"><span class="num">2026/08</span><span class="v num">211回</span></div>
+<div class="fact"><span class="num">2025/09</span><span class="v num">120回</span></div>
+<div class="fact"><span class="num">2025/10</span><span class="v num">487回</span></div>
+<div class="fact"><span class="num">2025/11</span><span class="v num">457回</span></div>
+<div class="fact"><span class="num">2025/12</span><span class="v num">353回</span></div>
+<div class="fact"><span class="num">2026/01</span><span class="v num">292回</span></div>
+<div class="fact"><span class="num">2026/02</span><span class="v num">649回</span></div>
+<div class="fact"><span class="num">2026/03</span><span class="v num">270回</span></div>
+<div class="fact"><span class="num">2026/04</span><span class="v num">332回</span></div>
+<div class="fact"><span class="num">2026/05</span><span class="v num">497回</span></div>
+<div class="fact"><span class="num">2026/06</span><span class="v num">348回</span></div>
+<div class="fact"><span class="num">2026/07</span><span class="v num">361回</span></div>
+<div class="fact"><span class="num">2026/08</span><span class="v num">234回</span></div>
 </div>
 <div class="card"><h2>塩漬け注意リスト（含み損の大きい持ち越し）</h2>
-<div class="fact"><span>ＭＡＲＵＷＡ <span class="num">5344</span>（05/15買い・62日経過）</span><span class="v num minus">−1,918,000円</span></div>
-<div class="fact"><span>ファーストリテイリング <span class="num">9983</span>（07/13買い・21日経過）</span><span class="v num minus">−427,000円</span></div>
+<div class="fact"><span>ＭＡＲＵＷＡ <span class="num">5344</span>（05/15買い・62日経過）</span><span class="v num minus">−1,864,000円</span></div>
+<div class="fact"><span>ファーストリテイリング <span class="num">9983</span>（07/13買い・21日経過）</span><span class="v num minus">−409,000円</span></div>
 <div class="fact"><span>ジンズホールディングス <span class="num">3046</span>（09/22買い・216日経過）</span><span class="v num minus">−314,000円</span></div>
-<div class="fact"><span>木村工機 <span class="num">6231</span>（03/11買い・104日経過）</span><span class="v num minus">−310,000円</span></div>
-<div class="fact"><span>鹿島建設 <span class="num">1812</span>（02/13買い・121日経過）</span><span class="v num minus">−258,300円</span></div>
+<div class="fact"><span>木村工機 <span class="num">6231</span>（03/11買い・104日経過）</span><span class="v num minus">−282,000円</span></div>
+<div class="fact"><span>鹿島建設 <span class="num">1812</span>（02/13買い・121日経過）</span><span class="v num minus">−260,100円</span></div>
 <div class="fact"><span>日本アビオニクス <span class="num">6946</span>（03/16買い・101日経過）</span><span class="v num minus">−245,000円</span></div>
-<div class="fact"><span>サンケン電気 <span class="num">6707</span>（07/06買い・26日経過）</span><span class="v num minus">−229,900円</span></div>
-<div class="fact"><span>ＨＯＹＡ <span class="num">7741</span>（04/23買い・74日経過）</span><span class="v num minus">−227,000円</span></div>
-<div class="fact"><span>ＤＯＷＡホールディングス <span class="num">5714</span>（05/18買い・61日経過）</span><span class="v num minus">−205,600円</span></div>
-<div class="fact"><span>安川電機 <span class="num">6506</span>（05/27買い・54日経過）</span><span class="v num minus">−202,400円</span></div>
-<div class="fact"><span>堀場製作所 <span class="num">6856</span>（07/23買い・14日経過）</span><span class="v num minus">−198,000円</span></div>
-<div class="fact"><span>ヒロセ電機 <span class="num">6806</span>（06/24買い・34日経過）</span><span class="v num minus">−191,500円</span></div>
-<div class="fact"><span>霞ヶ関キャピタル <span class="num">3498</span>（10/07買い・206日経過）</span><span class="v num minus">−180,000円</span></div>
-<div class="fact"><span>ＡＧＣ <span class="num">5201</span>（06/19買い・37日経過）</span><span class="v num minus">−173,400円</span></div>
-<div class="fact"><span>堺化学工業 <span class="num">4078</span>（06/04買い・48日経過）</span><span class="v num minus">−172,000円</span></div>
+<div class="fact"><span>サンケン電気 <span class="num">6707</span>（07/06買い・26日経過）</span><span class="v num minus">−234,800円</span></div>
+<div class="fact"><span>安川電機 <span class="num">6506</span>（05/27買い・54日経過）</span><span class="v num minus">−204,200円</span></div>
+<div class="fact"><span>ＨＯＹＡ <span class="num">7741</span>（04/23買い・74日経過）</span><span class="v num minus">−197,500円</span></div>
+<div class="fact"><span>ＤＯＷＡホールディングス <span class="num">5714</span>（05/18買い・61日経過）</span><span class="v num minus">−195,100円</span></div>
+<div class="fact"><span>堀場製作所 <span class="num">6856</span>（07/23買い・14日経過）</span><span class="v num minus">−195,000円</span></div>
+<div class="fact"><span>霞ヶ関キャピタル <span class="num">3498</span>（10/07買い・206日経過）</span><span class="v num minus">−186,000円</span></div>
+<div class="fact"><span>ヒロセ電機 <span class="num">6806</span>（06/24買い・34日経過）</span><span class="v num minus">−180,500円</span></div>
+<div class="fact"><span>ＡＧＣ <span class="num">5201</span>（06/19買い・37日経過）</span><span class="v num minus">−170,500円</span></div>
+<div class="fact"><span>堺化学工業 <span class="num">4078</span>（06/04買い・48日経過）</span><span class="v num minus">−170,000円</span></div>
 </div>
 <div class="note">この検証は「いまの対象銘柄」の過去1年をなぞった簡易計算です。手数料・税金は含みません。買値は翌営業日の始値、売りは買値+5%に到達した日に成立と仮定（損切りなし）。持ち株管理で設定した個人の利確・損切り%とは独立に、共通基準で計算しています。</div>
 <script>
