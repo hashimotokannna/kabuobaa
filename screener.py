@@ -323,6 +323,44 @@ def compute_metrics(days):
             break
     prev_change = rets20[-1] if rets20 else None
 
+    # MACD(12,26,9): 直近の買い転換を検出
+    macd_state = None
+    if len(closes) >= 40:
+        def _ema(vals, span):
+            k = 2 / (span + 1)
+            e = vals[0]
+            out = [e]
+            for v in vals[1:]:
+                e = v * k + e * (1 - k)
+                out.append(e)
+            return out
+        e12 = _ema(closes, 12)
+        e26 = _ema(closes, 26)
+        macd_line = [a - b for a, b in zip(e12, e26)]
+        sig = _ema(macd_line, 9)
+        hist = [m - s2 for m, s2 in zip(macd_line, sig)]
+        if hist[-1] > 0:
+            crossed = any(hist[-1 - i] <= 0 for i in range(1, 6))
+            macd_state = "golden_recent" if crossed else "above"
+        else:
+            macd_state = "below"
+
+    # ボリンジャーバンド(20日): 現在値が何σの位置か
+    boll_sigma = None
+    if len(closes) >= 20:
+        seg = closes[-20:]
+        mu = sum(seg) / 20
+        sd = (sum((x - mu) ** 2 for x in seg) / 20) ** 0.5
+        if sd > 0:
+            boll_sigma = (closes[-1] - mu) / sd
+
+    # 25日移動平均乖離率（逆張りの定番）
+    dev25 = None
+    if len(closes) >= 25:
+        ma25 = sum(closes[-25:]) / 25
+        if ma25 > 0:
+            dev25 = (closes[-1] / ma25 - 1) * 100
+
     # 夜間ギャップ: 前日終値→翌朝始値の乖離の平均（夜の指値が守りやすいか）
     gaps = []
     for i in range(max(1, len(days) - 20), len(days)):
@@ -346,6 +384,7 @@ def compute_metrics(days):
         "ma200_above": ma200_above,
         "vol_ratio": vol_ratio, "cheap_streak": cheap_streak,
         "prev_change": prev_change, "gap_avg": gap_avg,
+        "macd_state": macd_state, "boll_sigma": boll_sigma, "dev25": dev25,
     }
 
 
@@ -501,6 +540,75 @@ def score_stock(s):
     if lg.get("climax"):
         score += 6
         reasons.append("直近に出来高急増+長い下ヒゲ（セリングクライマックス=投げ売り一巡の兆候 +6点）")
+
+    # 5.3 補助テクニカル指標（MACD・ボリンジャー・移動平均乖離）
+    ms = s.get("macd_state")
+    if ms == "golden_recent":
+        score += 8
+        reasons.append("MACDが直近5日以内に買い転換（下げの勢いが尽きた定番シグナル +8点）")
+    elif ms == "above":
+        score += 4
+        reasons.append("MACDがシグナル線の上で上向き（+4点）")
+    bs = s.get("boll_sigma")
+    if bs is not None:
+        if bs <= -2:
+            score += 8
+            reasons.append(f"ボリンジャーバンド−2σ以下（統計的な売られすぎ圏 +8点）")
+        elif bs <= -1.5:
+            score += 4
+            reasons.append(f"ボリンジャーバンド−{abs(bs):.1f}σと下限付近（+4点）")
+    dv = s.get("dev25")
+    if dv is not None:
+        if -20 < dv <= -8:
+            score += 6
+            reasons.append(f"25日移動平均線から{dv:.1f}%下方乖離（逆張りの定番圏 +6点）")
+        elif dv <= -20:
+            score -= 5
+            reasons.append(f"25日線から{dv:.1f}%と乖離しすぎ（異常事態の可能性 −5点）")
+
+    # 5.4 ファンダメンタルの健全性（システムが固定基準で自動判定）
+    fu = s.get("fund")
+    if fu:
+        per = fu.get("per")
+        pbr = fu.get("pbr")
+        roe = fu.get("roe")
+        dy = fu.get("div_yield")
+        mcap = fu.get("mcap_oku")
+        if per is None or per < 0:
+            score -= 20
+            reasons.append("赤字の可能性（PER算出不能）。業績不振の銘柄は下げても戻りが鈍い（−20点）")
+        elif per <= 20:
+            score += 8
+            reasons.append(f"PER {per:.1f}倍と利益に対して妥当〜割安の水準（+8点）")
+        elif per > 60:
+            score -= 10
+            reasons.append(f"PER {per:.1f}倍と利益に対して異常な割高。期待剥落時の下げが深い（−10点）")
+        if pbr is not None:
+            if 0.5 <= pbr <= 1.5:
+                score += 6
+                reasons.append(f"PBR {pbr:.2f}倍と資産に対して割安圏。下値が固くなりやすい（+6点）")
+            elif pbr > 8:
+                score -= 8
+                reasons.append(f"PBR {pbr:.2f}倍と資産比で過熱気味（−8点）")
+        if roe is not None and per is not None and per > 0:
+            if roe >= 10:
+                score += 8
+                reasons.append(f"ROE {roe:.1f}%と資本効率が高く、稼ぐ力のある会社（+8点）")
+            elif roe < 3:
+                score -= 5
+                reasons.append(f"ROE {roe:.1f}%と収益力が弱い（−5点）")
+        if dy is not None and dy >= 3:
+            score += 5
+            reasons.append(f"配当利回り{dy:.1f}%。配当が下値を支えやすい（+5点）")
+        if mcap:
+            if mcap < 50:
+                score -= 5
+                reasons.append(f"時価総額{mcap:,}億円と小型で、値が飛びやすい（−5点）")
+            elif mcap >= 1000:
+                score += 3
+                reasons.append(f"時価総額{mcap:,}億円の中大型で値動きが安定しやすい（+3点）")
+    else:
+        reasons.append("ファンダ指標が本日取得できず中立扱い（加減点なし）")
 
     # 5.5 夜1回の判断スタイルとの相性（翌朝の窓開けの小ささ）
     ga = s.get("gap_avg")
@@ -886,6 +994,8 @@ def fetch_fundamentals(session, codes):
                     entry["mcap_oku"] = round(mcap / 100_000_000)
                 if dy is not None:
                     entry["div_yield"] = round(dy * 100, 2)
+                if per is not None and pbr is not None and per > 0 and pbr > 0:
+                    entry["roe"] = round(pbr / per * 100, 1)
                 if entry:
                     out[code] = entry
         except Exception:  # noqa: BLE001
@@ -1000,6 +1110,16 @@ def run_screening():
                 "closes": [d["close"] for d in days],
             })
 
+    # ファンダメンタルはスコアの判断材料になるため、採点前に取得する
+    import requests as _rq
+    td_session = _rq.Session()
+    fundamentals = fetch_fundamentals(td_session, list(detail_map.keys()))
+    fund_ok = len(fundamentals) > 0
+    for c in candidates:
+        c["fund"] = fundamentals.get(c["code"])
+    for code, e in detail_map.items():
+        e["fund"] = fundamentals.get(code)
+
     for c in candidates:
         c["score"], c["reasons"] = score_stock(c)
     candidates.sort(key=lambda s: s["score"], reverse=True)
@@ -1034,14 +1154,7 @@ def run_screening():
         market = {"above200": mc[-1] > ma200,
                   "chg20": round((mc[-1] / mc[-21] - 1) * 100, 1)}
 
-    print("TDnet適時開示とファンダメンタル指標を取得中...")
-    import requests as _rq
-    td_session = _rq.Session()
-    # ファンダは詳細を持つ全銘柄分（画面側の基準除外+全銘柄詳細に使う）
-    fundamentals = fetch_fundamentals(td_session, list(detail_map.keys()))
-    fund_ok = len(fundamentals) > 0
-    for c in candidates:
-        c["fund"] = fundamentals.get(c["code"])
+    print("TDnet適時開示を取得中...")
     rank_map2 = {s["code"]: i + 1 for i, s in enumerate(picked)}
     for c in candidates:
         e = detail_map.get(c["code"])
@@ -1050,8 +1163,6 @@ def run_screening():
             e["reasons"] = c.get("reasons", [])
             e["sim"] = c.get("sim")
             e["cand_rank"] = rank_map2.get(c["code"])
-    for code, e in detail_map.items():
-        e["fund"] = fundamentals.get(code)
     for s in picked:
         s["disclosures"] = fetch_tdnet(td_session, s["code"])
         time.sleep(0.25)
@@ -1169,14 +1280,19 @@ def make_demo_data():
             s["long"]["w_bottom"] = {"neck": round(close * 1.02, 1)}
         if rng.random() < 0.2:
             s["long"]["climax"] = {"date": "2026-08-08"}
-        s["fund"] = {"per": round(rng.uniform(6, 35), 1),
-                     "pbr": round(rng.uniform(0.5, 4.0), 2),
+        _per = round(rng.uniform(6, 35), 1)
+        _pbr = round(rng.uniform(0.5, 4.0), 2)
+        s["fund"] = {"per": _per, "pbr": _pbr,
+                     "roe": round(_pbr / _per * 100, 1),
                      "mcap_oku": rng.randint(80, 40000),
                      "div_yield": round(rng.uniform(0, 4.5), 2)}
         s["vol_ratio"] = rng.uniform(0.5, 3.5)
         s["cheap_streak"] = rng.randint(0, 6)
         s["prev_change"] = rng.uniform(-4, 2)
         s["gap_avg"] = rng.uniform(0.3, 3.0)
+        s["macd_state"] = rng.choice(["golden_recent", "above", "below"])
+        s["boll_sigma"] = rng.uniform(-2.5, 1.0)
+        s["dev25"] = rng.uniform(-15, 3)
         s["score"], s["reasons"] = score_stock(s)
     picked.sort(key=lambda s: s["score"], reverse=True)
     stats = {"universe": 3912, "dead_excluded": 214, "skipped": 1480, "failed": 3,
@@ -1408,32 +1524,10 @@ try { favs = new Set(JSON.parse(localStorage.getItem(FAV_KEY) || '[]')); } catch
 
 function saveFavs(){ localStorage.setItem(FAV_KEY, JSON.stringify(Array.from(favs))); }
 
-const PERMAX_KEY = 'kabuobaa_permax', PBRMAX_KEY = 'kabuobaa_pbrmax', LOSS_KEY = 'kabuobaa_loss';
-const perIn = document.getElementById('permax');
-const pbrIn = document.getElementById('pbrmax');
-const lossChk = document.getElementById('losschk');
-
-function ruleCheck(r){
-  // 返り値: '' なら基準内。文字列なら除外理由
-  if (r.dataset.hasfund !== '1') return '';  // データ無しは判定不能=除外しない
-  const perMax = parseFloat(perIn.value) || 30;
-  const pbrMax = parseFloat(pbrIn.value) || 5;
-  const per = r.dataset.per === '' ? null : parseFloat(r.dataset.per);
-  const pbr = r.dataset.pbr === '' ? null : parseFloat(r.dataset.pbr);
-  if (lossChk.checked && per === null) return '赤字の可能性（PERなし）';
-  if (per !== null && per > perMax) return 'PER ' + per + '倍 > 上限' + perMax;
-  if (per !== null && per < 0) return 'PERマイナス（赤字）';
-  if (pbr !== null && pbr > pbrMax) return 'PBR ' + pbr + '倍 > 上限' + pbrMax;
-  return '';
-}
-
 function applyCap(){
   const man = parseFloat(capIn.value) || 0;
   const cap = man * 10000;
   localStorage.setItem(CAP_KEY, capIn.value || '');
-  localStorage.setItem(PERMAX_KEY, perIn.value || '');
-  localStorage.setItem(PBRMAX_KEY, pbrIn.value || '');
-  localStorage.setItem(LOSS_KEY, lossChk.checked ? '1' : '');
   const ledger = document.querySelector('.ledger');
   const rows = Array.from(document.querySelectorAll('details.drow'));
 
@@ -1448,19 +1542,15 @@ function applyCap(){
     const cost = parseFloat(r.dataset.cost);
     const afford = cap <= 0 || cost <= cap;
     const isFav = favs.has(r.querySelector('.fav').dataset.code);
-    const why = ruleCheck(r);
     r.classList.toggle('over', !afford);
-    r.classList.toggle('ruled', why !== '');
-    const tag = r.querySelector('.ruleout');
-    if (tag) tag.textContent = why ? '基準外: ' + why : '';
     let visible;
     if (allChk.checked){
       visible = true;
     } else if (isFav){
-      visible = true;  // お気に入りは基準に関わらず常に表示
+      visible = true;  // お気に入りは資金に関わらず常に表示
       shown++;
     } else {
-      visible = afford && why === '' && shown < TOPN;
+      visible = afford && shown < TOPN;
       if (visible) shown++;
     }
     r.classList.toggle('caphidden', !visible);
@@ -1490,12 +1580,7 @@ document.querySelectorAll('.fav').forEach(b => b.addEventListener('click', e => 
 
 if (capIn){
   capIn.value = localStorage.getItem(CAP_KEY) || '';
-  perIn.value = localStorage.getItem(PERMAX_KEY) || '';
-  pbrIn.value = localStorage.getItem(PBRMAX_KEY) || '';
-  lossChk.checked = localStorage.getItem(LOSS_KEY) !== '';
-  if (localStorage.getItem(LOSS_KEY) === null) lossChk.checked = true;
-  [capIn, perIn, pbrIn].forEach(el => el.addEventListener('input', applyCap));
-  lossChk.addEventListener('change', applyCap);
+  capIn.addEventListener('input', applyCap);
   allChk.addEventListener('change', applyCap);
   applyCap();
 }
@@ -1605,6 +1690,10 @@ def render_html(data):
                 tag = ("解散価値割れ" if fu["pbr"] < 1 else "標準的" if fu["pbr"] <= 3 else "割高圏")
                 frows.append(f'<div class="fact"><span>PBR（株価純資産倍率）</span>'
                              f'<span class="num">{fu["pbr"]:.2f}倍 <small>{tag}</small></span></div>')
+            if fu.get("roe") is not None:
+                tag = ("高収益" if fu["roe"] >= 10 else "標準的" if fu["roe"] >= 5 else "低収益")
+                frows.append(f'<div class="fact"><span>ROE（自己資本利益率）</span>'
+                             f'<span class="num">{fu["roe"]:.1f}% <small>{tag}</small></span></div>')
             if fu.get("div_yield") is not None:
                 frows.append(f'<div class="fact"><span>配当利回り（実績）</span>'
                              f'<span class="num">{fu["div_yield"]:.2f}%</span></div>')
@@ -1634,12 +1723,12 @@ def render_html(data):
                          f'<div class="discnote">決算・業績修正などの発表直後は値動きが大きくなりがちです。'
                          f'見出しをタップすると原文（PDF）が開きます。</div>')
         rows_html.append(f"""
-      <details class="drow" data-cost="{s["cost"]}" data-per="{(s.get("fund") or {}).get("per", "")}" data-pbr="{(s.get("fund") or {}).get("pbr", "")}" data-hasfund="{1 if s.get("fund") else 0}">
+      <details class="drow" data-cost="{s["cost"]}">
       <summary class="row">
         <div class="rk num">{s["rank"]}</div>
         <div class="nm">
           <div class="n1">{html.escape(s["name"])} <span class="chip {chip}">{html.escape(s["market"])}</span>{new_mark}</div>
-          <div class="n2 num"><button class="codebtn" onclick="copyCode(this, '{s["code"]}', event)">{s["code"]} ⧉</button> ・ {html.escape(s["group"])} ・ 100株 {s["cost"] / 10000:,.1f}万円 ・ {s["score"]:.0f}点<span class="nofund">資金不足</span><span class="ruleout"></span></div>
+          <div class="n2 num"><button class="codebtn" onclick="copyCode(this, '{s["code"]}', event)">{s["code"]} ⧉</button> ・ {html.escape(s["group"])} ・ 100株 {s["cost"] / 10000:,.1f}万円 ・ {s["score"]:.0f}点<span class="nofund">資金不足</span></div>
           {f'<div class="cmt">{html.escape(s["comment"])}</div>' if s.get("comment") else ""}
         </div>
         <div class="px">
@@ -1753,10 +1842,6 @@ def render_html(data):
   .codebtn{{font-family:inherit; font-size:inherit; color:#2e4d7b; background:none;
     border:none; border-bottom:1px dashed #9db3cc; padding:0 1px; cursor:pointer;}}
   .codebtn.copied{{color:#1a5c37; border-bottom-color:#1a5c37;}}
-  .ruleout{{display:none; color:#fff; background:#6b4487; font-size:9px; font-weight:800;
-    border-radius:4px; padding:1px 4px; margin-left:6px; vertical-align:1px;}}
-  details.drow.ruled summary.row{{opacity:.45;}}
-  details.drow.ruled .ruleout{{display:inline;}}
 __NAVCSS__
   .pnav{{display:flex; gap:8px; padding:0 0 10px;}}
   .pnav a{{flex:1; font-size:12px; font-weight:700; color:#4a3f28; text-decoration:none;
@@ -1821,10 +1906,11 @@ __NAV__
     <div class="step"><b>1. 対象</b> 東証プライム・スタンダード・グロースの全銘柄（{universe:,}銘柄）</div>
     <div class="step"><b>2. 土俵に上げない</b> 上場から日足{cfg["MIN_RECORDS"]}日未満 ／ 株価{cfg["MIN_PRICE"]}円未満 ／ 直近{cfg["RECENT_DAYS"]}日の平均売買代金{int(cfg["MIN_TURNOVER"]/10000):,}万円未満（売りたい時に売れない銘柄を避ける）</div>
     <div class="step"><b>3. 危ない下げ方を除外</b> ①1年高値から{int(cfg["DEAD_DRAWDOWN"]*100)}%以上下落・長期の下落トレンド継続（終わった株） ②直近10日に1日{cfg["KNIFE_DROP_1D"]:.0f}%超の急落（決算ミス等の材料落ち=落ちるナイフ） ③日々の値動きが±{cfg["MAX_VOL20"]:.1f}%超の荒い銘柄 ④1年安値圏を更新中 ⑤下げ止まり未確認（前日から安値切り下げ中）——本日計{excluded:,}銘柄を除外</div>
-    <div class="step"><b>4. 根拠スコアで採点</b> 残った銘柄を「いまの安さ」「下げの質（じわ下げか急落か・値動きの穏やかさ）」「トレンドの地合い（200日線の上の押し目か・1年レンジ内の位置）」「過去1年でこの買い方が利確+{cfg["TP_PCT"]:.0f}%を取れた実績」「10年データの長期テクニカル（支持帯の反発実績と試行回数・ゴールデンクロス・RSI売られすぎ・W底・セリクラ兆候）」「売買のしやすさ」の6観点で採点し、上位{cfg["SHORTLIST_N"]}銘柄を候補に</div>
+    <div class="step"><b>4. 根拠スコアで採点</b> 残った銘柄を「いまの安さ」「下げの質（じわ下げか急落か・値動きの穏やかさ）」「トレンドの地合い（200日線の上の押し目か・1年レンジ内の位置）」「過去1年でこの買い方が利確+{cfg["TP_PCT"]:.0f}%を取れた実績」「10年データの長期テクニカル（支持帯の反発実績と試行回数・ゴールデンクロス・RSI・MACD・ボリンジャーバンド・25日線乖離・W底・セリクラ兆候）」「売買のしやすさ」の6観点で採点し、上位{cfg["SHORTLIST_N"]}銘柄を候補に</div>
     <div class="step"><b>5. 厳選{cfg["TOP_N"]}銘柄</b> 候補のうち、持ち金設定があれば「100株買える銘柄」だけを対象に、スコア上位{cfg["TOP_N"]}銘柄を表示。各銘柄の点数の内訳はタップで確認できます</div>
     <div class="step"><b>6. 目安ラベル</b> ◎=高値から{cfg["CHEAP_PCT"]:.0f}%以上安い ／ ○={cfg["MILD_PCT"]:.0f}%以上安い ／ 「普段の値段」={cfg["RECENT_DAYS"]}日の終値平均</div>
-    <div class="step"><b>7. 投資スタイル調整</b> この採点は「夜1回の判断・短期回転（数日〜数週間）・50万円規模」向けに調整。夜間ギャップ（翌朝の窓開け）が小さい銘柄を加点、利確まで平均25日超の資金拘束銘柄を減点。PER・PBR・赤字の除外基準は上の設定パネルであなたが決められます</div>
+    <div class="step"><b>7. 財務の健全性（自動判定）</b> PER（20倍以下+・60倍超−）、PBR（0.5〜1.5倍+・8倍超−）、ROE（10%以上+・3%未満−）、赤字の疑い（−20点）、配当利回り3%以上（+）、時価総額（小型−・中大型+）を固定基準で採点。各銘柄の根拠に点数付きで明示されます</div>
+    <div class="step"><b>8. 投資スタイル調整</b> この採点は「夜1回の判断・短期回転（数日〜数週間）・50万円規模」向けに調整。夜間ギャップ（翌朝の窓開け）が小さい銘柄を加点、利確まで平均25日超の資金拘束銘柄を減点</div>
     <div class="step" style="color:#8a5a17;">基準は毎回の実行時点の設定で、この文章も自動で追随します。個々の銘柄の判定理由は「全銘柄の判定一覧」で確認できます。</div>
   </div>
 </details>
@@ -1832,13 +1918,9 @@ __NAV__
   <div class="caprow">持ち金 <input id="cap" class="capin num" type="number" inputmode="numeric"
     placeholder="50"> 万円
     <label class="caponly"><input id="showall" type="checkbox"> 候補{len(stocks)}銘柄すべて表示</label></div>
-  <div class="caprow" style="margin-top:8px;">除外基準:
-    PER <input id="permax" class="capin num" type="number" inputmode="decimal" placeholder="30"> 倍超
-    ／ PBR <input id="pbrmax" class="capin num" type="number" inputmode="decimal" step="0.5" placeholder="5"> 倍超
-    <label class="caponly"><input id="losschk" type="checkbox" checked> 赤字も除外</label></div>
-  <div class="capnote">すべてこの端末にだけ保存。持ち金で「買える銘柄」、除外基準で「論外の銘柄」を外した中から、
-  スコア上位{cfg["TOP_N"]}銘柄が選ばれます（未入力は推奨値 PER30倍・PBR5倍で判定）。基準外の銘柄は
-  「候補すべて表示」で理由付きの薄表示になります。</div>
+  <div class="capnote">この端末にだけ保存。「100株買える銘柄」の中からスコア上位{cfg["TOP_N"]}銘柄が選ばれます。
+  財務の健全性（PER・PBR・ROE・配当・時価総額）はシステムが固定基準で自動判定し、
+  各銘柄のスコアと根拠に反映済みです。</div>
 </div>
 <div class="ledger">
 {body_rows}
@@ -2508,8 +2590,16 @@ def render_guide(dt):
 <b>注意:</b> 業績悪化で利益が減ると見かけのPERは上がり、逆に一時的な特別利益で下がることもある。業種によって水準が大きく違うので、同業と比べるのが基本</div>
 <div class="gstep"><b>PBR（株価純資産倍率）</b> 株価が「会社の純資産の何倍か」。1倍未満は理論上「会社を解散した方が高い」水準で割安のサインだが、
 <b>低いまま放置される「割安の罠」</b>も多い（稼ぐ力がない・資産の質が悪い等）。1倍割れ+業績健全なら注目、が正しい使い方</div>
+<div class="gstep"><b>ROE（自己資本利益率）</b> 会社が株主のお金でどれだけ効率よく利益を稼いだか。10%以上=優良、
+5%前後=標準、3%未満=収益力が弱い。日本株の平均は8〜9%程度。低PBRでもROEが低い会社は「割安の罠」になりやすい</div>
 <div class="gstep"><b>配当利回り（実績）</b> 株価に対する年間配当の割合。3〜4%は高配当の部類。株価下落で見かけの利回りが上がっている場合は減配リスクに注意</div>
 <div class="gstep"><b>RSI(14)</b> 直近14日の値動きの過熱感。30以下=売られすぎ（反発しやすい）、70以上=買われすぎ。下落トレンド中は30以下が続くこともある</div>
+<div class="gstep"><b>MACD</b> 短期と中期の勢いの差を見る指標。マイナス圏からの「買い転換（ゴールデンクロス）」は
+下げの勢いが尽きたサインとして最も広く使われる。転換直後が加点対象</div>
+<div class="gstep"><b>ボリンジャーバンド</b> 過去20日の値動きの標準偏差（σ）で「統計的に普通の範囲」を測る。
+−2σ以下は統計上約2%しか起きない売られすぎ水準で、反発しやすい</div>
+<div class="gstep"><b>移動平均乖離率</b> 25日平均線から何%離れているか。−8%を超える下方乖離は逆張りの定番圏。
+ただし−20%を超える乖離は「何か起きている」異常値で、むしろ警戒</div>
 <div class="gstep"><b>ゴールデンクロス</b> 50日平均線が200日平均線の上にある状態。長期の上昇形で、「上昇トレンド中の押し目」を拾うこの手法と相性が良い</div>
 <div class="gstep"><b>長期支持帯とタッチ回数</b> 過去に何度も反発した価格帯。定石は「〜3回目の試しまでは支持されやすく、4回目以降は割れやすい」。
 帯を明確に割ったら支持帯は無効（このシステムは自動で除外・警告します）</div>
@@ -2518,8 +2608,8 @@ def render_guide(dt):
 
 <div class="card"><h2>操作のコツ</h2>
 <div class="gstep"><b>スワイプで画面切り替え</b> 画面を左右にスワイプすると、帳簿⇄持ち株⇄全銘柄⇄検証⇄使い方 を行き来できます（上部のタブでも移動可）</div>
-<div class="gstep"><b>除外基準の設定</b> 帳簿の設定パネルでPER上限・PBR上限・赤字除外を決めると、基準外の銘柄は選定から自動で外れ、
-基準内の銘柄が繰り上がります。未入力なら推奨値（PER30倍・PBR5倍・赤字除外ON）で判定。何が外れたかは「候補すべて表示」で理由付きで確認できます</div>
+<div class="gstep"><b>財務の健全性は自動判定</b> PER・PBR・ROE・配当・時価総額・赤字の疑いは、システムが固定基準で
+自動的にスコアへ反映します（設定不要）。判定の内訳は各銘柄の「選ばれた根拠」に点数付きで表示されます</div>
 <div class="gstep"><b>銘柄コードのコピー</b> 一覧のコード（例: 2489 ⧉）をタップすると即コピーされます</div></div>
 
 <div class="card"><h2>SBI証券アプリ連携の初期設定（1回だけ・30秒）</h2>
@@ -2593,6 +2683,8 @@ def render_stock_detail(e):
             parts.append(f'<div class="fact"><span>PER</span><span class="num">{fu["per"]:.1f}倍</span></div>')
         if fu.get("pbr") is not None:
             parts.append(f'<div class="fact"><span>PBR</span><span class="num">{fu["pbr"]:.2f}倍</span></div>')
+        if fu.get("roe") is not None:
+            parts.append(f'<div class="fact"><span>ROE</span><span class="num">{fu["roe"]:.1f}%</span></div>')
         if fu.get("div_yield") is not None:
             parts.append(f'<div class="fact"><span>配当利回り</span><span class="num">{fu["div_yield"]:.2f}%</span></div>')
         if fu.get("mcap_oku"):
