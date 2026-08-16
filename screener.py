@@ -803,6 +803,103 @@ def measure_factor_lift(days_full, days1y, factor_stats):
 
 
 # ------------------------------------------------------------
+# 減点方式スクリーニング（新機能・既存の加点方式とは独立）
+# 「絶対に買ってはいけない」条件を全部並べ、該当した重さの合計で
+# 減点する。減点ゼロ＝無傷。取得済みデータのみで計算（通信なし）。
+# ------------------------------------------------------------
+DEMERIT_RULES_DOC = [
+    ("致命", "赤字の疑い（PER算出不能・マイナス）", 30),
+    ("致命", "直近10日に1日8%超の急落（材料落ち）", 25),
+    ("致命", "1年安値圏を更新中（底が見えない）", 25),
+    ("致命", "長期の下落トレンド継続（200日線割れが続く）", 20),
+    ("重い", "PER 60倍超（期待先行の割高）", 15),
+    ("重い", "PBR 8倍超（資産比で過熱）", 12),
+    ("重い", "ROE 3%未満（稼ぐ力が弱い）", 12),
+    ("重い", "日々の値動きが±4.5%超（荒すぎる）", 12),
+    ("重い", "50日線が200日線の下（長期は調整形）", 10),
+    ("重い", "25日線から−20%超の異常乖離", 10),
+    ("重い", "時価総額50億円未満（値が飛びやすい）", 10),
+    ("重い", "売買代金が1日1億円未満（約定しにくい）", 10),
+    ("重い", "長期支持帯を4回目以上試している（割れやすい）", 8),
+    ("軽い", "下げ止まり未確認（前日から安値切り下げ）", 8),
+    ("軽い", "下げが1日に集中（崩落型）", 6),
+    ("軽い", "夜間ギャップ平均±2.5%超（夜の判断がズレやすい）", 6),
+    ("軽い", "RSI 70超（買われすぎ）", 6),
+    ("軽い", "ボリンジャー+2σ超（統計的な買われすぎ）", 6),
+    ("軽い", "利確まで平均25日超（資金拘束が長い）", 5),
+    ("軽い", "直近の仮想買いが塩漬け中", 5),
+    ("軽い", "ファンダ指標が取得できず健全性を確認できない", 4),
+]
+
+
+def demerit_stock(s):
+    """(減点合計, [(重さ, 理由, 点)]) を返す。減点0が「無傷」"""
+    hits = []
+    fu = s.get("fund") or {}
+    lg = s.get("long") or {}
+    per, pbr, roe = fu.get("per"), fu.get("pbr"), fu.get("roe")
+
+    def hit(label, pts):
+        hits.append(label + (pts,))
+
+    if not fu:
+        hit(("軽い", "ファンダ指標が取得できず健全性を確認できない"), 4)
+    else:
+        if per is None or per < 0:
+            hit(("致命", "赤字の疑い（PER算出不能・マイナス）"), 30)
+        elif per > 60:
+            hit(("重い", f"PER {per:.0f}倍と期待先行の割高"), 15)
+        if pbr is not None and pbr > 8:
+            hit(("重い", f"PBR {pbr:.1f}倍と資産比で過熱"), 12)
+        if roe is not None and per and per > 0 and roe < 3:
+            hit(("重い", f"ROE {roe:.1f}%と稼ぐ力が弱い"), 12)
+        mc = fu.get("mcap_oku")
+        if mc and mc < 50:
+            hit(("重い", f"時価総額{mc}億円と小型で値が飛びやすい"), 10)
+
+    if s.get("worst_1d", 0) <= -8.0:
+        hit(("致命", f"直近10日に1日{abs(s['worst_1d']):.0f}%の急落（材料落ち）"), 25)
+    if s.get("pos1y") is not None and s["pos1y"] <= 0.12:
+        hit(("致命", "1年安値圏を更新中（底が見えない）"), 25)
+    if s.get("below_ma_ratio", 0) >= 0.9:
+        hit(("致命", "長期の下落トレンド継続（200日線割れが続く）"), 20)
+    if s.get("vol20", 0) >= 4.5:
+        hit(("重い", f"日々の値動きが±{s['vol20']:.1f}%と荒すぎる"), 12)
+    if lg.get("gc") is False:
+        hit(("重い", "50日線が200日線の下（長期は調整形）"), 10)
+    dv = s.get("dev25")
+    if dv is not None and dv <= -20:
+        hit(("重い", f"25日線から{dv:.0f}%の異常乖離"), 10)
+    if s.get("turnover", 0) < 100_000_000:
+        hit(("重い", "売買代金が1日1億円未満（約定しにくい）"), 10)
+    z = lg.get("zone")
+    if z and z.get("touches", 0) >= 3 and z.get("dist_pct", 99) <= 3:
+        hit(("重い", f"長期支持帯を{z['touches'] + 1}回目に試す位置（割れやすい）"), 8)
+    if s.get("stabilizing") is False:
+        hit(("軽い", "下げ止まり未確認（前日から安値切り下げ）"), 8)
+    if s.get("concentration", 0) >= 0.7:
+        hit(("軽い", "下げが1日に集中（崩落型）"), 6)
+    ga = s.get("gap_avg")
+    if ga is not None and ga >= 2.5:
+        hit(("軽い", f"夜間ギャップ平均±{ga:.1f}%（夜の判断がズレやすい）"), 6)
+    rsi = lg.get("rsi")
+    if rsi is not None and rsi >= 70:
+        hit(("軽い", f"RSI {rsi:.0f} の買われすぎ"), 6)
+    bs = s.get("boll_sigma")
+    if bs is not None and bs >= 2:
+        hit(("軽い", "ボリンジャー+2σ超（統計的な買われすぎ）"), 6)
+    sim = s.get("sim") or {}
+    ah = sim.get("avg_held")
+    if ah is not None and ah > 25:
+        hit(("軽い", f"利確まで平均{ah:.0f}日と資金拘束が長い"), 5)
+    if sim.get("open_loss"):
+        hit(("軽い", "直近の仮想買いが塩漬け中"), 5)
+
+    total = sum(h[2] for h in hits)
+    return total, hits
+
+
+# ------------------------------------------------------------
 # 仮想実行: 「◎になったら翌日の始値で100株買い、+5000円の指値で売る」
 # を過去1年の日足でなぞる（検証レポート用）
 # ------------------------------------------------------------
@@ -1122,6 +1219,10 @@ def run_screening():
 
     for c in candidates:
         c["score"], c["reasons"] = score_stock(c)
+        c["demerit"], c["demerit_hits"] = demerit_stock(c)
+    # 減点方式ランキング（既存の候補選定には影響しない・追加計算のみ）
+    clean = sorted(candidates, key=lambda s: (s["demerit"], -s["score"]))
+    clean_ranked = clean[:100]
     candidates.sort(key=lambda s: s["score"], reverse=True)
     picked = candidates[:CONFIG["SHORTLIST_N"]]
     picked_codes = {s["code"] for s in picked}
@@ -1167,7 +1268,10 @@ def run_screening():
         s["disclosures"] = fetch_tdnet(td_session, s["code"])
         time.sleep(0.25)
     extras = {"factor_stats": factor_stats, "market": market,
-              "fund_available": fund_ok, "detail_map": detail_map}
+              "fund_available": fund_ok, "detail_map": detail_map,
+              "clean_ranked": clean_ranked,
+              "clean_stats": {"screened": len(candidates),
+                              "flawless": sum(1 for c in candidates if c["demerit"] == 0)}}
     return picked, stats, all_results, sim_records, portfolio, slstats, extras
 
 
@@ -1350,6 +1454,9 @@ def make_demo_data():
         {"sl": 15.0, "tp_count": 585, "sl_count": 55, "realized": 3400000,
          "open": 140, "open_pnl": -2000000},
     ]
+    for s in picked:
+        s["demerit"], s["demerit_hits"] = demerit_stock(s)
+    clean_ranked = sorted(picked, key=lambda s: (s["demerit"], -s["score"]))
     detail_map = {}
     for s in picked:
         detail_map[s["code"]] = {**s, "status": "picked",
@@ -1359,6 +1466,8 @@ def make_demo_data():
                           "reason": "1年高値から55%下落", "days": [], "long": {}}
     extras = {
         "detail_map": detail_map,
+        "clean_ranked": clean_ranked,
+        "clean_stats": {"screened": 1480, "flawless": 3},
         "factor_stats": {
             "gc": {"with": [420, 260], "without": [380, 170]},
             "rsi": {"with": [310, 195], "without": [490, 235]},
@@ -1949,6 +2058,7 @@ NAV_CSS = """
 
 NAV_ITEMS = [
     ("index.html", "帳簿", "index"),
+    ("clean.html", "無傷", "clean"),
     ("holdings.html", "持ち株", "holdings"),
     ("universe.html", "全銘柄", "universe"),
     ("backtest.html", "検証", "backtest"),
@@ -1958,7 +2068,7 @@ NAV_ITEMS = [
 
 NAV_JS = """<script>
 (function(){
-  const order = ['index.html', 'holdings.html', 'universe.html', 'backtest.html', 'guide.html'];
+  const order = ['index.html', 'clean.html', 'holdings.html', 'universe.html', 'backtest.html', 'guide.html'];
   let here = location.pathname.split('/').pop();
   if (!here) here = 'index.html';
   const idx = order.indexOf(here);
@@ -2566,6 +2676,8 @@ def render_guide(dt):
 <div class="card"><h2>画面の説明</h2>
 <div class="gstep"><b>帳簿</b> 全上場銘柄から選ばれた厳選{c["TOP_N"]}銘柄。持ち金を設定すると「100株買える銘柄」だけから選ばれます。
 ★を付けた銘柄は常に最上部に固定。銘柄名の下の茶色い1行は、数字から機械生成した事実コメントです</div>
+<div class="gstep"><b>無傷</b> 帳簿とは逆の減点方式。「絶対に買ってはいけない条件」21項目に一つも該当しない銘柄＝無傷を筆頭に、
+減点の少ない順に上位100を毎回集計。株価とPER/PBRは毎日動くので顔ぶれも毎回変わります。帳簿と無傷の両方に載る銘柄は特に注目</div>
 <div class="gstep"><b>持ち株</b> 保有銘柄の登録と売り判断。利確（推奨+{c["TP_PCT"]:.0f}%）・損切り（推奨−8%）の%を設定すると、
 銘柄ごとに「◯円になったら売る」に換算されます</div>
 <div class="gstep"><b>全銘柄</b> 約4,000銘柄すべての判定台帳。候補・圏外にはスコア、除外・対象外には理由が付き、
@@ -2727,6 +2839,158 @@ def write_details(detail_map):
         except Exception:  # noqa: BLE001
             continue
     print(f"  銘柄別詳細: {len(detail_map):,}件を書き出し")
+
+
+def render_clean(clean_ranked, clean_stats, dt):
+    """減点方式ランキング「無傷」ページ（帳簿と同じ見た目・持ち金連動・お気に入り連動）"""
+    weekdays = "月火水木金土日"
+    chip_class = {"プライム": "prime", "スタンダード": "std", "グロース": "growth"}
+    sev_cls = {"致命": "sevA", "重い": "sevB", "軽い": "sevC"}
+
+    rows = []
+    for i, s in enumerate(clean_ranked, 1):
+        chip = chip_class.get(s.get("market", ""), "local")
+        cost = s["close"] * 100
+        dm = s.get("demerit", 0)
+        hits = s.get("demerit_hits", [])
+        badge = ('<span class="dm zero">無傷</span>' if dm == 0
+                 else f'<span class="dm">−{dm}</span>')
+        hit_html = "".join(
+            f'<div class="hit"><span class="sev {sev_cls[h[0]]}">{h[0]}</span>'
+            f'{html.escape(h[1])}<span class="num hp">−{h[2]}</span></div>' for h in hits
+        ) or '<div class="hit ok">減点項目なし。買ってはいけない条件に一つも該当しません</div>'
+        fu = s.get("fund") or {}
+        fund_line = " ・ ".join(x for x in [
+            f'PER {fu["per"]:.1f}倍' if fu.get("per") is not None else "",
+            f'PBR {fu["pbr"]:.2f}倍' if fu.get("pbr") is not None else "",
+            f'ROE {fu["roe"]:.1f}%' if fu.get("roe") is not None else "",
+        ] if x)
+        yahoo_url = f'https://finance.yahoo.co.jp/quote/{s["code"]}{s.get("suffix", ".T")}'
+        rows.append(f"""
+      <details class="drow" data-cost="{cost:.0f}">
+      <summary class="row">
+        <div class="rk num">{i}</div>
+        <div class="nm">
+          <div class="n1">{html.escape(s["name"])} <span class="chip {chip}">{html.escape(s.get("market", ""))}</span></div>
+          <div class="n2 num">{s["code"]} ・ 100株 {cost / 10000:,.1f}万円 ・ 加点{s.get("score", 0):.0f}点{" ・ " + fund_line if fund_line else ""}<span class="nofund">資金不足</span></div>
+        </div>
+        <div class="px"><div class="p1 num">{s["close"]:,.0f}<small>円</small></div>
+          <div class="p2 num drop">高値から −{s["drop_pct"]:.1f}%</div></div>
+        <div>{badge}</div>
+        <div class="chev">›</div>
+      </summary>
+      <div class="notebox">
+        <div class="nhead">減点の内訳（合計 −{dm}点）</div>
+        {hit_html}
+        <a class="ylink" href="{yahoo_url}" target="_blank" rel="noopener">Yahoo!ファイナンスで詳細を見る →</a>
+      </div>
+      </details>""")
+
+    rules = "".join(
+        f'<div class="hit"><span class="sev {sev_cls[a]}">{a}</span>{html.escape(b)}'
+        f'<span class="num hp">−{c}</span></div>' for a, b, c in DEMERIT_RULES_DOC)
+
+    body = f"""
+<div class="capcard">
+  <div class="caprow">持ち金 <input id="cap" class="capin num" type="number" inputmode="numeric" placeholder="50"> 万円
+    <label class="caponly"><input id="showall" type="checkbox"> 資金不足も表示</label></div>
+  <div class="capnote">帳簿と同じ設定を共有。100株買える銘柄だけを表示します。</div>
+</div>
+<details class="crit">
+  <summary>減点ルール一覧（{len(DEMERIT_RULES_DOC)}項目・タップで開閉）<span class="chev">›</span></summary>
+  <div class="critbody">
+    <div class="step">加点方式の帳簿とは逆の発想です。「絶対に買ってはいけない条件」を全部並べ、該当した重さを減点。
+    <b>減点ゼロ＝無傷</b>の銘柄が上位に来ます。株価・PER・PBRなどは毎日動くため、顔ぶれは毎回入れ替わります。
+    対象は帳簿と同じ「土俵に上げた銘柄」（流動性・低位株・上場浅の対象外を除く）。減点が同じなら加点スコアの高い順。</div>
+    {rules}
+  </div>
+</details>
+<div class="ledger">
+{"".join(rows)}
+</div>
+"""
+    extra_css = """
+  .capcard{background:#fff; border-radius:12px; padding:11px 14px; margin-bottom:12px;
+    box-shadow:0 1px 3px rgba(0,0,0,.05);}
+  .caprow{font-size:13px; font-weight:700; display:flex; align-items:center; gap:6px; flex-wrap:wrap;}
+  .capin{width:70px; font-size:15px; font-weight:700; padding:5px 8px;
+    border:1.5px solid #d9d2bf; border-radius:8px; background:#fff; text-align:right;}
+  .caponly{font-size:11.5px; font-weight:600; color:var(--ink2); margin-left:auto;
+    display:flex; align-items:center; gap:4px;}
+  .capnote{font-size:10.5px; color:var(--ink3); line-height:1.6; margin-top:6px;}
+  details.crit{background:#fff; border-radius:12px; margin-bottom:12px;
+    box-shadow:0 1px 3px rgba(0,0,0,.05);}
+  details.crit summary{list-style:none; cursor:pointer; font-size:12px; font-weight:800;
+    color:#4a3f28; padding:11px 14px; display:flex; justify-content:space-between; align-items:center;}
+  details.crit summary::-webkit-details-marker{display:none;}
+  .critbody{padding:0 14px 12px; border-top:1px solid #f0ead9;}
+  .step{font-size:11.5px; line-height:1.7; color:var(--ink2); padding:7px 0;}
+  .ledger{background:var(--paper); border-radius:14px; padding:4px 0; box-shadow:0 1px 3px rgba(0,0,0,.06);}
+  details.drow summary.row{list-style:none; cursor:pointer;}
+  details.drow summary.row::-webkit-details-marker{display:none;}
+  details[open] summary.row{background:#f4eedd;}
+  .row{display:flex; align-items:center; gap:9px; padding:9px 14px; border-top:1px solid var(--paper-line);}
+  .rk{width:22px; font-size:12px; color:#a99a76; font-weight:700; text-align:right; flex:none;}
+  .nm{flex:1; min-width:0;} .n1{font-size:13.5px; font-weight:700; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+  .n2{font-size:10.5px; color:var(--ink2); margin-top:2px;}
+  .px{text-align:right; flex:none;} .p1{font-size:14.5px; font-weight:700;} .p1 small{font-size:10px; color:var(--ink2);}
+  .p2{font-size:10.5px; margin-top:2px;} .drop{color:var(--cheap); font-weight:700;}
+  .chip{display:inline-block; font-size:9.5px; font-weight:600; border-radius:5px; padding:1.5px 5px; vertical-align:1px;}
+  .chip.prime{background:#e8eef8; color:#2e4d7b;} .chip.std{background:#e9f3ea; color:#3a5a40;}
+  .chip.growth{background:#f4ecf9; color:#6b4487;} .chip.local{background:#f7efe4; color:#8a5a17;}
+  .chev{color:#c9bd9d; font-size:16px; font-weight:700; transition:transform .15s;}
+  details[open] .chev{transform:rotate(90deg);}
+  .dm{font-size:11px; font-weight:800; border-radius:6px; padding:3px 7px; color:#8a5a17; background:var(--mild-bg);}
+  .dm.zero{color:#1a5c37; background:#e9f3ea;}
+  .notebox{background:#fffdf6; border-top:1px dashed var(--paper-line); padding:10px 14px 14px;}
+  .nhead{font-size:10.5px; font-weight:800; color:#7a6a45; letter-spacing:.06em; margin:4px 0 6px;}
+  .hit{display:flex; align-items:center; gap:6px; font-size:11.5px; padding:5px 0;
+    border-bottom:1px dashed #f0ead9; color:var(--ink);}
+  .hit.ok{color:#1a5c37; font-weight:700;}
+  .hp{margin-left:auto; font-weight:800; color:#8a5a17;}
+  .sev{flex:none; font-size:9px; font-weight:800; border-radius:4px; padding:1px 5px;}
+  .sevA{background:#fdeeee; color:#c62f2f;} .sevB{background:var(--mild-bg); color:#b06a00;}
+  .sevC{background:#eef0f4; color:#4b4f57;}
+  .ylink{display:block; margin-top:10px; font-size:12px; font-weight:700; color:#2e4d7b;
+    text-decoration:none; text-align:center; background:#eef2f8; border-radius:9px; padding:9px;}
+  .nofund{display:none; color:#fff; background:#b06a00; font-size:9px; font-weight:800;
+    border-radius:4px; padding:1px 4px; margin-left:6px; vertical-align:1px;}
+  details.drow.over summary.row{opacity:.45;} details.drow.over .nofund{display:inline;}
+  .caphidden{display:none !important;}
+"""
+    script = """<script>
+const CAP_KEY = 'kabuobaa_capital';
+const capIn = document.getElementById('cap'), allChk = document.getElementById('showall');
+function applyCap(){
+  const cap = (parseFloat(capIn.value) || 0) * 10000;
+  localStorage.setItem(CAP_KEY, capIn.value || '');
+  let n = 0;
+  document.querySelectorAll('details.drow').forEach(r => {
+    const over = cap > 0 && parseFloat(r.dataset.cost) > cap;
+    r.classList.toggle('over', over);
+    const hide = over && !allChk.checked;
+    r.classList.toggle('caphidden', hide);
+    if (!hide){ n++; r.querySelector('.rk').textContent = n; }
+  });
+}
+capIn.value = localStorage.getItem(CAP_KEY) || '';
+capIn.addEventListener('input', applyCap); allChk.addEventListener('change', applyCap); applyCap();
+</script>"""
+    n_flaw = clean_stats.get("flawless", 0)
+    subtitle = (f"{dt.month}/{dt.day}（{weekdays[dt.weekday()]}）{dt.hour:02d}:{dt.minute:02d} 判定 ・ "
+                f"対象{clean_stats.get('screened', 0):,}銘柄のうち<b>無傷 {n_flaw}銘柄</b> ・ 減点の少ない順に上位{len(clean_ranked)}")
+    footnote = ("減点方式は「欠点のなさ」のランキングで、加点方式の帳簿（光る点の多さ）とは別の物差しです。"
+                "両方に載る銘柄は、光る点があり欠点も少ない銘柄。判断材料の表示のみで、投資判断はご自身で。")
+    return (SUBPAGE_TEMPLATE
+            .replace("__NAVCSS__", NAV_CSS)
+            .replace("__NAVJS__", NAV_JS)
+            .replace("__NAV__", nav_html("clean"))
+            .replace("__TITLE__", "無傷ランキング（減点方式）")
+            .replace("__SUBTITLE__", subtitle)
+            .replace("__BODY__", body)
+            .replace("__FOOTNOTE__", footnote)
+            .replace("__EXTRA_CSS__", extra_css)
+            .replace("__SCRIPT__", script))
 
 
 # ------------------------------------------------------------
@@ -3030,6 +3294,9 @@ def main():
                         extras.get("factor_stats")), encoding="utf-8")
     (DOCS / "holdings.html").write_text(render_holdings(dt_now), encoding="utf-8")
     (DOCS / "guide.html").write_text(render_guide(dt_now), encoding="utf-8")
+    (DOCS / "clean.html").write_text(
+        render_clean(extras.get("clean_ranked") or [], extras.get("clean_stats") or {}, dt_now),
+        encoding="utf-8")
     write_details(extras.get("detail_map") or {})
 
     # 選定履歴（1行/実行の軽量ログ。公開ブランチ上で引き継がれる）
