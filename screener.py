@@ -1803,18 +1803,19 @@ def stock_meters_html(s):
             f'<span class="mv num">{fmt}</span></div>' + (f'<div class="mnote">{note}</div>' if note else ""))
 
     G, Y, R, B, N = "#b9dcc0", "#f5e6b3", "#f2c4a8", "#c9dcf3", "#eeeae0"
+    # 価値系（PER/PBR）: 標準=緑(安心) / 割安=青(魅力・要確認) / 割高=黄→赤
     per = fu.get("per")
     if per is not None:
-        bar("PER", [(0, 10, G), (10, 20, Y), (20, 40, R), (40, 60, R)], 0, 60, per, f"{per:.1f}倍")
+        bar("PER", [(0, 10, B), (10, 20, G), (20, 40, Y), (40, 60, R)], 0, 60, per, f"{per:.1f}倍")
     pbr = fu.get("pbr")
     if pbr is not None:
-        bar("PBR", [(0, 0.5, Y), (0.5, 1.5, G), (1.5, 3, Y), (3, 8, R)], 0, 8, pbr, f"{pbr:.2f}倍")
+        bar("PBR", [(0, 0.5, Y), (0.5, 1.5, B), (1.5, 3, G), (3, 8, R)], 0, 8, pbr, f"{pbr:.2f}倍")
     roe = fu.get("roe")
     if roe is not None:
-        bar("ROE", [(0, 3, R), (3, 5, Y), (5, 10, N), (10, 30, G)], 0, 30, roe, f"{roe:.1f}%")
+        bar("ROE", [(0, 3, R), (3, 5, Y), (5, 10, G), (10, 30, B)], 0, 30, roe, f"{roe:.1f}%")
     dy = fu.get("div_yield")
     if dy is not None:
-        bar("配当利回り", [(0, 1, N), (1, 3, Y), (3, 5, G), (5, 8, Y)], 0, 8, dy, f"{dy:.2f}%")
+        bar("配当利回り", [(0, 1, N), (1, 3, G), (3, 5, B), (5, 8, Y)], 0, 8, dy, f"{dy:.2f}%")
     rsi = lg.get("rsi")
     if rsi is not None:
         bar("RSI(14)", [(0, 30, G), (30, 40, Y), (40, 60, N), (60, 70, Y), (70, 100, R)], 0, 100, rsi, f"{rsi:.0f}")
@@ -1841,13 +1842,20 @@ def stock_meters_html(s):
         bar("20日高値から", [(0, 3, N), (3, 5, Y), (5, 8, G), (8, 15, Y)], 0, 15, dp, f"−{dp:.1f}%")
     if not items:
         return ""
-    return ('<div class="nhead">いまの指標の位置（緑=有利・黄=注意・赤=警戒）</div>'
+    return ('<div class="nhead">いまの指標の位置</div>'
+            '<div class="mlegend"><span style="background:#b9dcc0">安心・標準</span>'
+            '<span style="background:#c9dcf3">魅力あり（要確認）</span>'
+            '<span style="background:#f5e6b3">注意</span><span style="background:#f2c4a8">警戒</span>'
+            '<span style="background:#eeeae0">中立</span></div>'
             '<div class="meters">' + "".join(items) + '</div>'
-            '<div class="discnote">各指標の読み方は「指標」タブ参照。ピンが現在値。</div>')
+            '<div class="discnote">ピンが現在値。PER・PBRなど価値系は「標準」が最も安心、割安は魅力だが「割安の罠」の確認が必要。'
+            'RSI・ボリンジャーなど行きすぎ系は売られすぎ側が押し目買いに有利。読み方は「指標」タブ。</div>')
 
 
 METER_CSS = """
   .meters{margin:4px 0 6px;}
+  .mlegend{display:flex; gap:4px; flex-wrap:wrap; margin:2px 0 6px;}
+  .mlegend span{font-size:9px; font-weight:700; border-radius:4px; padding:2px 6px; color:#1c1c1e;}
   .mrow{display:flex; align-items:center; gap:8px; padding:3px 0;}
   .ml{flex:none; width:108px; font-size:10px; color:var(--ink2); font-weight:700; text-align:right; white-space:nowrap;}
   .mtrack{position:relative; flex:1; height:12px; border-radius:6px; overflow:hidden; background:#eeeae0;}
@@ -2249,6 +2257,14 @@ def render_html(data):
   .drop{{color:var(--cheap); font-weight:700;}}
   .athigh{{color:#2e5fa8; font-weight:800;}}
 __METERCSS__
+  html, body{{overflow-x:hidden; max-width:100%;}}
+  body{{overscroll-behavior-x:none;}}
+  *{{min-width:0;}}
+  img, svg{{max-width:100%;}}
+  .topnav, .chips, .filters{{overflow-x:auto; overscroll-behavior-x:contain; -webkit-overflow-scrolling:touch;}}
+  .card, .hcard, .ledger, .list, .flatlist, .soonbox, .capcard, details, .notebox, .ubody{{max-width:100%; overflow-wrap:anywhere;}}
+  input, select{{max-width:100%;}}
+
   .hrow{{display:flex; justify-content:space-between; font-size:11px; padding:4px 0;
     border-bottom:1px dashed #f0ead9;}}
   .plus{{color:#2e7d32;}} .minus{{color:var(--cheap);}}
@@ -2414,13 +2430,12 @@ NAV_CSS = """
   .topnav a{flex:none; font-size:12.5px; font-weight:700; color:#4a3f28;
     text-decoration:none; background:#f4eedd; border-radius:10px; padding:8px 14px;}
   .topnav a.act{background:#1c1c1e; color:#fff;}
+  .topnav a.subtag{background:none; color:#8a5a17; font-weight:800; padding-left:2px;}
 """
 
 NAV_ITEMS = [
     ("index.html", "帳簿", "index"),
-    ("holdings.html", "持ち株", "holdings"),
     ("universe.html", "全銘柄", "universe"),
-    ("backtest.html", "検証", "backtest"),
     ("indicators.html", "指標", "indicators"),
     ("guide.html", "使い方", "guide"),
 ]
@@ -2428,7 +2443,7 @@ NAV_ITEMS = [
 
 NAV_JS = """<script>
 (function(){
-  const order = ['index.html', 'holdings.html', 'universe.html', 'backtest.html', 'indicators.html', 'guide.html'];
+  const order = ['index.html', 'universe.html', 'indicators.html', 'guide.html'];
   let here = location.pathname.split('/').pop();
   if (!here) here = 'index.html';
   const idx = order.indexOf(here);
@@ -2452,9 +2467,12 @@ NAV_JS = """<script>
 
 def nav_html(active):
     parts = []
+    sub = active in ("holdings", "backtest")
     for href, label, key in NAV_ITEMS:
-        cls = ' class="act"' if key == active else ""
+        cls = ' class="act"' if (key == active or (sub and key == "guide")) else ""
         parts.append(f'<a href="{href}"{cls}>{label}</a>')
+    if sub:
+        parts.append('<a class="subtag">› その他の機能</a>')
     return '<div class="topnav">' + "".join(parts) + "</div>"
 
 
@@ -2485,6 +2503,14 @@ SUBPAGE_TEMPLATE = """<!DOCTYPE html>
   .back{display:inline-block; font-size:12px; font-weight:700; color:#2e4d7b;
     text-decoration:none; margin-bottom:8px;}
 __NAVCSS__
+  html, body{overflow-x:hidden; max-width:100%;}
+  body{overscroll-behavior-x:none;}
+  *{min-width:0;}
+  img, svg{max-width:100%;}
+  .topnav, .chips, .filters{overflow-x:auto; overscroll-behavior-x:contain; -webkit-overflow-scrolling:touch;}
+  .card, .hcard, .ledger, .list, .flatlist, .soonbox, .capcard, details, .notebox, .ubody{max-width:100%; overflow-wrap:anywhere;}
+  input, select{max-width:100%;}
+
   .card{background:var(--paper); border-radius:14px; padding:12px 14px;
     margin-bottom:12px; box-shadow:0 1px 3px rgba(0,0,0,.06);}
   .card h2{font-size:13px; font-weight:800; color:#7a6a45; letter-spacing:.05em;
@@ -2800,7 +2826,7 @@ def render_universe(all_results, stats, dt):
   .sortrow{display:flex; gap:6px; margin-bottom:10px;}
   .search{flex:1; min-width:0; font-size:14px; padding:9px 12px; border:1.5px solid #d9d2bf;
     border-radius:10px; background:#fff;}
-  .sortsel{flex:none; max-width:46%; font-size:12px; font-weight:700; padding:8px 8px;
+  .sortsel{flex:none; max-width:44%; min-width:0; font-size:12px; font-weight:700; padding:8px 6px;
     border:1.5px solid #d9d2bf; border-radius:10px; background:#fff; color:var(--ink);}
   .flatlist{background:var(--paper); border-radius:14px; padding:2px 0;}
   .flatlist details.udet:first-child summary.urow{border-top:none;}
@@ -3151,14 +3177,12 @@ def render_guide(dt):
 <li><b>帳簿を開く</b> ホーム画面のアイコン → 合言葉（記憶した端末は自動）</li>
 <li><b>厳選{c["TOP_N"]}銘柄を見る</b> タップで根拠・チャート・ノート・会社の発表が開く</li>
 <li><b>買うなら</b> 銘柄内の「買った→持ち株に登録」を押してから証券会社アプリで注文</li>
-<li><b>売り時は自動監視</b> 「持ち株」タブが利確／損切りライン到達を色で知らせる。売ったら「売った」で記録</li>
+<li><b>売り時は自動監視</b> 「持ち株の管理」（このページ最下部）が利確／損切りライン到達を色で知らせる。売ったら「売った」で記録</li>
 </ol></div>
 
 <div class="gcard c-paper"><div class="gh">📒 タブの役割</div>
 <div class="tabrow"><span class="tb">帳簿</span>安全×質×タイミングの三層で選んだ厳選{c["TOP_N"]}銘柄＋「まもなく買い場」の待ち銘柄。持ち金・★・根拠</div>
-<div class="tabrow"><span class="tb">持ち株</span>登録→毎時の監視→売却記録→通算成績（勝率・損益率）</div>
 <div class="tabrow"><span class="tb">全銘柄</span>約4,000銘柄の台帳。安全（減点）・質・タイミングの3スコア、無傷／まもなく絞り込み、並べ替え、タップで全詳細（指標メーター付き）</div>
-<div class="tabrow"><span class="tb">検証</span>採点ルールと売りルール自身の成績表。損切り%と持ち金の決め方</div>
 <div class="tabrow"><span class="tb">指標</span>PER・RSIなど全指標の図解。数字の読み方はここ</div></div>
 
 <div class="gcard c-yellow"><div class="gh">🟡 選定の仕組み（要約）</div>
@@ -3171,6 +3195,11 @@ def render_guide(dt):
 ・データはJPX公式・Yahoo Finance・TDnet。表示は毎時の「写真」で、リアルタイムはYahooリンクで<br>
 ・このサイトは判断材料の表示のみ。投資判断は自己責任で</div></div>
 
+<div class="gcard c-sub"><div class="gh">🧩 その他の機能（サブシステム）</div>
+<div class="gt">メインの4タブとは別に、使いたい人向けの補助機能です。</div>
+<a class="subbtn" href="holdings.html"><b>持ち株の管理</b><span>保有銘柄の登録 → 毎時の監視（利確／損切りライン到達を色で通知）→ 売却記録 → 通算成績（勝率・損益率）。帳簿の「買った」ボタンからも登録できます</span></a>
+<a class="subbtn" href="backtest.html"><b>手法の検証レポート</b><span>採点ルールと売りルール自身の成績表。損切り%の最適比較（★）、持ち金別シミュレーション、どの根拠が実際に効いているかの実測</span></a></div>
+
 <div class="gcard c-gray"><div class="gh">⚙️ 操作のコツ・初期設定</div>
 <div class="gt"><b>スワイプ</b>で左右のタブへ移動 ／ 銘柄コード（例 2489 ⧉）を<b>タップでコピー</b> ／
 <b>SBIアプリ連携</b>は1回だけ設定：ショートカットApp →「＋」→「Appを開く」→ SBI証券 株 → 名前を「SBIへ」に</div>
@@ -3181,6 +3210,11 @@ def render_guide(dt):
   .c-green{background:#eef6ef; border-color:#3a5a40;} .c-blue{background:#eaf1fb; border-color:#2e5fa8;}
   .c-paper{background:#faf6ec; border-color:#a99a76;} .c-yellow{background:#fdf6e6; border-color:#c9a227;}
   .c-red{background:#fdeeee; border-color:#c62f2f;} .c-gray{background:#f0f0f4; border-color:#6e6e73;}
+  .c-sub{background:#fff; border-color:#8a5a17;}
+  .subbtn{display:block; text-decoration:none; color:inherit; background:#faf6ec; border-radius:10px;
+    padding:10px 12px; margin-top:8px;}
+  .subbtn b{display:block; font-size:13px; color:#4a3f28; margin-bottom:3px;}
+  .subbtn span{font-size:11.5px; line-height:1.7; color:var(--ink2);}
   .gh{font-size:14px; font-weight:800; margin-bottom:8px;}
   .gt{font-size:12.5px; line-height:1.85;}
   .steps{padding-left:20px; font-size:12.5px; line-height:1.9;} .steps li{margin-bottom:3px;}
@@ -3475,7 +3509,7 @@ INDICATORS = [
         "key": "per", "name": "PER（株価収益率）", "tag": "割安・割高",
         "one": "株価が「1年分の利益の何年分」か。低いほど利益に対して安い。",
         "kid": "たとえば1年で100円もうかるお店を1,000円で買ったらPER10倍。10年で元が取れる、ということ。",
-        "meter": meter_svg([(0, 10, G, "割安圏"), (10, 20, Y, "標準"), (20, 40, R, "割高圏"), (40, 60, R, "異常")],
+        "meter": meter_svg([(0, 10, B, "割安圏（要確認）"), (10, 20, G, "標準（安心）"), (20, 40, Y, "割高圏"), (40, 60, R, "異常")],
                            [(0, "0"), (10, "10"), (20, "20"), (40, "40"), (60, "60")], marker=(15, "例: 15倍"), unit="倍"),
         "cases": [
             ("8倍", G, "利益に対して株価が安い。同業比較で確認し、業績が落ちていなければ「割安」で加点。"),
@@ -3489,7 +3523,7 @@ INDICATORS = [
         "key": "pbr", "name": "PBR（株価純資産倍率）", "tag": "資産に対する値段",
         "one": "株価が「会社の純資産の何倍」か。1倍未満は理論上、会社を解散した方が高い水準。",
         "kid": "1,000円の貯金が入った貯金箱を800円で売っている状態がPBR0.8倍。お得に見えるけど、貯金箱に穴が開いていないか（稼ぐ力）は要確認。",
-        "meter": meter_svg([(0, 0.5, Y, "注意"), (0.5, 1.5, G, "割安圏"), (1.5, 3, Y, "標準"), (3, 6, R, "割高"), (6, 8, R, "過熱")],
+        "meter": meter_svg([(0, 0.5, Y, "注意"), (0.5, 1.5, B, "割安圏（要確認）"), (1.5, 3, G, "標準（安心）"), (3, 6, Y, "割高"), (6, 8, R, "過熱")],
                            [(0.5, "0.5"), (1, "1.0"), (1.5, "1.5"), (3, "3"), (6, "6"), (8, "8+")], marker=(1.2, "例: 1.2倍"), unit="倍"),
         "cases": [
             ("0.7倍", G, "純資産より安く売られている。ROEが低くなければ「割安の罠」ではなく本物の割安。加点。"),
@@ -3503,7 +3537,7 @@ INDICATORS = [
         "key": "roe", "name": "ROE（自己資本利益率）", "tag": "稼ぐ力",
         "one": "株主のお金（純資産）で、1年にどれだけ利益を出したか。会社の「稼ぐ力」そのもの。",
         "kid": "100万円のお小遣い元手で1年に10万円もうけたらROE10%。同じ元手で3万円しかもうからない会社より優秀。",
-        "meter": meter_svg([(0, 3, R, "弱い"), (3, 5, Y, "注意"), (5, 10, N, "標準"), (10, 20, G, "優良"), (20, 30, G, "非常に高い")],
+        "meter": meter_svg([(0, 3, R, "弱い"), (3, 5, Y, "注意"), (5, 10, G, "標準（安心）"), (10, 20, B, "優良"), (20, 30, B, "非常に高い")],
                            [(0, "0"), (3, "3"), (5, "5"), (10, "10"), (20, "20")], marker=(8.5, "日本平均 約8.5%"), unit="%"),
         "cases": [
             ("15%", G, "資本効率が高い。低PBRと組み合わさっていれば「安くて稼ぐ」理想形。加点。"),
@@ -3517,7 +3551,7 @@ INDICATORS = [
         "key": "div", "name": "配当利回り", "tag": "持っているだけの収入",
         "one": "株価に対する年間配当の割合。3〜4%は高配当の部類。",
         "kid": "1,000円の株で年30円もらえたら利回り3%。銀行預金よりずっと高いが、株価は上下する。",
-        "meter": meter_svg([(0, 1, N, "低い"), (1, 3, Y, "標準"), (3, 5, G, "高配当"), (5, 8, Y, "高すぎ注意")],
+        "meter": meter_svg([(0, 1, N, "低い"), (1, 3, G, "標準"), (3, 5, B, "高配当"), (5, 8, Y, "高すぎ注意")],
                            [(0, "0"), (1, "1"), (3, "3"), (5, "5"), (8, "8")], marker=(3.2, "例: 3.2%"), unit="%"),
         "cases": [
             ("3.5%", G, "配当が下値を支えやすい。押し目買いの安心材料。加点。"),
@@ -3649,12 +3683,14 @@ def render_indicators(dt):
 </details>""")
 
     legend = ('<div class="card"><h2>色の意味（全指標共通）</h2><div class="lg">'
-              f'<span style="background:{G}">良い・買い手法に有利</span>'
+              f'<span style="background:{G}">安心・標準（迷わず見られる）</span>'
+              f'<span style="background:{B}">魅力あり・要確認（割安の罠などを確認）</span>'
               f'<span style="background:{Y}">注意・様子見</span>'
-              f'<span style="background:{R}">悪い・警戒</span>'
+              f'<span style="background:{R}">警戒</span>'
               f'<span style="background:{N}">中立</span></div>'
-              '<div class="note">▲は具体例の位置。各指標をタップして開くと、子供向けのたとえ・メーター・数値別の見方・落とし穴・採点での扱いが見られます。'
-              '指標は単独で決めず、帳簿の「選ばれた根拠」のように複数を重ねて読むのが正しい使い方です。</div></div>')
+              '<div class="note">価値系（PER・PBR・ROE）は「標準」が最も安心な位置で、「割安」は魅力だが理由の確認が要る位置。'
+              '行きすぎ系（RSI・ボリンジャー等）は売られすぎ側が押し目買いに有利。▲は具体例の位置。'
+              '各指標をタップすると、子供向けのたとえ・メーター・数値別の見方・落とし穴・採点での扱いが開きます。</div></div>')
 
     extra_css = f"""
   .lg{{display:flex; gap:6px; flex-wrap:wrap; margin-bottom:8px;}}
@@ -3711,6 +3747,7 @@ LOCK_TEMPLATE = """<!DOCTYPE html>
 <title>Kabuobaa</title>
 <style>
   *{box-sizing:border-box; margin:0; padding:0;}
+  html, body{overflow-x:hidden; max-width:100%;}
   body{font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans",sans-serif;
     background:#faf6ec; min-height:100vh; display:flex; align-items:center;
     justify-content:center; padding:24px;}
