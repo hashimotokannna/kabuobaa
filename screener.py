@@ -249,12 +249,28 @@ def fetch_daily(session, code, suffix=".T"):
                         "close": mclose,
                         "volume": meta.get("regularMarketVolume") or 0,
                     }
-            return [dedup[k] for k in sorted(dedup)]
+            days_out = [dedup[k] for k in sorted(dedup)]
+            # chart APIのmetaに含まれるファンダ系の値を拾う（銘柄により欠ける項目あり）
+            fund = {}
+            for k_src, k_dst in (("trailingPE", "per"), ("priceToBook", "pbr"),
+                                 ("marketCap", "mcap"), ("sharesOutstanding", "shares"),
+                                 ("trailingAnnualDividendYield", "dy"),
+                                 ("epsTrailingTwelveMonths", "eps"),
+                                 ("bookValue", "bvps")):
+                v = meta.get(k_src)
+                if isinstance(v, (int, float)):
+                    fund[k_dst] = v
+            if fund:
+                _FUND_CACHE[code] = fund
+            return days_out
         except Exception as e:  # noqa: BLE001
             last_err = e
             time.sleep(1 + attempt)
     print(f"  ! {code}: 取得失敗 ({last_err})", file=sys.stderr)
     return None
+
+
+_FUND_CACHE = {}  # code -> metaから拾ったファンダ素材（fetch_daily内で埋まる）
 
 
 # ------------------------------------------------------------
@@ -574,13 +590,13 @@ def score_stock(s):
         roe = fu.get("roe")
         dy = fu.get("div_yield")
         mcap = fu.get("mcap_oku")
-        if per is None or per < 0:
+        if per is not None and per < 0:
             score -= 20
-            reasons.append("赤字の可能性（PER算出不能）。業績不振の銘柄は下げても戻りが鈍い（−20点）")
-        elif per <= 20:
+            reasons.append("赤字（PERマイナス）。業績不振の銘柄は下げても戻りが鈍い（−20点）")
+        elif per is not None and per <= 20:
             score += 8
             reasons.append(f"PER {per:.1f}倍と利益に対して妥当〜割安の水準（+8点）")
-        elif per > 60:
+        elif per is not None and per > 60:
             score -= 10
             reasons.append(f"PER {per:.1f}倍と利益に対して異常な割高。期待剥落時の下げが深い（−10点）")
         if pbr is not None:
@@ -808,7 +824,7 @@ def measure_factor_lift(days_full, days1y, factor_stats):
 # 減点する。減点ゼロ＝無傷。取得済みデータのみで計算（通信なし）。
 # ------------------------------------------------------------
 DEMERIT_RULES_DOC = [
-    ("致命", "赤字の疑い（PER算出不能・マイナス）", 30),
+    ("致命", "赤字（PERマイナス）", 30),
     ("致命", "直近10日に1日8%超の急落（材料落ち）", 25),
     ("致命", "1年安値圏を更新中（底が見えない）", 25),
     ("致命", "長期の下落トレンド継続（200日線割れが続く）", 20),
@@ -828,7 +844,6 @@ DEMERIT_RULES_DOC = [
     ("軽い", "ボリンジャー+2σ超（統計的な買われすぎ）", 6),
     ("軽い", "利確まで平均25日超（資金拘束が長い）", 5),
     ("軽い", "直近の仮想買いが塩漬け中", 5),
-    ("軽い", "ファンダ指標が取得できず健全性を確認できない", 4),
 ]
 
 
@@ -842,12 +857,11 @@ def demerit_stock(s):
     def hit(label, pts):
         hits.append(label + (pts,))
 
-    if not fu:
-        hit(("軽い", "ファンダ指標が取得できず健全性を確認できない"), 4)
-    else:
-        if per is None or per < 0:
-            hit(("致命", "赤字の疑い（PER算出不能・マイナス）"), 30)
-        elif per > 60:
+    if fu:
+        # PERが「取得できたが負」なら赤字。項目自体が無い場合は判定しない（欠損≠赤字）
+        if per is not None and per < 0:
+            hit(("致命", "赤字（PERマイナス）"), 30)
+        elif per is not None and per > 60:
             hit(("重い", f"PER {per:.0f}倍と期待先行の割高"), 15)
         if pbr is not None and pbr > 8:
             hit(("重い", f"PBR {pbr:.1f}倍と資産比で過熱"), 12)
@@ -1060,44 +1074,42 @@ def fetch_tdnet(session, code, days_back=30, limit=3):
         return []
 
 
-def fetch_fundamentals(session, codes):
-    """PER/PBR/時価総額/配当利回りをまとめて取得。取得不可なら空dict（表示側で非表示）"""
+def fetch_fundamentals(session, codes, closes=None):
+    """chart APIのmeta（取得済み・追加通信なし）からPER/PBR/ROE/配当/時価総額を組み立てる。
+    metaにPER/PBRが無い銘柄でも、EPS・BPS・発行株数と終値があれば自前で算出する。"""
     out = {}
-    headers = {"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)"}
-    for i in range(0, len(codes), 50):
-        batch = codes[i:i + 50]
-        symbols = ",".join(f"{c}.T" for c in batch)
-        try:
-            resp = session.get(
-                "https://query1.finance.yahoo.com/v7/finance/quote",
-                params={"symbols": symbols,
-                        "fields": "trailingPE,priceToBook,marketCap,"
-                                  "trailingAnnualDividendYield,epsTrailingTwelveMonths"},
-                headers=headers, timeout=20)
-            if resp.status_code != 200:
-                continue
-            for q in (resp.json().get("quoteResponse", {}).get("result") or []):
-                code = (q.get("symbol") or "").replace(".T", "")
-                per = q.get("trailingPE")
-                pbr = q.get("priceToBook")
-                mcap = q.get("marketCap")
-                dy = q.get("trailingAnnualDividendYield")
-                entry = {}
-                if per is not None:
-                    entry["per"] = round(per, 1)
-                if pbr is not None:
-                    entry["pbr"] = round(pbr, 2)
-                if mcap:
-                    entry["mcap_oku"] = round(mcap / 100_000_000)
-                if dy is not None:
-                    entry["div_yield"] = round(dy * 100, 2)
-                if per is not None and pbr is not None and per > 0 and pbr > 0:
-                    entry["roe"] = round(pbr / per * 100, 1)
-                if entry:
-                    out[code] = entry
-        except Exception:  # noqa: BLE001
+    closes = closes or {}
+    for code in codes:
+        m = _FUND_CACHE.get(code)
+        if not m:
             continue
-        time.sleep(0.5)
+        price = closes.get(code)
+        entry = {}
+        per = m.get("per")
+        if per is None and price and m.get("eps"):
+            per = price / m["eps"] if m["eps"] != 0 else None
+        pbr = m.get("pbr")
+        if pbr is None and price and m.get("bvps"):
+            pbr = price / m["bvps"] if m["bvps"] > 0 else None
+        if per is not None:
+            entry["per"] = round(per, 1)
+        if pbr is not None:
+            entry["pbr"] = round(pbr, 2)
+        mcap = m.get("mcap")
+        if mcap is None and price and m.get("shares"):
+            mcap = price * m["shares"]
+        if mcap:
+            entry["mcap_oku"] = round(mcap / 100_000_000)
+        if m.get("dy") is not None:
+            entry["div_yield"] = round(m["dy"] * 100, 2)
+        if per is not None and pbr is not None and per > 0 and pbr > 0:
+            entry["roe"] = round(pbr / per * 100, 1)
+        elif m.get("eps") is not None and m.get("bvps"):
+            entry["roe"] = round(m["eps"] / m["bvps"] * 100, 1) if m["bvps"] > 0 else None
+            if entry["roe"] is None:
+                del entry["roe"]
+        if entry:
+            out[code] = entry
     return out
 
 
@@ -1210,7 +1222,9 @@ def run_screening():
     # ファンダメンタルはスコアの判断材料になるため、採点前に取得する
     import requests as _rq
     td_session = _rq.Session()
-    fundamentals = fetch_fundamentals(td_session, list(detail_map.keys()))
+    fundamentals = fetch_fundamentals(
+        td_session, list(detail_map.keys()),
+        closes={code: e.get("close") for code, e in detail_map.items()})
     fund_ok = len(fundamentals) > 0
     for c in candidates:
         c["fund"] = fundamentals.get(c["code"])
@@ -2078,7 +2092,7 @@ __NAV__
     <div class="step"><b>4. 根拠スコアで採点</b> 残った銘柄を「いまの安さ」「下げの質（じわ下げか急落か・値動きの穏やかさ）」「トレンドの地合い（200日線の上の押し目か・1年レンジ内の位置）」「過去1年でこの買い方が利確+{cfg["TP_PCT"]:.0f}%を取れた実績」「10年データの長期テクニカル（支持帯の反発実績と試行回数・ゴールデンクロス・RSI・MACD・ボリンジャーバンド・25日線乖離・W底・セリクラ兆候）」「売買のしやすさ」の6観点で採点し、上位{cfg["SHORTLIST_N"]}銘柄を候補に</div>
     <div class="step"><b>5. 厳選{cfg["TOP_N"]}銘柄</b> 候補のうち、持ち金設定があれば「100株買える銘柄」だけを対象に、スコア上位{cfg["TOP_N"]}銘柄を表示。各銘柄の点数の内訳はタップで確認できます</div>
     <div class="step"><b>6. 目安ラベル</b> ◎=高値から{cfg["CHEAP_PCT"]:.0f}%以上安い ／ ○={cfg["MILD_PCT"]:.0f}%以上安い ／ 「普段の値段」={cfg["RECENT_DAYS"]}日の終値平均</div>
-    <div class="step"><b>7. 財務の健全性（自動判定）</b> PER（20倍以下+・60倍超−）、PBR（0.5〜1.5倍+・8倍超−）、ROE（10%以上+・3%未満−）、赤字の疑い（−20点）、配当利回り3%以上（+）、時価総額（小型−・中大型+）を固定基準で採点。各銘柄の根拠に点数付きで明示されます</div>
+    <div class="step"><b>7. 財務の健全性（自動判定）</b> PER（20倍以下+・60倍超−）、PBR（0.5〜1.5倍+・8倍超−）、ROE（10%以上+・3%未満−）、赤字（PERマイナス −20点）、配当利回り3%以上（+）、時価総額（小型−・中大型+）を固定基準で採点。取得できなかった項目は判定をスキップします（欠損は赤字扱いしません）</div>
     <div class="step"><b>8. 投資スタイル調整</b> この採点は「夜1回の判断・短期回転（数日〜数週間）・50万円規模」向けに調整。夜間ギャップ（翌朝の窓開け）が小さい銘柄を加点、利確まで平均25日超の資金拘束銘柄を減点</div>
     <div class="step" style="color:#8a5a17;">基準は毎回の実行時点の設定で、この文章も自動で追随します。個々の銘柄の判定理由は「全銘柄の判定一覧」で確認できます。</div>
   </div>
