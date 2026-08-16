@@ -2422,7 +2422,18 @@ def render_universe(all_results, stats, dt):
             chips.append(f'<button class="fbtn" data-f="{key}" style="background:{bg}; color:{fg}">'
                          f'{label} {counts[key]:,}</button>')
     chips.append("</div>")
-    chips.append('<input id="q" class="search" type="search" placeholder="銘柄名・コードで検索">')
+    chips.append('<div class="sortrow"><input id="q" class="search" type="search" placeholder="銘柄名・コードで検索">'
+                 '<select id="sort" class="sortsel">'
+                 '<option value="code">コード順</option>'
+                 '<option value="name">名前順（文字コード）</option>'
+                 '<option value="dm">減点が少ない順</option>'
+                 '<option value="dm_desc">減点が多い順</option>'
+                 '<option value="sc">加点スコアが高い順</option>'
+                 '<option value="drop">高値からの下落率が大きい順</option>'
+                 '<option value="close">株価が高い順</option>'
+                 '<option value="close_asc">株価が安い順</option>'
+                 '<option value="mkt">市場別</option>'
+                 '</select></div>')
 
     # 業種カテゴリでまとめる（メイン帳簿と同じ分類）
     chip_class = {"プライム": "prime", "スタンダード": "std", "グロース": "growth"}
@@ -2445,9 +2456,15 @@ def render_universe(all_results, stats, dt):
         else:
             why = r.get("reason") or ""
         reason_html = (f'<span class="why">{html.escape(why)}</span>' if why else "")
+        def _n(v, default):
+            return default if v is None else v
         return (
             f'<details class="udet" data-s="{r["status"]}" data-code="{r["code"]}" '
-            f'data-t="{html.escape(r["name"].lower())} {r["code"]}">'
+            f'data-t="{html.escape(r["name"].lower())} {r["code"]}" '
+            f'data-name="{html.escape(r["name"])}" '
+            f'data-dm="{_n(r.get("demerit"), 9999)}" data-sc="{_n(r.get("score"), -1)}" '
+            f'data-close="{_n(r.get("close"), -1)}" data-drop="{_n(r.get("drop_pct"), -1)}" '
+            f'data-mkt="{html.escape(r.get("market", ""))}" data-sec="{html.escape(r.get("sector", ""))}">'
             f'<summary class="urow">'
             f'<span class="st" style="background:{bg}; color:{fg}">{label}</span>'
             f'<span class="un"><b>{html.escape(r["name"])}</b> '
@@ -2475,8 +2492,13 @@ def render_universe(all_results, stats, dt):
   .fbtn{font-size:11.5px; font-weight:700; border:none; border-radius:14px;
     padding:5px 11px; background:#fff; color:var(--ink2); cursor:pointer;}
   .fbtn.on{outline:2px solid var(--ink);}
-  .search{width:100%; font-size:14px; padding:9px 12px; border:1.5px solid #d9d2bf;
-    border-radius:10px; background:#fff; margin-bottom:10px;}
+  .sortrow{display:flex; gap:6px; margin-bottom:10px;}
+  .search{flex:1; min-width:0; font-size:14px; padding:9px 12px; border:1.5px solid #d9d2bf;
+    border-radius:10px; background:#fff;}
+  .sortsel{flex:none; max-width:46%; font-size:12px; font-weight:700; padding:8px 8px;
+    border:1.5px solid #d9d2bf; border-radius:10px; background:#fff; color:var(--ink);}
+  .flatlist{background:var(--paper); border-radius:14px; padding:2px 0;}
+  .flatlist details.udet:first-child summary.urow{border-top:none;}
   .list{background:var(--paper); border-radius:14px; padding:2px 0;}
   .urow{display:flex; align-items:center; gap:8px; padding:6.5px 12px;
     border-top:1px solid var(--paper-line); font-size:12px;}
@@ -2529,9 +2551,11 @@ function apply(){
     const okQ = (!q || r.dataset.t.includes(q));
     r.classList.toggle('hidden', !(okF && okQ));
   }
-  for (const g of document.querySelectorAll('details.gsec')){
-    const visible = g.querySelectorAll('details.udet:not(.hidden)').length;
-    g.classList.toggle('hidden', visible === 0);
+  if (!flat){
+    for (const g of document.querySelectorAll('details.gsec')){
+      const visible = g.querySelectorAll('details.udet:not(.hidden)').length;
+      g.classList.toggle('hidden', visible === 0);
+    }
   }
 }
 // タップで銘柄別詳細をオンデマンド読み込み
@@ -2549,6 +2573,44 @@ document.querySelectorAll('.fbtn').forEach(c => c.addEventListener('click', () =
   c.classList.add('on'); filter = c.dataset.f; apply();
 }));
 document.getElementById('q').addEventListener('input', apply);
+
+// ---- ソート ----
+const listEl = document.querySelector('.list');
+const groups = Array.from(document.querySelectorAll('details.gsec'));
+const homeGroup = new Map();  // 行 → 元の業種グループ
+groups.forEach(g => g.querySelectorAll('details.udet').forEach(r => homeGroup.set(r, g)));
+let flat = null;
+const cmp = {
+  code:      (a, b) => a.dataset.code.localeCompare(b.dataset.code, 'ja'),
+  name:      (a, b) => a.dataset.name.localeCompare(b.dataset.name, 'ja'),
+  dm:        (a, b) => (+a.dataset.dm - +b.dataset.dm) || (+b.dataset.sc - +a.dataset.sc),
+  dm_desc:   (a, b) => (+b.dataset.dm - +a.dataset.dm) || (+b.dataset.sc - +a.dataset.sc),
+  sc:        (a, b) => +b.dataset.sc - +a.dataset.sc,
+  drop:      (a, b) => +b.dataset.drop - +a.dataset.drop,
+  close:     (a, b) => +b.dataset.close - +a.dataset.close,
+  close_asc: (a, b) => +a.dataset.close - +b.dataset.close,
+  mkt:       (a, b) => a.dataset.mkt.localeCompare(b.dataset.mkt, 'ja') || a.dataset.code.localeCompare(b.dataset.code),
+};
+function applySort(){
+  const key = document.getElementById('sort').value;
+  localStorage.setItem('kabuobaa_usort', key);
+  if (key === 'code'){
+    // 業種グループ表示に戻す
+    if (flat){ flat.remove(); flat = null; }
+    groups.forEach(g => { g.classList.remove('hidden'); listEl.appendChild(g); });
+    rows.forEach(r => homeGroup.get(r).appendChild(r));
+    groups.forEach(g => Array.from(g.querySelectorAll('details.udet')).sort(cmp.code).forEach(r => g.appendChild(r)));
+  } else {
+    // フラット表示で全体ソート
+    groups.forEach(g => g.classList.add('hidden'));
+    if (!flat){ flat = document.createElement('div'); flat.className = 'flatlist'; listEl.appendChild(flat); }
+    rows.slice().sort(cmp[key]).forEach(r => flat.appendChild(r));
+  }
+  apply();
+}
+document.getElementById('sort').addEventListener('change', applySort);
+const savedSort = localStorage.getItem('kabuobaa_usort');
+if (savedSort && cmp[savedSort]){ document.getElementById('sort').value = savedSort; applySort(); }
 </script>"""
 
     weekdays = "月火水木金土日"
