@@ -1866,6 +1866,60 @@ METER_CSS = """
 """
 
 
+RANK_HIST_PATH = DOCS / "history" / "ranks.json"
+
+
+def load_rank_history():
+    try:
+        return json.loads(RANK_HIST_PATH.read_text(encoding="utf-8"))
+    except Exception:  # noqa: BLE001
+        return {"days": []}   # days: [{"date": "YYYY-MM-DD", "ranks": {code: rank}, "names": {code: name}}]
+
+
+def is_final_run(dt):
+    """その日の「確定記帳」扱いにする実行か（15:35以降=大引け後 or 手動）。途中経過は履歴に積まない"""
+    mins = dt.hour * 60 + dt.minute
+    return dt.weekday() >= 5 or mins >= 15 * 60 + 35 or os.environ.get("TEST_LIMIT")
+
+
+def save_rank_history(data, dt):
+    hist = load_rank_history()
+    if not is_final_run(dt):
+        return
+    today = dt.date().isoformat()
+    entry = {"date": today,
+             "ranks": {s["code"]: s["rank"] for s in data["stocks"]},
+             "names": {s["code"]: s["name"] for s in data["stocks"]}}
+    days = [d for d in hist.get("days", []) if d.get("date") != today]
+    days.append(entry)
+    days.sort(key=lambda d: d["date"])
+    hist["days"] = days[-10:]
+    RANK_HIST_PATH.parent.mkdir(exist_ok=True)
+    RANK_HIST_PATH.write_text(json.dumps(hist, ensure_ascii=False), encoding="utf-8")
+
+
+def attach_rank_moves(data, dt):
+    """帳簿の各銘柄に prev_rank / move / rank_series（直近10営業日）を付与"""
+    hist = load_rank_history()
+    days = hist.get("days", [])
+    today = dt.date().isoformat()
+    past = [d for d in days if d["date"] != today]  # 「昨日」は当日以外の直近確定日
+    prev = past[-1] if past else None
+    series_days = (past + [{"date": today, "ranks": {s["code"]: s["rank"] for s in data["stocks"]}}])[-10:]
+    for s in data["stocks"]:
+        code = s["code"]
+        pr = prev["ranks"].get(code) if prev else None
+        s["prev_rank"] = pr
+        if prev is None:
+            s["move"] = None          # 履歴なし
+        elif pr is None:
+            s["move"] = "new"         # 昨日は候補外
+        else:
+            s["move"] = pr - s["rank"]  # 正=ランクアップ
+        s["rank_series"] = [[d["date"][5:].replace("-", "/"), d["ranks"].get(code)] for d in series_days]
+    data["prev_date"] = prev["date"] if prev else None
+
+
 def make_comment(s):
     """自前データだけから作る1行コメント（事実のみ・最大3項目）"""
     bits = []
@@ -2084,6 +2138,30 @@ def render_html(data):
         return head + body + '<div class="discnote">加点で光っていても減点が重い銘柄は「魅力はあるが欠点もある」銘柄。'\
                              '両方の物差しで見てください（一覧は「無傷」タブ）。</div>'
 
+    def move_html(s):
+        mv = s.get("move")
+        if mv is None:
+            return ""
+        if mv == "new":
+            return '<span class="mv new">NEW</span>'
+        if mv > 0:
+            return f'<span class="mv up">↑{mv}</span>'
+        if mv < 0:
+            return f'<span class="mv dn">↓{abs(mv)}</span>'
+        return '<span class="mv flat">→</span>'
+
+    def rank_series_html(s):
+        rs = s.get("rank_series") or []
+        if len(rs) < 2:
+            return ""
+        cells = "".join(
+            f'<div class="rc"><div class="rd">{d}</div><div class="rr num">{("−" if r is None else f"{r}位")}</div></div>'
+            for d, r in rs)
+        return (f'<div class="nhead">順位の推移（直近{len(rs)}営業日・確定記帳ベース）</div>'
+                f'<div class="rseries">{cells}</div>'
+                '<div class="discnote">「−」は候補圏外だった日。連日上位に居続ける銘柄は根拠が安定、'
+                '急浮上はその日の下げで安さが増した銘柄。</div>')
+
     def pc_html(s):
         pc = s.get("prev_change")
         if pc is None:
@@ -2168,7 +2246,7 @@ def render_html(data):
       <summary class="row">
         <div class="rk num">{s["rank"]}</div>
         <div class="nm">
-          <div class="n1">{html.escape(s["name"])} <span class="chip {chip}">{html.escape(s["market"])}</span>{new_mark}{'<span class="tri3badge">安全×質×時</span>' if s.get("tri") else ""}</div>
+          <div class="n1">{html.escape(s["name"])} <span class="chip {chip}">{html.escape(s["market"])}</span>{new_mark}{'<span class="tri3badge">安全×質×時</span>' if s.get("tri") else ""}{move_html(s)}</div>
           <div class="n2 num"><button class="codebtn" onclick="copyCode(this, '{s["code"]}', event)">{s["code"]} ⧉</button> ・ {html.escape(s["group"])} ・ 100株 {s["cost"] / 10000:,.1f}万円 ・ {s["score"]:.0f}点<span class="nofund">資金不足</span></div>
           {f'<div class="cmt">{html.escape(s["comment"])}</div>' if s.get("comment") else ""}
         </div>
@@ -2185,6 +2263,7 @@ def render_html(data):
         {stock_meters_html(s)}
         <div class="nhead">選ばれた根拠（総合 {s["score"]:.0f}点 ＝ 質 {s.get("q_score") or 0:.0f} + タイミング {s.get("t_score") or 0:.0f}）</div>
         {reasons_html}
+        {rank_series_html(s)}
         {demerit_xref(s)}
         {trades_html(s)}
         {tech_html}
@@ -2261,7 +2340,7 @@ __METERCSS__
   body{{overscroll-behavior-x:none;}}
   *{{min-width:0;}}
   img, svg{{max-width:100%;}}
-  .topnav, .chips, .filters{{overflow-x:auto; overscroll-behavior-x:contain; -webkit-overflow-scrolling:touch;}}
+  .topnav, .chips, .filters, .rseries{{overflow-x:auto; overscroll-behavior-x:contain; -webkit-overflow-scrolling:touch;}}
   .card, .hcard, .ledger, .list, .flatlist, .soonbox, .capcard, details, .notebox, .ubody{{max-width:100%; overflow-wrap:anywhere;}}
   input, select{{max-width:100%;}}
 
@@ -2361,6 +2440,12 @@ __NAVCSS__
     margin-bottom:10px; line-height:1.6;}}
   .mkt.ok{{background:#e9f3ea; color:#3a5a40;}}
   .mkt.ng{{background:var(--mild-bg); color:#8a5a17;}}
+  .mv{{display:inline-block; font-size:9.5px; font-weight:800; border-radius:4px; padding:1px 5px; margin-left:4px; vertical-align:1px;}}
+  .mv.up{{color:#c62f2f; background:#fdeeee;}} .mv.dn{{color:#2e5fa8; background:#e8eef8;}}
+  .mv.flat{{color:var(--ink3); background:#f0f0f4;}} .mv.new{{color:#b06a00; background:var(--mild-bg);}}
+  .rseries{{display:flex; gap:4px; overflow-x:auto; padding:4px 0;}}
+  .rc{{flex:none; min-width:44px; text-align:center; background:#fff; border-radius:8px; padding:5px 3px;}}
+  .rd{{font-size:9px; color:var(--ink3);}} .rr{{font-size:12px; font-weight:800;}}
   .tri3badge{{display:inline-block; font-size:9px; font-weight:800; color:#fff; background:#3a5a40;
     border-radius:4px; padding:1px 5px; margin-left:4px; vertical-align:1px;}}
   .soonbox{{background:#fff; border-radius:14px; padding:4px 0 10px; margin-top:12px; box-shadow:0 1px 3px rgba(0,0,0,.06);}}
@@ -2377,7 +2462,7 @@ __NAVCSS__
 <body>
 <header>
   <div class="t">今夜の厳選<span id="showncnt">{cfg["TOP_N"]}</span>銘柄</div>
-  <div class="s">{date_str} {dt.hour:02d}:{dt.minute:02d} 記帳{"（取引時間中・当日分は途中経過）" if is_intraday else ""} ・ 根拠スコア順 ・ タップで根拠とノート ・ 判断はご自身で</div>
+  <div class="s">{date_str} {dt.hour:02d}:{dt.minute:02d} 記帳{"（取引時間中・当日分は途中経過）" if is_intraday else ""} ・ 根拠スコア順{f' ・ ↑↓は {data["prev_date"][5:].replace("-", "/")} 確定記帳との比較' if data.get("prev_date") else ""} ・ 判断はご自身で</div>
 </header>
 __NAV__
 {market_banner}
@@ -2741,6 +2826,8 @@ def render_universe(all_results, stats, dt):
         chips.append(f'<button class="fbtn" data-f="__flaw" style="background:#e9f3ea; color:#1a5c37">無傷 {n_flaw:,}</button>')
     if n_soon:
         chips.append(f'<button class="fbtn" data-f="__soon" style="background:#fdf3e3; color:#b06a00">まもなく {n_soon:,}</button>')
+    chips.append('<button class="fbtn" data-f="__fav" style="background:#fff8e0; color:#a06f00">★お気に入り</button>')
+    chips.append('<button class="fbtn" data-f="__hold" style="background:#e8eef8; color:#2e4d7b">持ち株</button>')
     chips.append("</div>")
     chips.append('<div class="sortrow"><input id="q" class="search" type="search" placeholder="銘柄名・コードで検索">'
                  '<select id="sort" class="sortsel">'
@@ -2752,6 +2839,7 @@ def render_universe(all_results, stats, dt):
                  '<option value="tm">タイミングスコアが高い順</option>'
                  '<option value="sc">総合スコアが高い順</option>'
                  '<option value="tri">帳簿の三層合格を先頭に</option>'
+                 '<option value="fav">★お気に入り・持ち株を先頭に</option>'
                  '<option value="drop">高値からの下落率が大きい順</option>'
                  '<option value="close">株価が高い順</option>'
                  '<option value="close_asc">株価が安い順</option>'
@@ -2796,7 +2884,9 @@ def render_universe(all_results, stats, dt):
             f'<span class="chip {mchip}">{html.escape(r.get("market", "") or "−")}</span> '
             + ('<span class="mark tri">帳簿</span>' if r.get("tri") and r["status"] == "picked" else "")
             + ('<span class="mark soon">まもなく</span>' if r.get("soon") else "")
+            + f'<button class="uhold" data-code="{r["code"]}" aria-label="持ち株">持</button>'
             + f'<span class="num uc">{r["code"]}</span>{reason_html}</span>'
+            f'<button class="ufav" data-code="{r["code"]}" aria-label="お気に入り">★</button>'
             f'<span class="up num">{close}<small>{drop}</small>'
             + (f'<small class="tri3">'
                f'<b class="{"zero" if r.get("demerit") == 0 else ""}">安{r["demerit"]}</b> '
@@ -2846,6 +2936,11 @@ def render_universe(all_results, stats, dt):
   .tri3 b{color:#8a5a17;} .tri3 b.zero{color:#1a5c37;}
   .mark{display:inline-block; font-size:9px; font-weight:800; border-radius:4px; padding:1px 5px; margin-right:3px; vertical-align:1px;}
   .mark.tri{background:#1c1c1e; color:#fff;} .mark.soon{background:#fdf3e3; color:#b06a00;}
+  .uhold{display:inline-block; font-size:9px; font-weight:800; border-radius:4px; padding:1px 5px; margin-right:3px;
+    vertical-align:1px; border:1px solid #d9d2bf; background:#fff; color:#c9bd9d; cursor:pointer; line-height:1.4;}
+  .uhold.on{background:#2e4d7b; color:#fff; border-color:#2e4d7b;}
+  .ufav{flex:none; background:none; border:none; font-size:17px; color:#ddd3ba; padding:0 2px; cursor:pointer; line-height:1;}
+  .ufav.on{color:#e0a300;}
 """ + METER_CSS + """
   .hit{display:flex; align-items:center; gap:6px; font-size:11px; padding:4px 0; border-bottom:1px dashed #f0ead9;}
   .hit.ok{color:#1a5c37; font-weight:700;} .hp{margin-left:auto; font-weight:800; color:#8a5a17;}
@@ -2885,7 +2980,9 @@ function apply(){
   for (const r of rows){
     const okF = (filter === 'all' || r.dataset.s === filter
                  || (filter === '__flaw' && r.dataset.dm === '0')
-                 || (filter === '__soon' && r.dataset.soon === '1'));
+                 || (filter === '__soon' && r.dataset.soon === '1')
+                 || (filter === '__fav' && r.dataset.fav === '1')
+                 || (filter === '__hold' && r.dataset.hold === '1'));
     const okQ = (!q || r.dataset.t.includes(q));
     r.classList.toggle('hidden', !(okF && okQ));
   }
@@ -2896,6 +2993,40 @@ function apply(){
     }
   }
 }
+// ★お気に入り（帳簿と同じ保存先を共有）と持ち株印
+const FAV_KEY = 'kabuobaa_favs', H_KEY = 'kabuobaa_holdings', HM_KEY = 'kabuobaa_holdmarks';
+let favs = new Set(); try { favs = new Set(JSON.parse(localStorage.getItem(FAV_KEY) || '[]')); } catch(e){}
+// 持ち株印: 手動トグル（HM_KEY）。持ち株管理に登録済みの銘柄は初回だけ自動で点灯させて取り込む
+let holdMarks = new Set(); try { holdMarks = new Set(JSON.parse(localStorage.getItem(HM_KEY) || '[]')); } catch(e){}
+try {
+  const reg = JSON.parse(localStorage.getItem(H_KEY) || '[]').map(h => h.code);
+  reg.forEach(c => holdMarks.add(c));
+} catch(e){}
+function paintMarks(){
+  rows.forEach(r => {
+    const code = r.dataset.code;
+    const b = r.querySelector('.ufav'); if (b) b.classList.toggle('on', favs.has(code));
+    const hb = r.querySelector('.uhold'); if (hb) hb.classList.toggle('on', holdMarks.has(code));
+    r.dataset.fav = favs.has(code) ? '1' : '0';
+    r.dataset.hold = holdMarks.has(code) ? '1' : '0';
+  });
+}
+document.querySelectorAll('.ufav').forEach(b => b.addEventListener('click', e => {
+  e.preventDefault(); e.stopPropagation();
+  const c = b.dataset.code;
+  if (favs.has(c)) favs.delete(c); else favs.add(c);
+  localStorage.setItem(FAV_KEY, JSON.stringify(Array.from(favs)));
+  paintMarks(); apply();
+}));
+document.querySelectorAll('.uhold').forEach(b => b.addEventListener('click', e => {
+  e.preventDefault(); e.stopPropagation();
+  const c = b.dataset.code;
+  if (holdMarks.has(c)) holdMarks.delete(c); else holdMarks.add(c);
+  localStorage.setItem(HM_KEY, JSON.stringify(Array.from(holdMarks)));
+  paintMarks(); apply();
+}));
+paintMarks();
+
 // タップで銘柄別詳細をオンデマンド読み込み
 rows.forEach(r => r.addEventListener('toggle', () => {
   if (!r.open || r.dataset.loaded) return;
@@ -2927,6 +3058,7 @@ const cmp = {
   q:         (a, b) => +b.dataset.q - +a.dataset.q,
   tm:        (a, b) => +b.dataset.tm - +a.dataset.tm,
   tri:       (a, b) => (+b.dataset.tri - +a.dataset.tri) || (+b.dataset.soon - +a.dataset.soon) || (+b.dataset.sc - +a.dataset.sc),
+  fav:       (a, b) => (+b.dataset.fav - +a.dataset.fav) || (+b.dataset.hold - +a.dataset.hold) || (+b.dataset.sc - +a.dataset.sc),
   drop:      (a, b) => +b.dataset.drop - +a.dataset.drop,
   close:     (a, b) => +b.dataset.close - +a.dataset.close,
   close_asc: (a, b) => +a.dataset.close - +b.dataset.close,
@@ -4005,6 +4137,18 @@ def main():
 
     data = build_output(picked, stats)
     data["market"] = extras.get("market")
+    if args.demo:
+        # デモ用の疑似順位履歴（3営業日分）
+        import random as _r
+        rr = _r.Random(3)
+        codes = [s["code"] for s in data["stocks"]]
+        hist = {"days": []}
+        for k, d in enumerate(["2026-08-08", "2026-08-11", "2026-08-12"]):
+            shuffled = codes[:]; rr.shuffle(shuffled)
+            hist["days"].append({"date": d, "ranks": {c: i + 1 for i, c in enumerate(shuffled[:20])}, "names": {}})
+        RANK_HIST_PATH.parent.mkdir(exist_ok=True)
+        RANK_HIST_PATH.write_text(json.dumps(hist, ensure_ascii=False), encoding="utf-8")
+    attach_rank_moves(data, datetime.fromisoformat(data["generated_at"]))
     data["soon"] = [{
         "code": s["code"], "name": s["name"], "market": s.get("market", ""),
         "close": round(s["close"], 1), "cost": round(s["close"] * 100),
@@ -4049,6 +4193,9 @@ def main():
             "picked": [s["code"] for s in data["stocks"][:CONFIG["TOP_N"]]],
             "cutoff": stats.get("cutoff_score"),
         }, ensure_ascii=False) + "\n")
+
+    # 順位履歴（日次・確定記帳のみ）: 候補全体の順位を営業日ごとに保持（直近10営業日）
+    save_rank_history(data, dt_now)
 
     # 持ち株管理用: 全銘柄の最新価格表（銘柄名・終値・日付のみの公開情報）
     prices = {}
