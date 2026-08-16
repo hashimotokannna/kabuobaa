@@ -44,7 +44,8 @@ CONFIG = {
 
     # 選定
     "TOP_N": 10,             # 画面に出す厳選銘柄数
-    "SHORTLIST_N": 60,       # 候補として用意する数（持ち金・PER等の基準で外れる分の予備を含む）
+    "SHORTLIST_N": 60,       # 候補として用意する数（持ち金で外れる分の予備を含む）
+    "SAFE_MAX_DEMERIT": 12,  # 三層選定の「安全」判定: 減点合計がこれ以下（かつ致命なし）
     "RECENT_DAYS": 20,       # 「普段の値段」とみなす直近営業日数
     "CHEAP_PCT": 5.0,        # ◎かなり安い: 直近高値からこの%以上下落
     "MILD_PCT": 3.0,         # ○安め: 直近高値からこの%以上下落
@@ -450,53 +451,73 @@ def sim_summary(trades):
 
 
 def score_stock(s):
-    """厳選の根拠スコア。(点数, 根拠の文リスト) を返す"""
+    """厳選の根拠スコア。(点数, 根拠の文リスト) を返す。
+    内部で「質（quality）」と「タイミング（timing）」に振り分け、s["q_score"], s["t_score"] にも保存する"""
     reasons = []
     score = 0.0
+    _q = [0.0]
+    _t = [0.0]
+    _tag = {"cur": "q"}
 
+    def _add(pt):
+        (_t if _tag["cur"] == "t" else _q)[0] += pt
+
+    _tag["cur"] = "t"
     # 1. いま安いか（主基準だが、深すぎる下げは加点を頭打ちに）
     capped = min(s["drop_pct"], 8.0)
     pt = capped * 8
     score += pt
+    _add((pt))
     reasons.append(f"直近20日高値から −{s['drop_pct']:.1f}%（安さの主基準 +{pt:.0f}点・8%で頭打ち）")
     if s.get("usual"):
         vs = (s["usual"] - s["close"]) / s["usual"] * 100
         if vs > 0:
             pt = min(vs * 4, 20)
             score += pt
+            _add((pt))
             reasons.append(f"普段の値段（20日平均）より {vs:.1f}%安い（+{pt:.0f}点）")
 
+    _tag["cur"] = "t"
     # 2. 下げの「質」: じわ下げ か 崩落か
     conc = s.get("concentration", 0)
     if conc < 0.45:
         score += 15
+        _add((15))
         reasons.append("下げが複数日に分散した「じわ下げ」で、1日の急落で作られた安さではない（+15点）")
     elif conc < 0.7:
         score += 5
+        _add((5))
         reasons.append("下げはやや急だが崩落型ではない（+5点）")
     else:
         reasons.append("下げの大半が特定の1日に集中（急落型・加点なし）")
     vol = s.get("vol20", 0)
     if 0 < vol <= 2.5:
         score += 10
+        _add((10))
         reasons.append(f"日々の値動きが±{vol:.1f}%と穏やかで読みやすい（+10点）")
 
+    _tag["cur"] = "q"
     # 3. トレンドの地合い: 上昇トレンド中の押し目が理想形
     if s.get("ma200_above"):
         score += 20
+        _add((20))
         reasons.append("200日平均線より上での下げ＝上昇トレンド中の一時的な押し目（+20点）")
     dd = s["drawdown_1y"] * 100
     if dd <= 15:
         score += 12
+        _add((12))
         reasons.append(f"1年高値からの下落 −{dd:.0f}% で長期トレンド健全（+12点）")
     elif dd <= 25:
         score += 6
+        _add((6))
         reasons.append(f"1年高値からの下落 −{dd:.0f}%（+6点）")
     pos = s.get("pos1y")
     if pos is not None and 0.25 <= pos <= 0.65:
         score += 10
+        _add((10))
         reasons.append(f"1年の値幅の中腹（下から{pos*100:.0f}%）での下げ。底抜けでも高値掴みでもない位置（+10点）")
 
+    _tag["cur"] = "q"
     # 4. この銘柄で手法が効いてきた実績（安く買って+TP_PCT%で売る、の再現性）
     t = s.get("sim") or {}
     wins = t.get("wins", 0)
@@ -504,25 +525,31 @@ def score_stock(s):
     if wins > 0:
         base_pt = min(wins, 10) * 5
         score += base_pt
+        _add((base_pt))
         reasons.append(f"過去1年、同じ買い方で {wins}回 利確ライン（+{tp:.0f}%）に到達（+{base_pt:.0f}点）")
         ah = t.get("avg_held")
         if ah is not None:
             if ah <= 7:
                 score += 15
+                _add((15))
                 reasons.append(f"利確まで平均 {ah:.0f}営業日。短期回転スタイルに最適（+15点）")
             elif ah <= 15:
                 score += 8
+                _add((8))
                 reasons.append(f"利確まで平均 {ah:.0f}営業日（+8点）")
             elif ah > 25:
                 score -= 5
+                _add(-(5))
                 reasons.append(f"利確まで平均 {ah:.0f}営業日と資金拘束が長め。"
                                f"短期回転スタイルでは機会損失（−5点）")
     else:
         reasons.append("過去1年はこの買い方の成立実績なし（加点なし）")
     if t.get("open_loss"):
         score -= 15
+        _add(-(15))
         reasons.append("ただし直近の仮想買いが塩漬け中（−15点）")
 
+    _tag["cur"] = "q"
     # 5. 長期テクニカル（10年データからの定石）
     lg = s.get("long") or {}
     z = lg.get("zone")
@@ -530,58 +557,76 @@ def score_stock(s):
         if z["touches"] <= 2 and z["dist_pct"] >= -1:
             pt = 12
             score += pt
+            _add((pt))
             reasons.append(f"長期支持帯 {z['zone_low']:,.0f}〜{z['zone_top']:,.0f}円の直上。"
                            f"過去{z['touches']}回反発し、今回が{z['touches'] + 1}回目の試し"
                            f"（〜3回目までは支持されやすいという定石の圏内 +{pt}点）")
         else:
             score -= 5
+            _add(-(5))
             reasons.append(f"長期支持帯 {z['zone_top']:,.0f}円付近は過去{z['touches']}回試されており、"
                            f"今回で{z['touches'] + 1}回目。支持線は試されるほど割れやすい（−5点・警戒）")
     if lg.get("gc") is True:
         score += 10
+        _add((10))
         reasons.append("50日線が200日線の上（ゴールデンクロス継続中の長期上昇形 +10点）")
     elif lg.get("gc") is False:
         reasons.append("50日線が200日線の下（長期は調整形・加点なし）")
+    _tag["cur"] = "t"
     rsi = lg.get("rsi")
     if rsi is not None:
         if rsi <= 30:
             score += 10
+            _add((10))
             reasons.append(f"RSI(14)={rsi:.0f} の売られすぎ水準（+10点）")
         elif rsi <= 40:
             score += 5
+            _add((5))
             reasons.append(f"RSI(14)={rsi:.0f} でやや売られすぎ（+5点）")
+    _tag["cur"] = "q"
     if lg.get("w_bottom"):
         score += 8
+        _add((8))
         reasons.append(f"W底（ダブルボトム）を形成しネックライン{lg['w_bottom']['neck']:,.0f}円を上抜け（+8点）")
+    _tag["cur"] = "t"
     if lg.get("climax"):
         score += 6
+        _add((6))
         reasons.append("直近に出来高急増+長い下ヒゲ（セリングクライマックス=投げ売り一巡の兆候 +6点）")
 
+    _tag["cur"] = "t"
     # 5.3 補助テクニカル指標（MACD・ボリンジャー・移動平均乖離）
     ms = s.get("macd_state")
     if ms == "golden_recent":
         score += 8
+        _add((8))
         reasons.append("MACDが直近5日以内に買い転換（下げの勢いが尽きた定番シグナル +8点）")
     elif ms == "above":
         score += 4
+        _add((4))
         reasons.append("MACDがシグナル線の上で上向き（+4点）")
     bs = s.get("boll_sigma")
     if bs is not None:
         if bs <= -2:
             score += 8
+            _add((8))
             reasons.append(f"ボリンジャーバンド−2σ以下（統計的な売られすぎ圏 +8点）")
         elif bs <= -1.5:
             score += 4
+            _add((4))
             reasons.append(f"ボリンジャーバンド−{abs(bs):.1f}σと下限付近（+4点）")
     dv = s.get("dev25")
     if dv is not None:
         if -20 < dv <= -8:
             score += 6
+            _add((6))
             reasons.append(f"25日移動平均線から{dv:.1f}%下方乖離（逆張りの定番圏 +6点）")
         elif dv <= -20:
             score -= 5
+            _add(-(5))
             reasons.append(f"25日線から{dv:.1f}%と乖離しすぎ（異常事態の可能性 −5点）")
 
+    _tag["cur"] = "q"
     # 5.4 ファンダメンタルの健全性（システムが固定基準で自動判定）
     fu = s.get("fund")
     if fu:
@@ -592,60 +637,78 @@ def score_stock(s):
         mcap = fu.get("mcap_oku")
         if per is not None and per < 0:
             score -= 20
+            _add(-(20))
             reasons.append("赤字（PERマイナス）。業績不振の銘柄は下げても戻りが鈍い（−20点）")
         elif per is not None and per <= 20:
             score += 8
+            _add((8))
             reasons.append(f"PER {per:.1f}倍と利益に対して妥当〜割安の水準（+8点）")
         elif per is not None and per > 60:
             score -= 10
+            _add(-(10))
             reasons.append(f"PER {per:.1f}倍と利益に対して異常な割高。期待剥落時の下げが深い（−10点）")
         if pbr is not None:
             if 0.5 <= pbr <= 1.5:
                 score += 6
+                _add((6))
                 reasons.append(f"PBR {pbr:.2f}倍と資産に対して割安圏。下値が固くなりやすい（+6点）")
             elif pbr > 8:
                 score -= 8
+                _add(-(8))
                 reasons.append(f"PBR {pbr:.2f}倍と資産比で過熱気味（−8点）")
         if roe is not None and per is not None and per > 0:
             if roe >= 10:
                 score += 8
+                _add((8))
                 reasons.append(f"ROE {roe:.1f}%と資本効率が高く、稼ぐ力のある会社（+8点）")
             elif roe < 3:
                 score -= 5
+                _add(-(5))
                 reasons.append(f"ROE {roe:.1f}%と収益力が弱い（−5点）")
         if dy is not None and dy >= 3:
             score += 5
+            _add((5))
             reasons.append(f"配当利回り{dy:.1f}%。配当が下値を支えやすい（+5点）")
         if mcap:
             if mcap < 50:
                 score -= 5
+                _add(-(5))
                 reasons.append(f"時価総額{mcap:,}億円と小型で、値が飛びやすい（−5点）")
             elif mcap >= 1000:
                 score += 3
+                _add((3))
                 reasons.append(f"時価総額{mcap:,}億円の中大型で値動きが安定しやすい（+3点）")
     else:
         reasons.append("ファンダ指標が本日取得できず中立扱い（加減点なし）")
 
+    _tag["cur"] = "t"
     # 5.5 夜1回の判断スタイルとの相性（翌朝の窓開けの小ささ）
     ga = s.get("gap_avg")
     if ga is not None:
         if ga <= 1.0:
             score += 8
+            _add((8))
             reasons.append(f"夜間ギャップ（翌朝の窓開け）平均±{ga:.1f}%と小さく、"
                            f"夜に決めた指値が翌朝も有効に働きやすい（+8点）")
         elif ga >= 2.5:
             score -= 5
+            _add(-(5))
             reasons.append(f"夜間ギャップ平均±{ga:.1f}%と大きく、夜の判断が翌朝ズレやすい（−5点）")
 
+    _tag["cur"] = "q"
     # 6. 売り買いのしやすさ
     tv = s.get("turnover", 0)
     if tv >= 1_000_000_000:
         score += 12
+        _add((12))
         reasons.append(f"1日平均 {tv/100_000_000:.0f}億円の売買があり注文が通りやすい（+12点）")
     elif tv >= 100_000_000:
         score += 6
+        _add((6))
         reasons.append(f"1日平均 {tv/100_000_000:.1f}億円の売買（+6点）")
 
+    s["q_score"] = round(_q[0], 1)
+    s["t_score"] = round(_t[0], 1)
     return score, reasons
 
 
@@ -1287,11 +1350,34 @@ def run_screening():
     for c in candidates:
         c["demerit_rank"] = demerit_rank_map.get(c["code"])
     clean_ranked = all_by_demerit[:100]
-    candidates.sort(key=lambda s: s["score"], reverse=True)
+
+    # ---- 三層選定: 安全（減点≦許容）× 質（上位）× タイミング（買い場あり）----
+    SAFE_MAX = CONFIG.get("SAFE_MAX_DEMERIT", 12)   # 「重い」1個までは許容、「致命」は不可
+    for c in candidates:
+        c["safe_ok"] = c["demerit"] <= SAFE_MAX and not any(h[0] == "致命" for h in c["demerit_hits"])
+        c["timing_ok"] = c["drop_pct"] >= CONFIG["CHEAP_PCT"] and c.get("stabilizing", True)
+        c["tri"] = c["safe_ok"] and c["timing_ok"]
+    # 帳簿の主候補: 三層合格を優先し、その中を総合スコア順。足りなければ従来順で補う
+    tri = sorted([c for c in candidates if c["tri"]], key=lambda s: s["score"], reverse=True)
+    rest = sorted([c for c in candidates if not c["tri"]], key=lambda s: s["score"], reverse=True)
+    candidates[:] = tri + rest
+    # 「まもなく」: 安全×質は合格だが、買い場（◎）にあと少し届かない銘柄
+    q_threshold = sorted((c.get("q_score", 0) for c in candidates), reverse=True)
+    q_cut = q_threshold[min(len(q_threshold) - 1, 150)] if q_threshold else 0
+    soon = [c for c in candidates
+            if c["safe_ok"] and not c["timing_ok"] and c.get("q_score", 0) >= q_cut
+            and 0 < (CONFIG["CHEAP_PCT"] - c["drop_pct"]) <= 3.0]
+    for c in soon:
+        c["to_cheap_pct"] = round(CONFIG["CHEAP_PCT"] - c["drop_pct"], 1)
+        c["trigger_price"] = round(c["high20"] * (1 - CONFIG["CHEAP_PCT"] / 100), 1)
+    soon.sort(key=lambda s: (s["to_cheap_pct"], -s.get("q_score", 0)))
+    soon_list = soon[:20]
     picked = candidates[:CONFIG["SHORTLIST_N"]]
     picked_codes = {s["code"] for s in picked}
     score_map = {c["code"]: c["score"] for c in candidates}
     rank_map = {s["code"]: i + 1 for i, s in enumerate(picked)}
+    cand_by_code = {c["code"]: c for c in candidates}
+    soon_codes = {c["code"] for c in soon_list}
     for r in all_results:
         if r["status"] == "ok":
             r["status"] = "picked" if r["code"] in picked_codes else "bench"
@@ -1302,6 +1388,17 @@ def run_screening():
         if e is not None and "demerit" in e:
             r["demerit"] = e["demerit"]
             r["demerit_rank"] = e.get("demerit_rank")
+        c = cand_by_code.get(r["code"])
+        if c is not None:
+            r["q_score"] = c.get("q_score")
+            r["t_score"] = c.get("t_score")
+            r["tri"] = c.get("tri", False)
+            r["soon"] = r["code"] in soon_codes
+        e2 = detail_map.get(r["code"])
+        if e2 is not None and c is not None:
+            e2["q_score"] = c.get("q_score"); e2["t_score"] = c.get("t_score")
+            e2["tri"] = c.get("tri", False); e2["soon"] = r["code"] in soon_codes
+            e2["safe_ok"] = c.get("safe_ok"); e2["timing_ok"] = c.get("timing_ok")
 
     stats = {
         "universe": len(universe),
@@ -1337,7 +1434,7 @@ def run_screening():
         time.sleep(0.25)
     extras = {"factor_stats": factor_stats, "market": market,
               "fund_available": fund_ok, "detail_map": detail_map,
-              "clean_ranked": clean_ranked,
+              "clean_ranked": clean_ranked, "soon": soon_list,
               "clean_stats": {"screened": len(detail_map),
                               "flawless": sum(1 for e in detail_map.values() if e.get("demerit") == 0)}}
     return picked, stats, all_results, sim_records, portfolio, slstats, extras
@@ -1477,9 +1574,18 @@ def make_demo_data():
 
     for s in picked:
         s["demerit"], s["demerit_hits"] = demerit_stock(s)
+        s["safe_ok"] = s["demerit"] <= 12 and not any(h[0] == "致命" for h in s["demerit_hits"])
+        s["timing_ok"] = s["drop_pct"] >= 5.0
+        s["tri"] = s["safe_ok"] and s["timing_ok"]
     clean_ranked = sorted(picked, key=lambda s: (s["demerit"], -s["score"]))
     for i, s in enumerate(clean_ranked, 1):
         s["demerit_rank"] = i
+    picked.sort(key=lambda s: (not s["tri"], -s["score"]))
+    soon_list = []
+    for s in picked[-4:]:
+        s2 = dict(s); s2["drop_pct"] = rng.uniform(2.5, 4.8); s2["safe_ok"] = True; s2["timing_ok"] = False
+        s2["to_cheap_pct"] = round(5.0 - s2["drop_pct"], 1); s2["trigger_price"] = round(s2["high20"] * 0.95, 1)
+        soon_list.append(s2)
     all_results = []
     for i, s in enumerate(picked):
         all_results.append({"code": s["code"], "name": s["name"],
@@ -1488,6 +1594,7 @@ def make_demo_data():
                             "drop_pct": round(s["drop_pct"], 2),
                             "score": round(s["score"], 1), "cand_rank": i + 1,
                             "demerit": s.get("demerit"), "demerit_rank": s.get("demerit_rank"),
+                            "q_score": s.get("q_score"), "t_score": s.get("t_score"), "tri": s.get("tri", False),
                             "status": "picked", "reason": ""})
     all_results += [
         {"code": "9999", "name": "デモ圏外株", "market": "プライム", "sector": "サービス業",
@@ -1542,7 +1649,7 @@ def make_demo_data():
                           "reason": "1年高値から55%下落", "days": [], "long": {}}
     extras = {
         "detail_map": detail_map,
-        "clean_ranked": clean_ranked,
+        "clean_ranked": clean_ranked, "soon": soon_list,
         "clean_stats": {"screened": 1480, "flawless": 3},
         "factor_stats": {
             "gc": {"with": [420, 260], "without": [380, 170]},
@@ -1603,6 +1710,8 @@ def build_output(picked, stats):
             "demerit_rank": s.get("demerit_rank"),
             "demerit_hits": s.get("demerit_hits", []),
             "trades": s.get("trades", []),
+            "q_score": s.get("q_score"), "t_score": s.get("t_score"),
+            "tri": s.get("tri", False), "safe_ok": s.get("safe_ok"), "timing_ok": s.get("timing_ok"),
             "disclosures": s.get("disclosures", []),
             "fund": s.get("fund"),
             "long": {k: v for k, v in (s.get("long") or {}).items() if k != "spark"},
@@ -1624,7 +1733,7 @@ def build_output(picked, stats):
         "stats": stats,
         "config": {k: CONFIG[k] for k in
                    ("TOP_N", "SHORTLIST_N", "RECENT_DAYS", "CHEAP_PCT", "MILD_PCT", "TP_PCT",
-                    "DEAD_DRAWDOWN", "DEAD_BELOW_MA_RATIO",
+                    "DEAD_DRAWDOWN", "DEAD_BELOW_MA_RATIO", "SAFE_MAX_DEMERIT",
                     "KNIFE_DROP_1D", "MAX_VOL20", "MIN_POS_1Y",
                     "MIN_RECORDS", "MIN_PRICE", "MIN_TURNOVER")},
         "stocks": stocks_out,
@@ -1672,6 +1781,81 @@ def spark_svg(spark, long_info, width=320, height=110):
     parts.append(f'<circle cx="{x(len(closes) - 1)}" cy="{y(closes[-1])}" r="4" fill="#1c1c1e"/>')
     parts.append("</svg>")
     return "".join(parts)
+
+
+def stock_meters_html(s):
+    """その銘柄の指標がいまどの圏内かを、指標タブと同じ配色のミニメーターで並べる"""
+    fu = s.get("fund") or {}
+    lg = s.get("long") or {}
+    items = []
+
+    def bar(label, zones, lo, hi, val, fmt, note=""):
+        if val is None:
+            return
+        v = max(lo, min(hi, val))
+        pos = (v - lo) / (hi - lo) * 100
+        segs = "".join(
+            f'<div class="mz" style="left:{(a - lo) / (hi - lo) * 100:.1f}%; width:{(b - a) / (hi - lo) * 100:.1f}%; background:{col}"></div>'
+            for a, b, col in zones)
+        items.append(
+            f'<div class="mrow"><span class="ml">{label}</span>'
+            f'<div class="mtrack">{segs}<div class="mpin" style="left:{pos:.1f}%"></div></div>'
+            f'<span class="mv num">{fmt}</span></div>' + (f'<div class="mnote">{note}</div>' if note else ""))
+
+    G, Y, R, B, N = "#b9dcc0", "#f5e6b3", "#f2c4a8", "#c9dcf3", "#eeeae0"
+    per = fu.get("per")
+    if per is not None:
+        bar("PER", [(0, 10, G), (10, 20, Y), (20, 40, R), (40, 60, R)], 0, 60, per, f"{per:.1f}倍")
+    pbr = fu.get("pbr")
+    if pbr is not None:
+        bar("PBR", [(0, 0.5, Y), (0.5, 1.5, G), (1.5, 3, Y), (3, 8, R)], 0, 8, pbr, f"{pbr:.2f}倍")
+    roe = fu.get("roe")
+    if roe is not None:
+        bar("ROE", [(0, 3, R), (3, 5, Y), (5, 10, N), (10, 30, G)], 0, 30, roe, f"{roe:.1f}%")
+    dy = fu.get("div_yield")
+    if dy is not None:
+        bar("配当利回り", [(0, 1, N), (1, 3, Y), (3, 5, G), (5, 8, Y)], 0, 8, dy, f"{dy:.2f}%")
+    rsi = lg.get("rsi")
+    if rsi is not None:
+        bar("RSI(14)", [(0, 30, G), (30, 40, Y), (40, 60, N), (60, 70, Y), (70, 100, R)], 0, 100, rsi, f"{rsi:.0f}")
+    bs = s.get("boll_sigma")
+    if bs is not None:
+        bar("ボリンジャー", [(-3, -2, G), (-2, -1, Y), (-1, 1, N), (1, 2, Y), (2, 3, R)], -3, 3, bs, f"{bs:+.1f}σ")
+    dv = s.get("dev25")
+    if dv is not None:
+        bar("25日線乖離", [(-30, -20, R), (-20, -8, G), (-8, 0, N), (0, 10, N)], -30, 10, dv, f"{dv:+.1f}%")
+    ms = s.get("macd_state")
+    if ms:
+        pos_v = {"below": 0.5, "golden_recent": 1.5, "above": 2.5}[ms]
+        lab = {"below": "下向き", "golden_recent": "買い転換", "above": "上向き"}[ms]
+        bar("MACD", [(0, 1, R), (1, 2, Y), (2, 3, G)], 0, 3, pos_v, lab)
+    gc = lg.get("gc")
+    if gc is not None:
+        bar("50/200日線", [(0, 1, R), (1, 2, G)], 0, 2, 1.5 if gc else 0.5, "GC" if gc else "DC")
+    z = lg.get("zone")
+    if z:
+        t = z.get("touches", 0) + 1
+        bar("支持帯の試し", [(0, 3, G), (3, 5, R)], 0, 5, min(t, 5), f"{t}回目")
+    dp = s.get("drop_pct")
+    if dp is not None:
+        bar("20日高値から", [(0, 3, N), (3, 5, Y), (5, 8, G), (8, 15, Y)], 0, 15, dp, f"−{dp:.1f}%")
+    if not items:
+        return ""
+    return ('<div class="nhead">いまの指標の位置（緑=有利・黄=注意・赤=警戒）</div>'
+            '<div class="meters">' + "".join(items) + '</div>'
+            '<div class="discnote">各指標の読み方は「指標」タブ参照。ピンが現在値。</div>')
+
+
+METER_CSS = """
+  .meters{margin:4px 0 6px;}
+  .mrow{display:flex; align-items:center; gap:8px; padding:3px 0;}
+  .ml{flex:none; width:108px; font-size:10px; color:var(--ink2); font-weight:700; text-align:right; white-space:nowrap;}
+  .mtrack{position:relative; flex:1; height:12px; border-radius:6px; overflow:hidden; background:#eeeae0;}
+  .mz{position:absolute; top:0; height:100%;}
+  .mpin{position:absolute; top:-2px; width:3px; height:16px; background:#1c1c1e; border-radius:2px; transform:translateX(-50%);}
+  .mv{flex:none; width:58px; font-size:11px; font-weight:800; text-align:right;}
+  .mnote{font-size:9.5px; color:var(--ink3); padding-left:104px;}
+"""
 
 
 def make_comment(s):
@@ -1814,6 +1998,18 @@ def render_html(data):
     cfg = data["config"]
     universe = stats.get("universe", 0)
     excluded = stats.get("dead_excluded", 0)
+    soon = data.get("soon") or []
+    soon_rows = "".join(
+        f'<div class="srow"><span class="sn"><b>{html.escape(s["name"])}</b> '
+        f'<span class="chip {chip_class.get(s["market"], "local")}">{html.escape(s["market"])}</span> '
+        f'<span class="num" style="color:var(--ink2)">{s["code"]}</span></span>'
+        f'<span class="sp num">あと <b>{s["to_cheap_pct"]:.1f}%</b>下げで◎ ・ 目安 {s["trigger_price"]:,.0f}円 '
+        f'<small>（いま {s["close"]:,.0f}円・質{s["q_score"] or 0:.0f}・安{s["demerit"]}）</small></span></div>'
+        for s in soon)
+    soon_block = (f'<div class="soonbox"><div class="soonh">まもなく買い場（安全×質は合格・◎まであと3%以内）'
+                  f'<span class="cnt">{len(soon)}銘柄</span></div>{soon_rows}'
+                  f'<div class="capnote">おばあさんが雑誌で目星を付けて「下がるのを待った」動作を自動化。◎に達した日に帳簿へ昇格します。'
+                  f'目安の値段に指値を置くのも一手。</div></div>') if soon else ""
     mkt = data.get("market")
     if mkt:
         if mkt["above200"]:
@@ -1964,7 +2160,7 @@ def render_html(data):
       <summary class="row">
         <div class="rk num">{s["rank"]}</div>
         <div class="nm">
-          <div class="n1">{html.escape(s["name"])} <span class="chip {chip}">{html.escape(s["market"])}</span>{new_mark}</div>
+          <div class="n1">{html.escape(s["name"])} <span class="chip {chip}">{html.escape(s["market"])}</span>{new_mark}{'<span class="tri3badge">安全×質×時</span>' if s.get("tri") else ""}</div>
           <div class="n2 num"><button class="codebtn" onclick="copyCode(this, '{s["code"]}', event)">{s["code"]} ⧉</button> ・ {html.escape(s["group"])} ・ 100株 {s["cost"] / 10000:,.1f}万円 ・ {s["score"]:.0f}点<span class="nofund">資金不足</span></div>
           {f'<div class="cmt">{html.escape(s["comment"])}</div>' if s.get("comment") else ""}
         </div>
@@ -1978,7 +2174,8 @@ def render_html(data):
         <div class="chev">›</div>
       </summary>
       <div class="notebox">
-        <div class="nhead">選ばれた根拠（スコア {s["score"]:.0f}点）</div>
+        {stock_meters_html(s)}
+        <div class="nhead">選ばれた根拠（総合 {s["score"]:.0f}点 ＝ 質 {s.get("q_score") or 0:.0f} + タイミング {s.get("t_score") or 0:.0f}）</div>
         {reasons_html}
         {demerit_xref(s)}
         {trades_html(s)}
@@ -2051,6 +2248,7 @@ def render_html(data):
   .p2{{font-size:10.5px; margin-top:2px;}}
   .drop{{color:var(--cheap); font-weight:700;}}
   .athigh{{color:#2e5fa8; font-weight:800;}}
+__METERCSS__
   .hrow{{display:flex; justify-content:space-between; font-size:11px; padding:4px 0;
     border-bottom:1px dashed #f0ead9;}}
   .plus{{color:#2e7d32;}} .minus{{color:var(--cheap);}}
@@ -2147,6 +2345,17 @@ __NAVCSS__
     margin-bottom:10px; line-height:1.6;}}
   .mkt.ok{{background:#e9f3ea; color:#3a5a40;}}
   .mkt.ng{{background:var(--mild-bg); color:#8a5a17;}}
+  .tri3badge{{display:inline-block; font-size:9px; font-weight:800; color:#fff; background:#3a5a40;
+    border-radius:4px; padding:1px 5px; margin-left:4px; vertical-align:1px;}}
+  .soonbox{{background:#fff; border-radius:14px; padding:4px 0 10px; margin-top:12px; box-shadow:0 1px 3px rgba(0,0,0,.06);}}
+  .soonh{{font-size:12px; font-weight:800; color:#7a6a45; letter-spacing:.06em; padding:12px 14px 6px;
+    display:flex; justify-content:space-between; align-items:baseline;}}
+  .soonh .cnt{{font-weight:600; color:#a99a76; font-size:10.5px;}}
+  .srow{{display:flex; justify-content:space-between; align-items:center; gap:8px; padding:8px 14px;
+    border-top:1px solid #f0ead9; font-size:12px;}}
+  .sn{{flex:1; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}}
+  .sp{{flex:none; text-align:right; font-size:11px; color:var(--ink2);}} .sp b{{color:#b06a00;}}
+  .soonbox .capnote{{padding:8px 14px 0;}}
 </style>
 </head>
 <body>
@@ -2163,7 +2372,8 @@ __NAV__
     <div class="step"><b>2. 土俵に上げない</b> 上場から日足{cfg["MIN_RECORDS"]}日未満 ／ 株価{cfg["MIN_PRICE"]}円未満 ／ 直近{cfg["RECENT_DAYS"]}日の平均売買代金{int(cfg["MIN_TURNOVER"]/10000):,}万円未満（売りたい時に売れない銘柄を避ける）</div>
     <div class="step"><b>3. 危ない下げ方を除外</b> ①1年高値から{int(cfg["DEAD_DRAWDOWN"]*100)}%以上下落・長期の下落トレンド継続（終わった株） ②直近10日に1日{cfg["KNIFE_DROP_1D"]:.0f}%超の急落（決算ミス等の材料落ち=落ちるナイフ） ③日々の値動きが±{cfg["MAX_VOL20"]:.1f}%超の荒い銘柄 ④1年安値圏を更新中 ⑤下げ止まり未確認（前日から安値切り下げ中）——本日計{excluded:,}銘柄を除外</div>
     <div class="step"><b>「高値から −◯%」の定義</b> 直近{cfg["RECENT_DAYS"]}営業日の最高値に対して、いまの値段が何%下にあるか。最高値はいまの値段を含む期間の天井なので、この数字は<b>0%が上限でプラスにはなりません</b>（今日が最高値なら「20日高値を更新中」と青で表示）。「今日の勢い」は別途、前日比で併記します</div>
-    <div class="step"><b>4. 根拠スコアで採点</b> 残った銘柄を「いまの安さ」「下げの質（じわ下げか急落か・値動きの穏やかさ）」「トレンドの地合い（200日線の上の押し目か・1年レンジ内の位置）」「過去1年でこの買い方が利確+{cfg["TP_PCT"]:.0f}%を取れた実績」「10年データの長期テクニカル（支持帯の反発実績と試行回数・ゴールデンクロス・RSI・MACD・ボリンジャーバンド・25日線乖離・W底・セリクラ兆候）」「売買のしやすさ」の6観点で採点し、上位{cfg["SHORTLIST_N"]}銘柄を候補に</div>
+    <div class="step"><b>4. 三層で選ぶ</b> <b>安全</b>（減点方式の合計が{cfg["SAFE_MAX_DEMERIT"]}以下・致命なし）× <b>質</b>（財務・トレンド・実績・長期テクニカルの加点）× <b>タイミング</b>（◎の安さ・下げ止まり・RSI/MACD/ボリンジャー等）。三層すべて合格の銘柄を先頭に、その中を総合スコア順に。安全×質は合格でも◎にあと少しの銘柄は「まもなく買い場」に</div>
+    <div class="step"><b>4-2. 根拠スコアで採点</b> 残った銘柄を「いまの安さ」「下げの質（じわ下げか急落か・値動きの穏やかさ）」「トレンドの地合い（200日線の上の押し目か・1年レンジ内の位置）」「過去1年でこの買い方が利確+{cfg["TP_PCT"]:.0f}%を取れた実績」「10年データの長期テクニカル（支持帯の反発実績と試行回数・ゴールデンクロス・RSI・MACD・ボリンジャーバンド・25日線乖離・W底・セリクラ兆候）」「売買のしやすさ」の6観点で採点し、上位{cfg["SHORTLIST_N"]}銘柄を候補に</div>
     <div class="step"><b>5. 厳選{cfg["TOP_N"]}銘柄</b> 候補のうち、持ち金設定があれば「100株買える銘柄」だけを対象に、スコア上位{cfg["TOP_N"]}銘柄を表示。各銘柄の点数の内訳はタップで確認できます</div>
     <div class="step"><b>6. 目安ラベル</b> ◎=高値から{cfg["CHEAP_PCT"]:.0f}%以上安い ／ ○={cfg["MILD_PCT"]:.0f}%以上安い ／ 「普段の値段」={cfg["RECENT_DAYS"]}日の終値平均</div>
     <div class="step"><b>7. 財務の健全性（自動判定）</b> PER（20倍以下+・60倍超−）、PBR（0.5〜1.5倍+・8倍超−）、ROE（10%以上+・3%未満−）、赤字（PERマイナス −20点）、配当利回り3%以上（+）、時価総額（小型−・中大型+）を固定基準で採点。取得できなかった項目は判定をスキップします（欠損は赤字扱いしません）</div>
@@ -2182,6 +2392,7 @@ __NAV__
 <div class="ledger">
 {body_rows}
 </div>
+{soon_block}
 <footer>
   対象 {universe:,}銘柄 ／ 右肩下がり・急落直後・荒い値動き等で除外 {excluded:,}銘柄<br>
   ◎=直近{data["config"]["RECENT_DAYS"]}日高値から{data["config"]["CHEAP_PCT"]:.0f}%以上安い ・ ○={data["config"]["MILD_PCT"]:.0f}%以上安い<br>
@@ -2192,6 +2403,7 @@ __CAPJS__
 </html>
 """.replace("__CAPJS__", CAP_JS.replace("__TOPN__", str(cfg["TOP_N"])) + NAV_JS) \
        .replace("__NAVCSS__", NAV_CSS) \
+       .replace("__METERCSS__", METER_CSS) \
        .replace("__NAV__", nav_html("index"))
 
 
@@ -2206,7 +2418,6 @@ NAV_CSS = """
 
 NAV_ITEMS = [
     ("index.html", "帳簿", "index"),
-    ("clean.html", "無傷", "clean"),
     ("holdings.html", "持ち株", "holdings"),
     ("universe.html", "全銘柄", "universe"),
     ("backtest.html", "検証", "backtest"),
@@ -2217,7 +2428,7 @@ NAV_ITEMS = [
 
 NAV_JS = """<script>
 (function(){
-  const order = ['index.html', 'clean.html', 'holdings.html', 'universe.html', 'backtest.html', 'indicators.html', 'guide.html'];
+  const order = ['index.html', 'holdings.html', 'universe.html', 'backtest.html', 'indicators.html', 'guide.html'];
   let here = location.pathname.split('/').pop();
   if (!here) here = 'index.html';
   const idx = order.indexOf(here);
@@ -2498,14 +2709,23 @@ def render_universe(all_results, stats, dt):
         if counts.get(key):
             chips.append(f'<button class="fbtn" data-f="{key}" style="background:{bg}; color:{fg}">'
                          f'{label} {counts[key]:,}</button>')
+    n_flaw = sum(1 for r in all_results if r.get("demerit") == 0)
+    n_soon = sum(1 for r in all_results if r.get("soon"))
+    if n_flaw:
+        chips.append(f'<button class="fbtn" data-f="__flaw" style="background:#e9f3ea; color:#1a5c37">無傷 {n_flaw:,}</button>')
+    if n_soon:
+        chips.append(f'<button class="fbtn" data-f="__soon" style="background:#fdf3e3; color:#b06a00">まもなく {n_soon:,}</button>')
     chips.append("</div>")
     chips.append('<div class="sortrow"><input id="q" class="search" type="search" placeholder="銘柄名・コードで検索">'
                  '<select id="sort" class="sortsel">'
                  '<option value="code">コード順</option>'
                  '<option value="name">名前順（文字コード）</option>'
-                 '<option value="dm">減点が少ない順</option>'
+                 '<option value="dm">安全（減点が少ない）順</option>'
                  '<option value="dm_desc">減点が多い順</option>'
-                 '<option value="sc">加点スコアが高い順</option>'
+                 '<option value="q">質スコアが高い順</option>'
+                 '<option value="tm">タイミングスコアが高い順</option>'
+                 '<option value="sc">総合スコアが高い順</option>'
+                 '<option value="tri">帳簿の三層合格を先頭に</option>'
                  '<option value="drop">高値からの下落率が大きい順</option>'
                  '<option value="close">株価が高い順</option>'
                  '<option value="close_asc">株価が安い順</option>'
@@ -2540,15 +2760,23 @@ def render_universe(all_results, stats, dt):
             f'data-t="{html.escape(r["name"].lower())} {r["code"]}" '
             f'data-name="{html.escape(r["name"])}" '
             f'data-dm="{_n(r.get("demerit"), 9999)}" data-sc="{_n(r.get("score"), -1)}" '
+            f'data-q="{_n(r.get("q_score"), -1)}" data-tm="{_n(r.get("t_score"), -1)}" '
+            f'data-tri="{1 if r.get("tri") else 0}" data-soon="{1 if r.get("soon") else 0}" '
             f'data-close="{_n(r.get("close"), -1)}" data-drop="{_n(r.get("drop_pct"), -1)}" '
             f'data-mkt="{html.escape(r.get("market", ""))}" data-sec="{html.escape(r.get("sector", ""))}">'
             f'<summary class="urow">'
             f'<span class="st" style="background:{bg}; color:{fg}">{label}</span>'
             f'<span class="un"><b>{html.escape(r["name"])}</b> '
             f'<span class="chip {mchip}">{html.escape(r.get("market", "") or "−")}</span> '
-            f'<span class="num uc">{r["code"]}</span>{reason_html}</span>'
+            + ('<span class="mark tri">帳簿</span>' if r.get("tri") and r["status"] == "picked" else "")
+            + ('<span class="mark soon">まもなく</span>' if r.get("soon") else "")
+            + f'<span class="num uc">{r["code"]}</span>{reason_html}</span>'
             f'<span class="up num">{close}<small>{drop}</small>'
-            + (f'<small class="dmv{" zero" if r.get("demerit") == 0 else ""}">減点{r["demerit"]}</small>' if r.get("demerit") is not None else "")
+            + (f'<small class="tri3">'
+               f'<b class="{"zero" if r.get("demerit") == 0 else ""}">安{r["demerit"]}</b> '
+               f'質{r.get("q_score") or 0:.0f} 時{r.get("t_score") or 0:.0f}</small>'
+               if r.get("demerit") is not None and r.get("q_score") is not None
+               else (f'<small class="dmv{" zero" if r.get("demerit") == 0 else ""}">安{r["demerit"]}</small>' if r.get("demerit") is not None else ""))
             + f'</span></summary>'
             f'<div class="ubody">読み込み中…</div></details>')
 
@@ -2588,6 +2816,11 @@ def render_universe(all_results, stats, dt):
   .up small{display:block; font-weight:600; color:var(--cheap); font-size:10px;}
   .hidden{display:none;}
   .dmv{color:#8a5a17 !important; font-weight:800;} .dmv.zero{color:#1a5c37 !important;}
+  .tri3{display:block; font-size:9.5px; color:var(--ink2) !important; font-weight:600;}
+  .tri3 b{color:#8a5a17;} .tri3 b.zero{color:#1a5c37;}
+  .mark{display:inline-block; font-size:9px; font-weight:800; border-radius:4px; padding:1px 5px; margin-right:3px; vertical-align:1px;}
+  .mark.tri{background:#1c1c1e; color:#fff;} .mark.soon{background:#fdf3e3; color:#b06a00;}
+""" + METER_CSS + """
   .hit{display:flex; align-items:center; gap:6px; font-size:11px; padding:4px 0; border-bottom:1px dashed #f0ead9;}
   .hit.ok{color:#1a5c37; font-weight:700;} .hp{margin-left:auto; font-weight:800; color:#8a5a17;}
   .sev{flex:none; font-size:9px; font-weight:800; border-radius:4px; padding:1px 5px;}
@@ -2624,7 +2857,9 @@ let filter = 'all';
 function apply(){
   const q = document.getElementById('q').value.trim().toLowerCase();
   for (const r of rows){
-    const okF = (filter === 'all' || r.dataset.s === filter);
+    const okF = (filter === 'all' || r.dataset.s === filter
+                 || (filter === '__flaw' && r.dataset.dm === '0')
+                 || (filter === '__soon' && r.dataset.soon === '1'));
     const okQ = (!q || r.dataset.t.includes(q));
     r.classList.toggle('hidden', !(okF && okQ));
   }
@@ -2663,6 +2898,9 @@ const cmp = {
   dm:        (a, b) => (+a.dataset.dm - +b.dataset.dm) || (+b.dataset.sc - +a.dataset.sc),
   dm_desc:   (a, b) => (+b.dataset.dm - +a.dataset.dm) || (+b.dataset.sc - +a.dataset.sc),
   sc:        (a, b) => +b.dataset.sc - +a.dataset.sc,
+  q:         (a, b) => +b.dataset.q - +a.dataset.q,
+  tm:        (a, b) => +b.dataset.tm - +a.dataset.tm,
+  tri:       (a, b) => (+b.dataset.tri - +a.dataset.tri) || (+b.dataset.soon - +a.dataset.soon) || (+b.dataset.sc - +a.dataset.sc),
   drop:      (a, b) => +b.dataset.drop - +a.dataset.drop,
   close:     (a, b) => +b.dataset.close - +a.dataset.close,
   close_asc: (a, b) => +a.dataset.close - +b.dataset.close,
@@ -2917,10 +3155,9 @@ def render_guide(dt):
 </ol></div>
 
 <div class="gcard c-paper"><div class="gh">📒 タブの役割</div>
-<div class="tabrow"><span class="tb">帳簿</span>加点方式の厳選{c["TOP_N"]}銘柄。持ち金・★・根拠・減点との相互参照</div>
-<div class="tabrow"><span class="tb">無傷</span>減点方式。「買ってはいけない条件」に該当しない銘柄から順に上位100</div>
+<div class="tabrow"><span class="tb">帳簿</span>安全×質×タイミングの三層で選んだ厳選{c["TOP_N"]}銘柄＋「まもなく買い場」の待ち銘柄。持ち金・★・根拠</div>
 <div class="tabrow"><span class="tb">持ち株</span>登録→毎時の監視→売却記録→通算成績（勝率・損益率）</div>
-<div class="tabrow"><span class="tb">全銘柄</span>約4,000銘柄の台帳。並べ替え・検索・タップで全詳細</div>
+<div class="tabrow"><span class="tb">全銘柄</span>約4,000銘柄の台帳。安全（減点）・質・タイミングの3スコア、無傷／まもなく絞り込み、並べ替え、タップで全詳細（指標メーター付き）</div>
 <div class="tabrow"><span class="tb">検証</span>採点ルールと売りルール自身の成績表。損切り%と持ち金の決め方</div>
 <div class="tabrow"><span class="tb">指標</span>PER・RSIなど全指標の図解。数字の読み方はここ</div></div>
 
@@ -2971,7 +3208,7 @@ STATUS_LABEL = {"picked": "厳選候補", "ok": "候補", "bench": "圏外",
 
 def render_stock_detail(e):
     """1銘柄の詳細HTML断片（全銘柄一覧のタップ展開用）"""
-    parts = []
+    parts = [stock_meters_html(e)]
     status = e.get("status", "")
     if e.get("cand_rank"):
         parts.append(f'<div class="nhead">候補{e["cand_rank"]}位 ・ スコア {e.get("score", 0):.0f}点</div>')
@@ -3731,6 +3968,13 @@ def main():
 
     data = build_output(picked, stats)
     data["market"] = extras.get("market")
+    data["soon"] = [{
+        "code": s["code"], "name": s["name"], "market": s.get("market", ""),
+        "close": round(s["close"], 1), "cost": round(s["close"] * 100),
+        "drop_pct": round(s["drop_pct"], 2), "to_cheap_pct": s.get("to_cheap_pct"),
+        "trigger_price": s.get("trigger_price"), "q_score": s.get("q_score"),
+        "demerit": s.get("demerit"), "suffix": s.get("suffix", ".T"),
+    } for s in (extras.get("soon") or [])]
 
     DOCS.mkdir(exist_ok=True)
     (DOCS / ".nojekyll").write_text("", encoding="utf-8")
@@ -3756,9 +4000,7 @@ def main():
     (DOCS / "holdings.html").write_text(render_holdings(dt_now), encoding="utf-8")
     (DOCS / "guide.html").write_text(render_guide(dt_now), encoding="utf-8")
     (DOCS / "indicators.html").write_text(render_indicators(dt_now), encoding="utf-8")
-    (DOCS / "clean.html").write_text(
-        render_clean(extras.get("clean_ranked") or [], extras.get("clean_stats") or {}, dt_now),
-        encoding="utf-8")
+    # 無傷ランキングは全銘柄一覧（絞り込み「無傷」・ソート「安全順」）に統合したため単独ページは廃止
     write_details(extras.get("detail_map") or {})
 
     # 選定履歴（1行/実行の軽量ログ。公開ブランチ上で引き継がれる）
