@@ -707,6 +707,10 @@ def score_stock(s):
         _add((6))
         reasons.append(f"1日平均 {tv/100_000_000:.1f}億円の売買（+6点）")
 
+    ec = s.get("exec_change") or []
+    if ec:
+        reasons.insert(0, f"⚠ 直近に代表取締役の異動を開示（{ec[0]['date'][5:].replace('-', '/')}）。"
+                          f"経営トップ交代は株価が大きく動く最重要イベント。開示原文を必ず確認（採点には含めず注意喚起のみ）")
     s["q_score"] = round(_q[0], 1)
     s["t_score"] = round(_t[0], 1)
     return score, reasons
@@ -1213,6 +1217,80 @@ def fetch_fundamentals(session, codes, closes=None):
 
 
 # ------------------------------------------------------------
+# 代表取締役の異動（社長交代）検出: TDnetの日付別一覧を直近N日分スキャンし、
+# 見出しに異動系キーワードを含む開示を銘柄コードに紐付ける（全銘柄対象・通信は日数分のみ）
+# ------------------------------------------------------------
+EXEC_KEYWORDS = ("代表取締役の異動", "代表取締役等の異動", "代表者の異動", "社長交代", "社長の交代",
+                 "代表取締役社長の異動", "代表執行役の異動", "CEOの異動", "代表取締役および役員の異動",
+                 "代表取締役の変更", "社長人事", "代表取締役社長交代")
+EXEC_CACHE_PATH = DOCS / "exec_changes.json"
+
+
+def _norm_code(code5):
+    c = str(code5 or "").strip()
+    return c[:-1] if len(c) == 5 and c.endswith("0") else c
+
+
+def scan_exec_changes(session, days_back=14):
+    """{code: [{date, title, url}]} を返す。失敗日は前回キャッシュで補う"""
+    try:
+        prev = json.loads(EXEC_CACHE_PATH.read_text(encoding="utf-8"))
+    except Exception:  # noqa: BLE001
+        prev = {}
+    found = {}
+    today = datetime.now(JST).date()
+    for i in range(days_back):
+        d = today - timedelta(days=i)
+        if d.weekday() >= 5:
+            continue
+        ds = d.strftime("%Y%m%d")
+        try:
+            resp = session.get(f"https://webapi.yanoshin.jp/webapi/tdnet/list/{ds}.json",
+                               params={"limit": 3000}, timeout=30,
+                               headers={"User-Agent": "Mozilla/5.0"})
+            if resp.status_code != 200:
+                raise RuntimeError(resp.status_code)
+            items = (resp.json() or {}).get("items") or []
+        except Exception:  # noqa: BLE001
+            # その日は前回キャッシュから復元
+            for code, lst in prev.items():
+                for it in lst:
+                    if it.get("date") == d.isoformat():
+                        found.setdefault(code, []).append(it)
+            time.sleep(0.4)
+            continue
+        for it in items:
+            td = it.get("Tdnet") or {}
+            title = (td.get("title") or "").strip()
+            if not any(k in title for k in EXEC_KEYWORDS):
+                continue
+            code = _norm_code(td.get("company_code"))
+            if not code:
+                continue
+            found.setdefault(code, []).append({
+                "date": d.isoformat(), "title": title,
+                "url": td.get("document_url") or "",
+                "company": td.get("company_name") or "",
+            })
+        time.sleep(0.4)
+    # 重複除去・新しい順
+    for code in found:
+        seen, uniq = set(), []
+        for it in sorted(found[code], key=lambda x: x["date"], reverse=True):
+            k = (it["date"], it["title"])
+            if k not in seen:
+                seen.add(k)
+                uniq.append(it)
+        found[code] = uniq
+    try:
+        EXEC_CACHE_PATH.write_text(json.dumps(found, ensure_ascii=False), encoding="utf-8")
+    except Exception:  # noqa: BLE001
+        pass
+    print(f"  代表異動の開示: 直近{days_back}日で {sum(len(v) for v in found.values())}件 / {len(found)}銘柄")
+    return found
+
+
+# ------------------------------------------------------------
 # 4. スクリーニング本体
 # ------------------------------------------------------------
 _thread_local = None
@@ -1421,6 +1499,16 @@ def run_screening():
                   "chg20": round((mc[-1] / mc[-21] - 1) * 100, 1)}
 
     print("TDnet適時開示を取得中...")
+    exec_changes = scan_exec_changes(td_session)
+    for code, e in detail_map.items():
+        if code in exec_changes:
+            e["exec_change"] = exec_changes[code]
+    for c in candidates:
+        if c["code"] in exec_changes:
+            c["exec_change"] = exec_changes[c["code"]]
+    for r in all_results:
+        if r["code"] in exec_changes:
+            r["exec_change"] = exec_changes[r["code"]]
     rank_map2 = {s["code"]: i + 1 for i, s in enumerate(picked)}
     for c in candidates:
         e = detail_map.get(c["code"])
@@ -1559,6 +1647,9 @@ def make_demo_data():
         s["cheap_streak"] = rng.randint(0, 6)
         s["prev_change"] = rng.uniform(-4, 2)
         s["gap_avg"] = rng.uniform(0.3, 3.0)
+        if rng.random() < 0.12:
+            s["exec_change"] = [{"date": "2026-08-12", "title": "代表取締役の異動に関するお知らせ",
+                                 "url": "https://www.release.tdnet.info/", "company": s["name"]}]
         s["trades"] = [
             {"buy_date": "2026-05-11", "sell_date": "2026-05-18", "held": 6, "pnl": 12000.0, "stop": False},
             {"buy_date": "2026-06-02", "sell_date": "2026-07-13", "held": 28, "pnl": 9500.0, "stop": False},
@@ -1644,6 +1735,10 @@ def make_demo_data():
     for s in picked:
         detail_map[s["code"]] = {**s, "status": "picked",
                                  "reason": "", "cand_rank": 1}
+    for r in all_results:
+        src_s = next((s for s in picked if s["code"] == r["code"]), None)
+        if src_s and src_s.get("exec_change"):
+            r["exec_change"] = src_s["exec_change"]
     detail_map["6800"] = {"code": "6800", "name": "デモ右肩下がり", "market": "スタンダード",
                           "sector": "電気機器", "suffix": ".T", "status": "dead",
                           "reason": "1年高値から55%下落", "days": [], "long": {}}
@@ -1710,6 +1805,7 @@ def build_output(picked, stats):
             "demerit_rank": s.get("demerit_rank"),
             "demerit_hits": s.get("demerit_hits", []),
             "trades": s.get("trades", []),
+            "exec_change": s.get("exec_change", []),
             "q_score": s.get("q_score"), "t_score": s.get("t_score"),
             "tri": s.get("tri", False), "safe_ok": s.get("safe_ok"), "timing_ok": s.get("timing_ok"),
             "disclosures": s.get("disclosures", []),
@@ -1781,6 +1877,34 @@ def spark_svg(spark, long_info, width=320, height=110):
     parts.append(f'<circle cx="{x(len(closes) - 1)}" cy="{y(closes[-1])}" r="4" fill="#1c1c1e"/>')
     parts.append("</svg>")
     return "".join(parts)
+
+
+def exec_card_html(ec):
+    """代表取締役の異動 警告カード（方向判断はしない。原文へ1タップ）"""
+    if not ec:
+        return ""
+    rows = "".join(
+        f'<a class="execrow" href="{it["url"]}" target="_blank" rel="noopener">'
+        f'<span class="num">{it["date"][5:].replace("-", "/")}</span> {html.escape(it["title"])} <span class="pdf">PDF ›</span></a>'
+        for it in ec[:3])
+    return (f'<div class="execcard"><div class="exech">⚠ 代表取締役の異動が開示されています（経営トップ交代）</div>'
+            f'{rows}'
+            f'<div class="execnote">サンリオ型（好転）かGENDA型（急落）かはシステムでは判定しません。'
+            f'開示原文を読んで、新旧トップの背景・交代理由・市場の受け止めをご自身で判断してください。'
+            f'この銘柄の採点には含めていません。</div></div>')
+
+
+EXEC_CSS = """
+  .execbadge{display:inline-block; font-size:9px; font-weight:800; color:#fff; background:#c62f2f;
+    border-radius:4px; padding:1px 6px; margin-left:4px; vertical-align:1px;}
+  .execcard{background:#fdeeee; border:1.5px solid #e8a3a3; border-radius:10px; padding:10px 12px; margin:6px 0 10px;}
+  .exech{font-size:12.5px; font-weight:800; color:#c62f2f; margin-bottom:6px;}
+  .execrow{display:block; font-size:11.5px; color:#1c1c1e; text-decoration:none; padding:5px 0;
+    border-top:1px dashed #f0c8c8; line-height:1.6;}
+  .execrow .num{color:#c62f2f; font-weight:800; margin-right:4px;}
+  .execrow .pdf{color:#2e4d7b; font-weight:700; margin-left:4px;}
+  .execnote{font-size:10.5px; color:#8a3a3a; line-height:1.7; padding-top:6px;}
+"""
 
 
 def stock_meters_html(s):
@@ -2072,6 +2196,17 @@ def render_html(data):
                   f'<span class="cnt">{len(soon)}銘柄</span></div>{soon_rows}'
                   f'<div class="capnote">おばあさんが雑誌で目星を付けて「下がるのを待った」動作を自動化。◎に達した日に帳簿へ昇格します。'
                   f'目安の値段に指値を置くのも一手。</div></div>') if soon else ""
+    ex_all = data.get("exec_all") or []
+    if ex_all:
+        items_ex = "".join(
+            f'<a class="exitem" href="{it["url"]}" target="_blank" rel="noopener">'
+            f'<span class="num">{it["date"][5:].replace("-", "/")}</span> {html.escape(it["company"] or it["code"])} '
+            f'<small>{html.escape(it["title"][:28])}…</small></a>' for it in ex_all[:8])
+        more = f'<div class="exmore">他 {len(ex_all) - 8}件は全銘柄の「社長交代」絞り込みへ</div>' if len(ex_all) > 8 else ""
+        exec_banner = (f'<details class="exban"><summary>⚠ 直近14日の代表取締役の異動: {len(ex_all)}件（全銘柄・タップで一覧）</summary>'
+                       f'<div class="exlist">{items_ex}{more}</div></details>')
+    else:
+        exec_banner = ""
     mkt = data.get("market")
     if mkt:
         if mkt["above200"]:
@@ -2246,7 +2381,7 @@ def render_html(data):
       <summary class="row">
         <div class="rk num">{s["rank"]}</div>
         <div class="nm">
-          <div class="n1">{html.escape(s["name"])} <span class="chip {chip}">{html.escape(s["market"])}</span>{new_mark}{'<span class="tri3badge">安全×質×時</span>' if s.get("tri") else ""}{move_html(s)}</div>
+          <div class="n1">{html.escape(s["name"])} <span class="chip {chip}">{html.escape(s["market"])}</span>{new_mark}{'<span class="tri3badge">安全×質×時</span>' if s.get("tri") else ""}{move_html(s)}{'<span class="execbadge">社長交代</span>' if s.get("exec_change") else ""}</div>
           <div class="n2 num"><button class="codebtn" onclick="copyCode(this, '{s["code"]}', event)">{s["code"]} ⧉</button> ・ {html.escape(s["group"])} ・ 100株 {s["cost"] / 10000:,.1f}万円 ・ {s["score"]:.0f}点<span class="nofund">資金不足</span></div>
           {f'<div class="cmt">{html.escape(s["comment"])}</div>' if s.get("comment") else ""}
         </div>
@@ -2260,6 +2395,7 @@ def render_html(data):
         <div class="chev">›</div>
       </summary>
       <div class="notebox">
+        {exec_card_html(s.get("exec_change"))}
         {stock_meters_html(s)}
         <div class="nhead">選ばれた根拠（総合 {s["score"]:.0f}点 ＝ 質 {s.get("q_score") or 0:.0f} + タイミング {s.get("t_score") or 0:.0f}）</div>
         {reasons_html}
@@ -2336,6 +2472,7 @@ def render_html(data):
   .drop{{color:var(--cheap); font-weight:700;}}
   .athigh{{color:#2e5fa8; font-weight:800;}}
 __METERCSS__
+__EXECCSS__
   html, body{{overflow-x:hidden; max-width:100%;}}
   body{{overscroll-behavior-x:none;}}
   *{{min-width:0;}}
@@ -2448,6 +2585,13 @@ __NAVCSS__
   .rd{{font-size:9px; color:var(--ink3);}} .rr{{font-size:12px; font-weight:800;}}
   .tri3badge{{display:inline-block; font-size:9px; font-weight:800; color:#fff; background:#3a5a40;
     border-radius:4px; padding:1px 5px; margin-left:4px; vertical-align:1px;}}
+  details.exban{{background:#fdeeee; border:1.5px solid #e8a3a3; border-radius:12px; margin-bottom:10px;}}
+  details.exban summary{{list-style:none; cursor:pointer; font-size:12px; font-weight:800; color:#c62f2f; padding:10px 14px;}}
+  details.exban summary::-webkit-details-marker{{display:none;}}
+  .exlist{{padding:0 14px 10px;}}
+  .exitem{{display:block; font-size:11.5px; color:#1c1c1e; text-decoration:none; padding:5px 0; border-top:1px dashed #f0c8c8; line-height:1.6;}}
+  .exitem .num{{color:#c62f2f; font-weight:800; margin-right:4px;}} .exitem small{{color:var(--ink2);}}
+  .exmore{{font-size:10.5px; color:#8a3a3a; padding-top:6px;}}
   .soonbox{{background:#fff; border-radius:14px; padding:4px 0 10px; margin-top:12px; box-shadow:0 1px 3px rgba(0,0,0,.06);}}
   .soonh{{font-size:12px; font-weight:800; color:#7a6a45; letter-spacing:.06em; padding:12px 14px 6px;
     display:flex; justify-content:space-between; align-items:baseline;}}
@@ -2466,6 +2610,7 @@ __NAVCSS__
 </header>
 __NAV__
 {market_banner}
+{exec_banner}
 <details class="crit">
   <summary>この厳選{cfg["TOP_N"]}銘柄の選定基準（タップで開閉）<span class="chev">›</span></summary>
   <div class="critbody">
@@ -2505,6 +2650,7 @@ __CAPJS__
 """.replace("__CAPJS__", CAP_JS.replace("__TOPN__", str(cfg["TOP_N"])) + NAV_JS) \
        .replace("__NAVCSS__", NAV_CSS) \
        .replace("__METERCSS__", METER_CSS) \
+       .replace("__EXECCSS__", EXEC_CSS) \
        .replace("__NAV__", nav_html("index"))
 
 
@@ -2826,6 +2972,9 @@ def render_universe(all_results, stats, dt):
         chips.append(f'<button class="fbtn" data-f="__flaw" style="background:#e9f3ea; color:#1a5c37">無傷 {n_flaw:,}</button>')
     if n_soon:
         chips.append(f'<button class="fbtn" data-f="__soon" style="background:#fdf3e3; color:#b06a00">まもなく {n_soon:,}</button>')
+    n_exec = sum(1 for r in all_results if r.get("exec_change"))
+    if n_exec:
+        chips.append(f'<button class="fbtn" data-f="__exec" style="background:#c62f2f; color:#fff">社長交代 {n_exec:,}</button>')
     chips.append('<button class="fbtn" data-f="__fav" style="background:#fff8e0; color:#a06f00">★お気に入り</button>')
     chips.append('<button class="fbtn" data-f="__hold" style="background:#e8eef8; color:#2e4d7b">持ち株</button>')
     chips.append("</div>")
@@ -2840,6 +2989,7 @@ def render_universe(all_results, stats, dt):
                  '<option value="sc">総合スコアが高い順</option>'
                  '<option value="tri">帳簿の三層合格を先頭に</option>'
                  '<option value="fav">★お気に入り・持ち株を先頭に</option>'
+                 '<option value="exec">社長交代の開示ありを先頭に</option>'
                  '<option value="drop">高値からの下落率が大きい順</option>'
                  '<option value="close">株価が高い順</option>'
                  '<option value="close_asc">株価が安い順</option>'
@@ -2876,6 +3026,7 @@ def render_universe(all_results, stats, dt):
             f'data-dm="{_n(r.get("demerit"), 9999)}" data-sc="{_n(r.get("score"), -1)}" '
             f'data-q="{_n(r.get("q_score"), -1)}" data-tm="{_n(r.get("t_score"), -1)}" '
             f'data-tri="{1 if r.get("tri") else 0}" data-soon="{1 if r.get("soon") else 0}" '
+            f'data-exec="{1 if r.get("exec_change") else 0}" '
             f'data-close="{_n(r.get("close"), -1)}" data-drop="{_n(r.get("drop_pct"), -1)}" '
             f'data-mkt="{html.escape(r.get("market", ""))}" data-sec="{html.escape(r.get("sector", ""))}">'
             f'<summary class="urow">'
@@ -2884,6 +3035,7 @@ def render_universe(all_results, stats, dt):
             f'<span class="chip {mchip}">{html.escape(r.get("market", "") or "−")}</span> '
             + ('<span class="mark tri">帳簿</span>' if r.get("tri") and r["status"] == "picked" else "")
             + ('<span class="mark soon">まもなく</span>' if r.get("soon") else "")
+            + ('<span class="mark exec">社長交代</span>' if r.get("exec_change") else "")
             + f'<button class="uhold" data-code="{r["code"]}" aria-label="持ち株">持</button>'
             + f'<span class="num uc">{r["code"]}</span>{reason_html}</span>'
             f'<button class="ufav" data-code="{r["code"]}" aria-label="お気に入り">★</button>'
@@ -2936,6 +3088,8 @@ def render_universe(all_results, stats, dt):
   .tri3 b{color:#8a5a17;} .tri3 b.zero{color:#1a5c37;}
   .mark{display:inline-block; font-size:9px; font-weight:800; border-radius:4px; padding:1px 5px; margin-right:3px; vertical-align:1px;}
   .mark.tri{background:#1c1c1e; color:#fff;} .mark.soon{background:#fdf3e3; color:#b06a00;}
+  .mark.exec{background:#c62f2f; color:#fff;}
+""" + EXEC_CSS + """
   .uhold{display:inline-block; font-size:9px; font-weight:800; border-radius:4px; padding:1px 5px; margin-right:3px;
     vertical-align:1px; border:1px solid #d9d2bf; background:#fff; color:#c9bd9d; cursor:pointer; line-height:1.4;}
   .uhold.on{background:#2e4d7b; color:#fff; border-color:#2e4d7b;}
@@ -2981,6 +3135,7 @@ function apply(){
     const okF = (filter === 'all' || r.dataset.s === filter
                  || (filter === '__flaw' && r.dataset.dm === '0')
                  || (filter === '__soon' && r.dataset.soon === '1')
+                 || (filter === '__exec' && r.dataset.exec === '1')
                  || (filter === '__fav' && r.dataset.fav === '1')
                  || (filter === '__hold' && r.dataset.hold === '1'));
     const okQ = (!q || r.dataset.t.includes(q));
@@ -3059,6 +3214,7 @@ const cmp = {
   tm:        (a, b) => +b.dataset.tm - +a.dataset.tm,
   tri:       (a, b) => (+b.dataset.tri - +a.dataset.tri) || (+b.dataset.soon - +a.dataset.soon) || (+b.dataset.sc - +a.dataset.sc),
   fav:       (a, b) => (+b.dataset.fav - +a.dataset.fav) || (+b.dataset.hold - +a.dataset.hold) || (+b.dataset.sc - +a.dataset.sc),
+  exec:      (a, b) => (+b.dataset.exec - +a.dataset.exec) || (+b.dataset.sc - +a.dataset.sc),
   drop:      (a, b) => +b.dataset.drop - +a.dataset.drop,
   close:     (a, b) => +b.dataset.close - +a.dataset.close,
   close_asc: (a, b) => +a.dataset.close - +b.dataset.close,
@@ -3374,7 +3530,7 @@ STATUS_LABEL = {"picked": "厳選候補", "ok": "候補", "bench": "圏外",
 
 def render_stock_detail(e):
     """1銘柄の詳細HTML断片（全銘柄一覧のタップ展開用）"""
-    parts = [stock_meters_html(e)]
+    parts = [exec_card_html(e.get("exec_change")), stock_meters_html(e)]
     status = e.get("status", "")
     if e.get("cand_rank"):
         parts.append(f'<div class="nhead">候補{e["cand_rank"]}位 ・ スコア {e.get("score", 0):.0f}点</div>')
@@ -4149,6 +4305,12 @@ def main():
         RANK_HIST_PATH.parent.mkdir(exist_ok=True)
         RANK_HIST_PATH.write_text(json.dumps(hist, ensure_ascii=False), encoding="utf-8")
     attach_rank_moves(data, datetime.fromisoformat(data["generated_at"]))
+    ex_all = []
+    for code, e in (extras.get("detail_map") or {}).items():
+        for it in (e.get("exec_change") or []):
+            ex_all.append({**it, "code": code, "company": it.get("company") or e.get("name", "")})
+    ex_all.sort(key=lambda x: x["date"], reverse=True)
+    data["exec_all"] = ex_all
     data["soon"] = [{
         "code": s["code"], "name": s["name"], "market": s.get("market", ""),
         "close": round(s["close"], 1), "cost": round(s["close"] * 100),
