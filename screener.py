@@ -1220,9 +1220,22 @@ def run_screening():
     for c in candidates:
         c["score"], c["reasons"] = score_stock(c)
         c["demerit"], c["demerit_hits"] = demerit_stock(c)
-    # 減点方式ランキング（既存の候補選定には影響しない・追加計算のみ）
-    clean = sorted(candidates, key=lambda s: (s["demerit"], -s["score"]))
-    clean_ranked = clean[:100]
+    # 減点方式: 詳細を持つ全銘柄（除外・対象外を含む）に適用し、全体順位を付ける
+    for code, e in detail_map.items():
+        if "demerit" not in e:
+            e["demerit"], e["demerit_hits"] = demerit_stock(e)
+        c_ent = next((c for c in candidates if c["code"] == code), None)
+        if c_ent is not None:
+            e["demerit"], e["demerit_hits"] = c_ent["demerit"], c_ent["demerit_hits"]
+            e["score"] = c_ent["score"]
+    all_by_demerit = sorted(detail_map.values(),
+                            key=lambda s: (s["demerit"], -(s.get("score") or 0)))
+    for i, e in enumerate(all_by_demerit, 1):
+        e["demerit_rank"] = i
+    demerit_rank_map = {e["code"]: e["demerit_rank"] for e in all_by_demerit}
+    for c in candidates:
+        c["demerit_rank"] = demerit_rank_map.get(c["code"])
+    clean_ranked = all_by_demerit[:100]
     candidates.sort(key=lambda s: s["score"], reverse=True)
     picked = candidates[:CONFIG["SHORTLIST_N"]]
     picked_codes = {s["code"] for s in picked}
@@ -1234,6 +1247,10 @@ def run_screening():
             r["score"] = round(score_map.get(r["code"], 0), 1)
             if r["status"] == "picked":
                 r["cand_rank"] = rank_map.get(r["code"])
+        e = detail_map.get(r["code"])
+        if e is not None and "demerit" in e:
+            r["demerit"] = e["demerit"]
+            r["demerit_rank"] = e.get("demerit_rank")
 
     stats = {
         "universe": len(universe),
@@ -1270,8 +1287,8 @@ def run_screening():
     extras = {"factor_stats": factor_stats, "market": market,
               "fund_available": fund_ok, "detail_map": detail_map,
               "clean_ranked": clean_ranked,
-              "clean_stats": {"screened": len(candidates),
-                              "flawless": sum(1 for c in candidates if c["demerit"] == 0)}}
+              "clean_stats": {"screened": len(detail_map),
+                              "flawless": sum(1 for e in detail_map.values() if e.get("demerit") == 0)}}
     return picked, stats, all_results, sim_records, portfolio, slstats, extras
 
 
@@ -1402,6 +1419,11 @@ def make_demo_data():
     stats = {"universe": 3912, "dead_excluded": 214, "skipped": 1480, "failed": 3,
              "cutoff_score": round(picked[-1]["score"], 1) if picked else 0}
 
+    for s in picked:
+        s["demerit"], s["demerit_hits"] = demerit_stock(s)
+    clean_ranked = sorted(picked, key=lambda s: (s["demerit"], -s["score"]))
+    for i, s in enumerate(clean_ranked, 1):
+        s["demerit_rank"] = i
     all_results = []
     for i, s in enumerate(picked):
         all_results.append({"code": s["code"], "name": s["name"],
@@ -1409,6 +1431,7 @@ def make_demo_data():
                             "close": round(s["close"], 1),
                             "drop_pct": round(s["drop_pct"], 2),
                             "score": round(s["score"], 1), "cand_rank": i + 1,
+                            "demerit": s.get("demerit"), "demerit_rank": s.get("demerit_rank"),
                             "status": "picked", "reason": ""})
     all_results += [
         {"code": "9999", "name": "デモ圏外株", "market": "プライム", "sector": "サービス業",
@@ -1454,9 +1477,6 @@ def make_demo_data():
         {"sl": 15.0, "tp_count": 585, "sl_count": 55, "realized": 3400000,
          "open": 140, "open_pnl": -2000000},
     ]
-    for s in picked:
-        s["demerit"], s["demerit_hits"] = demerit_stock(s)
-    clean_ranked = sorted(picked, key=lambda s: (s["demerit"], -s["score"]))
     detail_map = {}
     for s in picked:
         detail_map[s["code"]] = {**s, "status": "picked",
@@ -1522,6 +1542,10 @@ def build_output(picked, stats):
             "score": round(s.get("score", 0), 1),
             "reasons": s.get("reasons", []),
             "comment": make_comment(s),
+            "prev_change": (round(s["prev_change"], 2) if s.get("prev_change") is not None else None),
+            "demerit": s.get("demerit"),
+            "demerit_rank": s.get("demerit_rank"),
+            "demerit_hits": s.get("demerit_hits", []),
             "disclosures": s.get("disclosures", []),
             "fund": s.get("fund"),
             "long": {k: v for k, v in (s.get("long") or {}).items() if k != "spark"},
@@ -1761,6 +1785,29 @@ def render_html(data):
             f'<div class="fact"><span>{price_label}</span><span class="num">{yen(d["close"])}円</span></div>'
         )
 
+    def demerit_xref(s):
+        dm = s.get("demerit")
+        if dm is None:
+            return ""
+        rk = s.get("demerit_rank")
+        hits = s.get("demerit_hits") or []
+        sev_cls = {"致命": "sevA", "重い": "sevB", "軽い": "sevC"}
+        head = (f'<div class="nhead">減点方式では: 全体{rk:,}位' if rk else '<div class="nhead">減点方式では: ') \
+            + (f'（合計 −{dm}点）</div>' if dm else '（<b class="okc">無傷</b>）</div>')
+        body = "".join(
+            f'<div class="hit"><span class="sev {sev_cls[h[0]]}">{h[0]}</span>{html.escape(h[1])}'
+            f'<span class="num hp">−{h[2]}</span></div>' for h in hits) \
+            or '<div class="hit ok">買ってはいけない条件に一つも該当なし</div>'
+        return head + body + '<div class="discnote">加点で光っていても減点が重い銘柄は「魅力はあるが欠点もある」銘柄。'\
+                             '両方の物差しで見てください（一覧は「無傷」タブ）。</div>'
+
+    def pc_html(s):
+        pc = s.get("prev_change")
+        if pc is None:
+            return ""
+        cls = "up" if pc > 0 else "dn" if pc < 0 else "flat"
+        return f'<div class="p3 num {cls}">前日比 {pc:+.1f}%</div>'
+
     def day_rows(s):
         out = []
         for d in s.get("days", []):
@@ -1842,7 +1889,8 @@ def render_html(data):
         </div>
         <div class="px">
           <div class="p1 num"><small>{price_label}</small> {yen(s["close"])}<small>円</small></div>
-          <div class="p2 num drop">高値から −{s["drop_pct"]:.1f}%</div>
+          <div class="p2 num {"athigh" if s["drop_pct"] < 0.05 else "drop"}">{"20日高値を更新中" if s["drop_pct"] < 0.05 else f'高値から −{s["drop_pct"]:.1f}%'}</div>
+          {pc_html(s)}
         </div>
         <div>{badge}</div>
         <button class="fav" data-code="{s["code"]}" aria-label="お気に入り">★</button>
@@ -1851,6 +1899,7 @@ def render_html(data):
       <div class="notebox">
         <div class="nhead">選ばれた根拠（スコア {s["score"]:.0f}点）</div>
         {reasons_html}
+        {demerit_xref(s)}
         {tech_html}
         {fund_html}
         {disc_html}
@@ -1918,6 +1967,16 @@ def render_html(data):
   .p1 small{{font-size:10px; font-weight:600; color:var(--ink2);}}
   .p2{{font-size:10.5px; margin-top:2px;}}
   .drop{{color:var(--cheap); font-weight:700;}}
+  .athigh{{color:#2e5fa8; font-weight:800;}}
+  .hit{{display:flex; align-items:center; gap:6px; font-size:11px; padding:4px 0;
+    border-bottom:1px dashed #f0ead9;}}
+  .hit.ok{{color:#1a5c37; font-weight:700;}} .okc{{color:#1a5c37;}}
+  .hp{{margin-left:auto; font-weight:800; color:#8a5a17;}}
+  .sev{{flex:none; font-size:9px; font-weight:800; border-radius:4px; padding:1px 5px;}}
+  .sevA{{background:#fdeeee; color:#c62f2f;}} .sevB{{background:var(--mild-bg); color:#b06a00;}}
+  .sevC{{background:#eef0f4; color:#4b4f57;}}
+  .p3{{font-size:10px; margin-top:1px; font-weight:700;}}
+  .p3.up{{color:#c62f2f;}} .p3.dn{{color:#2e5fa8;}} .p3.flat{{color:var(--ink3);}}
   .chip{{display:inline-block; font-size:9.5px; font-weight:600; border-radius:5px;
     padding:1.5px 5px; vertical-align:1px; margin-left:2px;}}
   .chip.prime{{background:#e8eef8; color:#2e4d7b;}}
@@ -2015,6 +2074,7 @@ __NAV__
     <div class="step"><b>1. 対象</b> 東証プライム・スタンダード・グロースの全銘柄（{universe:,}銘柄）</div>
     <div class="step"><b>2. 土俵に上げない</b> 上場から日足{cfg["MIN_RECORDS"]}日未満 ／ 株価{cfg["MIN_PRICE"]}円未満 ／ 直近{cfg["RECENT_DAYS"]}日の平均売買代金{int(cfg["MIN_TURNOVER"]/10000):,}万円未満（売りたい時に売れない銘柄を避ける）</div>
     <div class="step"><b>3. 危ない下げ方を除外</b> ①1年高値から{int(cfg["DEAD_DRAWDOWN"]*100)}%以上下落・長期の下落トレンド継続（終わった株） ②直近10日に1日{cfg["KNIFE_DROP_1D"]:.0f}%超の急落（決算ミス等の材料落ち=落ちるナイフ） ③日々の値動きが±{cfg["MAX_VOL20"]:.1f}%超の荒い銘柄 ④1年安値圏を更新中 ⑤下げ止まり未確認（前日から安値切り下げ中）——本日計{excluded:,}銘柄を除外</div>
+    <div class="step"><b>「高値から −◯%」の定義</b> 直近{cfg["RECENT_DAYS"]}営業日の最高値に対して、いまの値段が何%下にあるか。最高値はいまの値段を含む期間の天井なので、この数字は<b>0%が上限でプラスにはなりません</b>（今日が最高値なら「20日高値を更新中」と青で表示）。「今日の勢い」は別途、前日比で併記します</div>
     <div class="step"><b>4. 根拠スコアで採点</b> 残った銘柄を「いまの安さ」「下げの質（じわ下げか急落か・値動きの穏やかさ）」「トレンドの地合い（200日線の上の押し目か・1年レンジ内の位置）」「過去1年でこの買い方が利確+{cfg["TP_PCT"]:.0f}%を取れた実績」「10年データの長期テクニカル（支持帯の反発実績と試行回数・ゴールデンクロス・RSI・MACD・ボリンジャーバンド・25日線乖離・W底・セリクラ兆候）」「売買のしやすさ」の6観点で採点し、上位{cfg["SHORTLIST_N"]}銘柄を候補に</div>
     <div class="step"><b>5. 厳選{cfg["TOP_N"]}銘柄</b> 候補のうち、持ち金設定があれば「100株買える銘柄」だけを対象に、スコア上位{cfg["TOP_N"]}銘柄を表示。各銘柄の点数の内訳はタップで確認できます</div>
     <div class="step"><b>6. 目安ラベル</b> ◎=高値から{cfg["CHEAP_PCT"]:.0f}%以上安い ／ ○={cfg["MILD_PCT"]:.0f}%以上安い ／ 「普段の値段」={cfg["RECENT_DAYS"]}日の終値平均</div>
@@ -2393,7 +2453,9 @@ def render_universe(all_results, stats, dt):
             f'<span class="un"><b>{html.escape(r["name"])}</b> '
             f'<span class="chip {mchip}">{html.escape(r.get("market", "") or "−")}</span> '
             f'<span class="num uc">{r["code"]}</span>{reason_html}</span>'
-            f'<span class="up num">{close}<small>{drop}</small></span></summary>'
+            f'<span class="up num">{close}<small>{drop}</small>'
+            + (f'<small class="dmv{" zero" if r.get("demerit") == 0 else ""}">減点{r["demerit"]}</small>' if r.get("demerit") is not None else "")
+            + f'</span></summary>'
             f'<div class="ubody">読み込み中…</div></details>')
 
     rows = []
@@ -2426,6 +2488,11 @@ def render_universe(all_results, stats, dt):
   .up{flex:none; text-align:right; font-weight:700; font-size:12px;}
   .up small{display:block; font-weight:600; color:var(--cheap); font-size:10px;}
   .hidden{display:none;}
+  .dmv{color:#8a5a17 !important; font-weight:800;} .dmv.zero{color:#1a5c37 !important;}
+  .hit{display:flex; align-items:center; gap:6px; font-size:11px; padding:4px 0; border-bottom:1px dashed #f0ead9;}
+  .hit.ok{color:#1a5c37; font-weight:700;} .hp{margin-left:auto; font-weight:800; color:#8a5a17;}
+  .sev{flex:none; font-size:9px; font-weight:800; border-radius:4px; padding:1px 5px;}
+  .sevA{background:#fdeeee; color:#c62f2f;} .sevB{background:#fdf3e3; color:#b06a00;} .sevC{background:#eef0f4; color:#4b4f57;}
   details.udet summary.urow{list-style:none; cursor:pointer;}
   details.udet summary.urow::-webkit-details-marker{display:none;}
   details.udet[open] summary.urow{background:#f4eedd;}
@@ -2788,6 +2855,19 @@ def render_stock_detail(e):
         parts.append(f'<div class="nhead">対象外の理由</div>'
                      f'<div class="reason">・{html.escape(e.get("reason", ""))}</div>')
 
+    if e.get("demerit") is not None:
+        sev_cls = {"致命": "sevA", "重い": "sevB", "軽い": "sevC"}
+        rk = e.get("demerit_rank")
+        dm = e["demerit"]
+        parts.append(f'<div class="nhead">減点方式: 全体{rk:,}位' + (f'（−{dm}点）</div>' if dm else '（無傷）</div>'))
+        hits = e.get("demerit_hits") or []
+        if hits:
+            for h in hits:
+                parts.append(f'<div class="hit"><span class="sev {sev_cls[h[0]]}">{h[0]}</span>'
+                             f'{html.escape(h[1])}<span class="num hp">−{h[2]}</span></div>')
+        else:
+            parts.append('<div class="hit ok">買ってはいけない条件に一つも該当なし</div>')
+
     fu = e.get("fund")
     if fu:
         parts.append('<div class="nhead">ファンダメンタル指標</div>')
@@ -2901,7 +2981,7 @@ def render_clean(clean_ranked, clean_stats, dt):
   <div class="critbody">
     <div class="step">加点方式の帳簿とは逆の発想です。「絶対に買ってはいけない条件」を全部並べ、該当した重さを減点。
     <b>減点ゼロ＝無傷</b>の銘柄が上位に来ます。株価・PER・PBRなどは毎日動くため、顔ぶれは毎回入れ替わります。
-    対象は帳簿と同じ「土俵に上げた銘柄」（流動性・低位株・上場浅の対象外を除く）。減点が同じなら加点スコアの高い順。</div>
+    対象はデータの取れた<b>全銘柄</b>（帳簿で除外・対象外になった銘柄も含めて全部採点。全体順位は各銘柄の詳細と全銘柄一覧で確認可）。減点が同じなら加点スコアの高い順。</div>
     {rules}
   </div>
 </details>
