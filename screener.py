@@ -1074,42 +1074,78 @@ def fetch_tdnet(session, code, days_back=30, limit=3):
         return []
 
 
+FUND_CACHE_PATH = DOCS / "fund_cache.json"
+
+
+def load_fund_cache():
+    """前回までに受け取った財務素材（EPS・BPS・発行株数・配当）を読む。決算ごとにしか変わらないので再利用できる"""
+    try:
+        return json.loads(FUND_CACHE_PATH.read_text(encoding="utf-8"))
+    except Exception:  # noqa: BLE001
+        return {}
+
+
+def save_fund_cache(cache):
+    try:
+        FUND_CACHE_PATH.write_text(json.dumps(cache, ensure_ascii=False), encoding="utf-8")
+    except Exception:  # noqa: BLE001
+        pass
+
+
 def fetch_fundamentals(session, codes, closes=None):
-    """chart APIのmeta（取得済み・追加通信なし）からPER/PBR/ROE/配当/時価総額を組み立てる。
-    metaにPER/PBRが無い銘柄でも、EPS・BPS・発行株数と終値があれば自前で算出する。"""
+    """財務指標は「素材（EPS・BPS・発行株数・配当）」を受け取り、指標そのものはこちらで計算する。
+    - PER = 株価 ÷ EPS、PBR = 株価 ÷ BPS、時価総額 = 株価 × 発行株数、ROE = EPS ÷ BPS
+    - 素材は決算ごとにしか変わらないため、今回の応答に無くても前回保存分で計算する
+    - 相手が送ってきたPER/PBRは、素材が無いときの最後の手段としてのみ使う"""
     out = {}
     closes = closes or {}
+    persisted = load_fund_cache()
+    today = datetime.now(JST).date().isoformat()
+
     for code in codes:
-        m = _FUND_CACHE.get(code)
-        if not m:
-            continue
+        fresh = _FUND_CACHE.get(code) or {}
+        prev = persisted.get(code) or {}
+        # 素材のマージ: 今回の値を優先、無ければ前回保存分
+        mat = {}
+        for k in ("eps", "bvps", "shares", "dy"):
+            v = fresh.get(k, prev.get(k))
+            if v is not None:
+                mat[k] = v
+        if mat:
+            mat["asof"] = today if any(k in fresh for k in ("eps", "bvps", "shares")) else prev.get("asof", today)
+            persisted[code] = mat
+
         price = closes.get(code)
         entry = {}
-        per = m.get("per")
-        if per is None and price and m.get("eps"):
-            per = price / m["eps"] if m["eps"] != 0 else None
-        pbr = m.get("pbr")
-        if pbr is None and price and m.get("bvps"):
-            pbr = price / m["bvps"] if m["bvps"] > 0 else None
-        if per is not None:
-            entry["per"] = round(per, 1)
-        if pbr is not None:
-            entry["pbr"] = round(pbr, 2)
-        mcap = m.get("mcap")
-        if mcap is None and price and m.get("shares"):
-            mcap = price * m["shares"]
-        if mcap:
-            entry["mcap_oku"] = round(mcap / 100_000_000)
-        if m.get("dy") is not None:
-            entry["div_yield"] = round(m["dy"] * 100, 2)
-        if per is not None and pbr is not None and per > 0 and pbr > 0:
-            entry["roe"] = round(pbr / per * 100, 1)
-        elif m.get("eps") is not None and m.get("bvps"):
-            entry["roe"] = round(m["eps"] / m["bvps"] * 100, 1) if m["bvps"] > 0 else None
-            if entry["roe"] is None:
-                del entry["roe"]
+        eps, bvps, shares = mat.get("eps"), mat.get("bvps"), mat.get("shares")
+
+        # 自前計算（本線）
+        if price and eps is not None and eps != 0:
+            entry["per"] = round(price / eps, 1)
+        if price and bvps and bvps > 0:
+            entry["pbr"] = round(price / bvps, 2)
+        if price and shares:
+            entry["mcap_oku"] = round(price * shares / 100_000_000)
+        if eps is not None and bvps and bvps > 0:
+            entry["roe"] = round(eps / bvps * 100, 1)
+        if mat.get("dy") is not None:
+            entry["div_yield"] = round(mat["dy"] * 100, 2)
+
+        # 素材が無い項目だけ、相手のPER/PBR/時価総額で補う（最後の手段）
+        if "per" not in entry and fresh.get("per") is not None:
+            entry["per"] = round(fresh["per"], 1)
+        if "pbr" not in entry and fresh.get("pbr") is not None:
+            entry["pbr"] = round(fresh["pbr"], 2)
+        if "mcap_oku" not in entry and fresh.get("mcap"):
+            entry["mcap_oku"] = round(fresh["mcap"] / 100_000_000)
+        if "roe" not in entry and entry.get("per") and entry.get("pbr") and entry["per"] > 0:
+            entry["roe"] = round(entry["pbr"] / entry["per"] * 100, 1)
+
         if entry:
+            entry["computed"] = bool(eps is not None or bvps)
             out[code] = entry
+
+    save_fund_cache(persisted)
     return out
 
 
@@ -1871,8 +1907,10 @@ def render_html(data):
                 frows.append(f'<div class="fact"><span>時価総額</span>'
                              f'<span class="num">{fu["mcap_oku"]:,}億円</span></div>')
             if frows:
+                src_note = ("PER・PBR・ROE・時価総額は、決算数字（EPS・BPS・発行株数）と最新株価からこのシステムが算出"
+                            if fu.get("computed") else "この銘柄は決算数字が取得できず、配信元の指標値を参照")
                 fund_html = ('<div class="nhead">ファンダメンタル指標</div>' + "".join(frows)
-                             + '<div class="discnote">読み方は「使い方」ページ参照。低PER・低PBRには'
+                             + f'<div class="discnote">{src_note}。読み方は「使い方」ページ参照。低PER・低PBRには'
                                '業績悪化を織り込んだ「割安の罠」もあるため、単独では判断しないこと。</div>')
         tech_html = ""
         svg = spark_svg(s.get("spark"), s.get("long"))
