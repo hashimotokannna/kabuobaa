@@ -1230,7 +1230,8 @@ def run_screening():
             trades = var_trades[None]
             candidates.append({**stock, **m, "days": days[-10:],
                                "long": long_m,
-                               "sim": sim_summary(trades)})
+                               "sim": sim_summary(trades),
+                               "trades": trades[-6:]})
             all_results.append({**base, "status": "ok", "reason": ""})
             if trades:
                 sim_records.append({"code": stock["code"],
@@ -1461,6 +1462,11 @@ def make_demo_data():
         s["cheap_streak"] = rng.randint(0, 6)
         s["prev_change"] = rng.uniform(-4, 2)
         s["gap_avg"] = rng.uniform(0.3, 3.0)
+        s["trades"] = [
+            {"buy_date": "2026-05-11", "sell_date": "2026-05-18", "held": 6, "pnl": 12000.0, "stop": False},
+            {"buy_date": "2026-06-02", "sell_date": "2026-07-13", "held": 28, "pnl": 9500.0, "stop": False},
+            {"buy_date": "2026-07-30", "sell_date": None, "held": 9, "pnl": rng.uniform(-15000, 4000), "stop": False},
+        ]
         s["macd_state"] = rng.choice(["golden_recent", "above", "below"])
         s["boll_sigma"] = rng.uniform(-2.5, 1.0)
         s["dev25"] = rng.uniform(-15, 3)
@@ -1596,6 +1602,7 @@ def build_output(picked, stats):
             "demerit": s.get("demerit"),
             "demerit_rank": s.get("demerit_rank"),
             "demerit_hits": s.get("demerit_hits", []),
+            "trades": s.get("trades", []),
             "disclosures": s.get("disclosures", []),
             "fund": s.get("fund"),
             "long": {k: v for k, v in (s.get("long") or {}).items() if k != "spark"},
@@ -1835,6 +1842,28 @@ def render_html(data):
             f'<div class="fact"><span>{price_label}</span><span class="num">{yen(d["close"])}円</span></div>'
         )
 
+    def trades_html(s):
+        tr = s.get("trades") or []
+        if not tr:
+            return ""
+        rows_t = []
+        for t in tr:
+            bd = t["buy_date"][5:].replace("-", "/")
+            if t["sell_date"]:
+                sd = t["sell_date"][5:].replace("-", "/")
+                res = ("損切り" if t.get("stop") else "利確")
+                cls = "minus" if t.get("stop") else "plus"
+                rows_t.append(f'<div class="hrow"><span class="num">{bd} 買 → {sd} {res}（{t["held"]}日）</span>'
+                              f'<span class="num {cls}">{t["pnl"]:+,.0f}円</span></div>')
+            else:
+                cls = "plus" if t["pnl"] >= 0 else "minus"
+                rows_t.append(f'<div class="hrow"><span class="num">{bd} 買 → 持ち越し中（{t["held"]}日）</span>'
+                              f'<span class="num {cls}">{t["pnl"]:+,.0f}円</span></div>')
+        return (f'<div class="nhead">この銘柄で同じ買い方をしていたら（この1年・直近{len(tr)}回）</div>'
+                + "".join(rows_t)
+                + '<div class="discnote">◎で翌日始値100株買い→+5%で売り（損切りなし）の仮想記録。'
+                  '「勝ち癖」の有無を個別に確認できます。</div>')
+
     def demerit_xref(s):
         dm = s.get("demerit")
         if dm is None:
@@ -1952,6 +1981,7 @@ def render_html(data):
         <div class="nhead">選ばれた根拠（スコア {s["score"]:.0f}点）</div>
         {reasons_html}
         {demerit_xref(s)}
+        {trades_html(s)}
         {tech_html}
         {fund_html}
         {disc_html}
@@ -1966,6 +1996,7 @@ def render_html(data):
         <div class="linkrow">
           <a class="ylink" href="{yahoo_url}" target="_blank" rel="noopener">Yahoo!ファイナンス →</a>
           <button class="ylink sbi" onclick="openSBI('{s["code"]}', event)">SBI証券アプリで見る</button>
+          <a class="ylink buy" href="holdings.html?add={s["code"]}">買った→持ち株に登録</a>
         </div>
       </div>
       </details>""")
@@ -2020,6 +2051,9 @@ def render_html(data):
   .p2{{font-size:10.5px; margin-top:2px;}}
   .drop{{color:var(--cheap); font-weight:700;}}
   .athigh{{color:#2e5fa8; font-weight:800;}}
+  .hrow{{display:flex; justify-content:space-between; font-size:11px; padding:4px 0;
+    border-bottom:1px dashed #f0ead9;}}
+  .plus{{color:#2e7d32;}} .minus{{color:var(--cheap);}}
   .hit{{display:flex; align-items:center; gap:6px; font-size:11px; padding:4px 0;
     border-bottom:1px dashed #f0ead9;}}
   .hit.ok{{color:#1a5c37; font-weight:700;}} .okc{{color:#1a5c37;}}
@@ -2059,6 +2093,8 @@ def render_html(data):
     text-decoration:none; text-align:center; background:#eef2f8; border-radius:9px;
     padding:9px; border:none; cursor:pointer;}}
   .ylink.sbi{{color:#1a5c37; background:#e9f3ea;}}
+  .ylink.buy{{color:#fff; background:#1c1c1e;}}
+  .linkrow{{flex-wrap:wrap;}} .linkrow .ylink{{min-width:45%;}}
   .codebtn{{font-family:inherit; font-size:inherit; color:#2e4d7b; background:none;
     border:none; border-bottom:1px dashed #9db3cc; padding:0 1px; cursor:pointer;}}
   .codebtn.copied{{color:#1a5c37; border-bottom-color:#1a5c37;}}
@@ -2174,13 +2210,14 @@ NAV_ITEMS = [
     ("holdings.html", "持ち株", "holdings"),
     ("universe.html", "全銘柄", "universe"),
     ("backtest.html", "検証", "backtest"),
+    ("indicators.html", "指標", "indicators"),
     ("guide.html", "使い方", "guide"),
 ]
 
 
 NAV_JS = """<script>
 (function(){
-  const order = ['index.html', 'clean.html', 'holdings.html', 'universe.html', 'backtest.html', 'guide.html'];
+  const order = ['index.html', 'clean.html', 'holdings.html', 'universe.html', 'backtest.html', 'indicators.html', 'guide.html'];
   let here = location.pathname.split('/').pop();
   if (!here) here = 'index.html';
   const idx = order.indexOf(here);
@@ -2288,6 +2325,11 @@ def render_backtest(sim_records, dt, portfolio=None, slstats=None, factor_stats=
         return f"{sign}{abs(v):,.0f}円"
 
     body = []
+    body.append('<div class="card guidecard"><h2>このページで決めること（3つ）</h2>'
+                '<div class="q"><b>1. 損切りは何%にするか</b> → 下の「損切りルールの効果比較」で★最適と自分の設定を見比べる</div>'
+                '<div class="q"><b>2. 持ち金はいくらが適正か</b> → 「持ち金別シミュレーション」で、自分の段と1つ上の段の差を見る（差が大きければ増額の価値あり）</div>'
+                '<div class="q"><b>3. 採点ルールは信用できるか</b> → 「どの根拠が本当に効いているか」で、勝率に差が出ている要因だけを信じる</div>'
+                '<div class="qnote">個別銘柄の過去実績は帳簿の各銘柄ノート内「この銘柄で同じ買い方をしていたら」へ移しました。</div></div>')
     if portfolio:
         body.append('<div class="card"><h2>持ち金別・現実シミュレーション（この1年）</h2>')
         body.append('<div class="capset">あなたの持ち金 <input id="cap" class="capin num" type="number" '
@@ -2358,35 +2400,15 @@ def render_backtest(sim_records, dt, portfolio=None, slstats=None, factor_stats=
         body.append('<div class="tiernote">「勝ち」＝買いシグナルの後40営業日以内に利確ライン到達。'
                     '差がプラスの要因は採点で重視する価値があり、差が無い/マイナスの要因は配点を見直す根拠になります。'
                     '毎晩の実行で更新される、採点ルール自身の成績表です。</div></div>')
-    body.append('<div class="card"><h2>参考: 資金無制限で全シグナルを拾った場合の内訳</h2>')
-    body.append(f'<div class="fact"><span>買いに入った回数</span><span class="v num">{n_all:,}回</span></div>')
-    body.append(f'<div class="fact"><span>利確ライン（+{CONFIG["TP_PCT"]:.0f}%）で売れた回数</span><span class="v num">{n_closed:,}回（{win_rate:.0f}%）</span></div>')
-    body.append(f'<div class="fact"><span>確定した利益の合計</span><span class="v num plus">{yen2(total_realized)}</span></div>')
-    body.append(f'<div class="fact"><span>利確までの平均日数</span><span class="v num">約{avg_held:.0f}営業日</span></div>')
-    body.append(f'<div class="fact"><span>まだ売れていない持ち越し</span><span class="v num">{len(open_pos):,}件（うち含み損 {len(open_losers):,}件）</span></div>')
-    cls = "plus" if open_total >= 0 else "minus"
-    body.append(f'<div class="fact"><span>持ち越し分の含み損益 合計</span><span class="v num {cls}">{yen2(open_total)}</span></div>')
-    body.append("</div>")
-
-    if monthly:
-        body.append('<div class="card"><h2>月別・利確が取れた回数</h2>')
-        for m in sorted(monthly):
-            body.append(f'<div class="fact"><span class="num">{m.replace("-", "/")}</span><span class="v num">{monthly[m]:,}回</span></div>')
-        body.append("</div>")
-
-    if worst:
-        body.append('<div class="card"><h2>塩漬け注意リスト（含み損の大きい持ち越し）</h2>')
-        for t in worst:
-            body.append(
-                f'<div class="fact"><span>{html.escape(t["name"])} '
-                f'<span class="num">{t["code"]}</span>（{t["buy_date"][5:].replace("-", "/")}買い・{t["held"]}日経過）</span>'
-                f'<span class="v num minus">{yen2(t["pnl"])}</span></div>')
-        body.append("</div>")
+    body.append('<div class="card"><h2>参考: 全シグナルの母数</h2>'
+                f'<div class="fact"><span>この1年の買いシグナル総数</span><span class="v num">{n_all:,}回</span></div>'
+                f'<div class="fact"><span>うち利確ライン到達</span><span class="v num">{n_closed:,}回（{win_rate:.0f}%）・平均{avg_held:.0f}営業日</span></div>'
+                f'<div class="fact"><span>持ち越し（未決済）</span><span class="v num">{len(open_pos):,}件・うち含み損 {len(open_losers):,}件</span></div>'
+                '</div>')
 
     weekdays = "月火水木金土日"
-    subtitle = (f"{dt.month}/{dt.day}（{weekdays[dt.weekday()]}）時点 ・ 過去1年の日足で仮想実行 ・ "
-                f"ルール: ◎（20日高値から{CONFIG['CHEAP_PCT']:.0f}%安）になったら翌日の始値で100株買い → "
-                f"買値+{CONFIG['TP_PCT']:.0f}%の指値で売る")
+    subtitle = (f"{dt.month}/{dt.day}（{weekdays[dt.weekday()]}）時点 ・ このシステムの「採点ルールと売りルール」自身の成績表 ・ "
+                f"過去1年の全銘柄で仮想実行して毎回更新")
     footnote = (f"この検証は「いまの対象銘柄」の過去1年をなぞった簡易計算です。手数料・税金は含みません。"
                 f"買値は翌営業日の始値、売りは買値+{CONFIG['TP_PCT']:.0f}%に到達した日に成立と仮定（損切りなし）。"
                 "持ち株管理で設定した個人の利確・損切り%とは独立に、共通基準で計算しています。")
@@ -2401,6 +2423,9 @@ def render_backtest(sim_records, dt, portfolio=None, slstats=None, factor_stats=
   .tfacts{font-size:11px; color:var(--ink2); margin-top:3px; line-height:1.6;}
   .tiernote{font-size:11px; color:#8a5a17; line-height:1.7; padding-top:8px;}
   .best{color:#c62f2f; font-size:10.5px; margin-left:8px;}
+  .guidecard{background:#fff !important; border-left:5px solid #3a5a40;}
+  .q{font-size:12.5px; line-height:1.8; padding:6px 0; border-bottom:1px dashed #f0ead9;}
+  .q b{color:#3a5a40;} .qnote{font-size:11px; color:var(--ink3); padding-top:8px;}
   .barwrap{position:relative; background:#f0ead9; border-radius:6px; height:18px;
     margin:4px 0 2px; overflow:hidden;}
   .barp{height:100%; background:#7fae86; border-radius:6px;}
@@ -2689,20 +2714,23 @@ if (savedSort && cmp[savedSort]){ document.getElementById('sort').value = savedS
 
 
 def render_holdings(dt):
-    """持ち株の管理ページ（データは全て閲覧端末のlocalStorageに保存）"""
-    weekdays = "月火水木金土日"
-    subtitle = (f"買った銘柄を登録すると、毎時の記帳価格と突き合わせて"
-                f"「売り判断かどうか」を自動表示します ・ データはこの端末にだけ保存")
+    """持ち株ページ（刷新版）: 登録→毎日の監視→売却記録→通算成績 を一気通貫に"""
+    subtitle = ("買った銘柄を登録すると毎時の記帳価格と突き合わせ、売り判断・損切りまでの距離を表示。"
+                "売ったら記録して通算成績に。データはこの端末にだけ保存")
 
     body = """
+<div class="card" id="statcard">
+  <h2>通算成績（売却済みの実績）</h2>
+  <div class="statgrid" id="stats"><div class="note">まだ売却記録がありません</div></div>
+</div>
+
 <div class="card">
   <h2>売りルール（あなたの決めごと）</h2>
   <div class="fact"><span>利確: 買値から何%上がったら売るか</span>
     <span class="v"><input id="tp" class="rin num" type="number" inputmode="decimal" step="0.5" placeholder="5"> %</span></div>
   <div class="fact"><span>損切り: 買値から何%下がったら売るか</span>
     <span class="v"><input id="sl" class="rin num" type="number" inputmode="decimal" step="0.5" placeholder="8"> %</span></div>
-  <div class="rulenote">未入力なら灰色の推奨値（利確+5%・損切り−8%）で計算します。
-  登録した持ち株ごとに「◯円になったら売る」の具体的な値段と、そのときの損益額に換算して表示します。</div>
+  <div class="rulenote">未入力なら推奨値（利確+5%・損切り−8%）。検証タブの「損切り比較」で★最適と見比べて決めてください。</div>
 </div>
 
 <div class="card">
@@ -2714,9 +2742,11 @@ def render_holdings(dt):
     <button id="aadd" class="abtn">追加</button>
   </div>
   <div id="aerr" class="aerr"></div>
+  <div class="rulenote">帳簿の銘柄ノートにある「買った」ボタンからも登録できます（コードが自動入力）。</div>
 </div>
 
 <div id="hlist"></div>
+<div class="card" id="histcard"><h2>売却履歴</h2><div id="hist"><div class="note">まだありません</div></div></div>
 <div id="hupdated" class="note"></div>
 """
 
@@ -2730,101 +2760,134 @@ def render_holdings(dt):
   .abtn{font-size:13px; font-weight:800; color:#fff; background:#1c1c1e; border:none;
     border-radius:9px; padding:9px 18px;}
   .aerr{color:var(--cheap); font-size:11.5px; font-weight:700; padding-top:6px; min-height:14px;}
+  .statgrid{display:grid; grid-template-columns:repeat(3,1fr); gap:8px;}
+  .stat{background:#fff; border-radius:10px; padding:10px 8px; text-align:center;}
+  .stat .sv{font-size:18px; font-weight:800;} .stat .sl{font-size:10px; color:var(--ink2); margin-top:2px;}
   .hcard{background:#fff; border-radius:14px; padding:12px 14px; margin-bottom:10px;
     box-shadow:0 1px 3px rgba(0,0,0,.06);}
   .hcard.selltp{outline:2.5px solid var(--cheap); background:var(--cheap-bg);}
   .hcard.sellsl{outline:2.5px solid #b06a00; background:var(--mild-bg);}
   .htop{display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;}
-  .hname{font-size:14px; font-weight:800;}
-  .hname small{font-weight:600; color:var(--ink2); font-size:11px;}
-  .hdel{font-size:11px; color:var(--ink3); background:none; border:1px solid var(--line);
-    border-radius:7px; padding:3px 8px;}
-  .hstatus{font-size:13px; font-weight:800; border-radius:9px; padding:7px 10px;
-    text-align:center; margin:8px 0 4px;}
-  .hstatus.tp{color:#fff; background:var(--cheap);}
-  .hstatus.sl{color:#fff; background:#b06a00;}
+  .hname{font-size:14px; font-weight:800;} .hname small{font-weight:600; color:var(--ink2); font-size:11px;}
+  .hbtns{display:flex; gap:6px;}
+  .hbtn{font-size:11px; font-weight:700; border-radius:7px; padding:5px 10px; border:1px solid var(--line); background:#fff;}
+  .hbtn.sell{color:#fff; background:#1c1c1e; border-color:#1c1c1e;}
+  .hstatus{font-size:13px; font-weight:800; border-radius:9px; padding:7px 10px; text-align:center; margin:8px 0 6px;}
+  .hstatus.tp{color:#fff; background:var(--cheap);} .hstatus.sl{color:#fff; background:#b06a00;}
   .hstatus.hold{color:var(--ink2); background:#f0f0f4;}
+  .pbar{position:relative; height:14px; border-radius:7px; margin:8px 0 4px;
+    background:linear-gradient(90deg,#f2c4a8 0%,#f2c4a8 var(--slp),#eeeae0 var(--slp),#eeeae0 var(--tpp),#b9dcc0 var(--tpp),#b9dcc0 100%);}
+  .pbar .pin{position:absolute; top:-4px; width:4px; height:22px; background:#1c1c1e; border-radius:2px; left:var(--pos); transform:translateX(-50%);}
+  .plabels{display:flex; justify-content:space-between; font-size:9.5px; color:var(--ink2);}
+  .sellform{display:none; gap:6px; align-items:center; flex-wrap:wrap; margin-top:8px; padding-top:8px; border-top:1px dashed #e7e0cf;}
+  .sellform.on{display:flex;}
+  .hrow{display:flex; justify-content:space-between; font-size:11.5px; padding:6px 0; border-bottom:1px dashed #f0ead9;}
+  .hrow .num{font-weight:700;}
 """
 
     script = """<script>
-const TP_DEF = 5, SL_DEF = 8;
-const TP_KEY='kabuobaa_tp_pct', SL_KEY='kabuobaa_sl', H_KEY='kabuobaa_holdings';
+const TP_DEF=5, SL_DEF=8;
+const TP_KEY='kabuobaa_tp_pct', SL_KEY='kabuobaa_sl', H_KEY='kabuobaa_holdings', T_KEY='kabuobaa_trades';
 const tpIn=document.getElementById('tp'), slIn=document.getElementById('sl');
 let prices=null, gen='';
+const yen=v=>Math.round(v).toLocaleString();
+const load=(k)=>{ try{return JSON.parse(localStorage.getItem(k)||'[]');}catch(e){return [];} };
+const save=(k,v)=>localStorage.setItem(k, JSON.stringify(v));
 
-function loadH(){ try{return JSON.parse(localStorage.getItem(H_KEY)||'[]');}catch(e){return [];} }
-function saveH(h){ localStorage.setItem(H_KEY, JSON.stringify(h)); }
-function yen(v){ return Math.round(v).toLocaleString(); }
-
-function render(){
-  const tp = parseFloat(tpIn.value) || TP_DEF;
-  const sl = parseFloat(slIn.value) || SL_DEF;
-  localStorage.setItem(TP_KEY, tpIn.value||''); localStorage.setItem(SL_KEY, slIn.value||'');
-  const list = document.getElementById('hlist');
-  const holds = loadH();
-  if (!holds.length){
-    list.innerHTML = '<div class="card"><h2>持ち株一覧</h2><div class="note">まだ登録がありません。上の欄から追加してください。</div></div>';
-    return;
-  }
-  let out = '';
-  holds.forEach((h, idx) => {
-    const p = prices ? prices[h.code] : null;
-    const tpLine = h.buy * (1 + tp / 100);
-    const slLine = h.buy * (1 - sl / 100);
-    let inner = '';
-    if (!p){
-      inner = '<div class="hstatus hold">' + (prices ? '価格データなし（コードを確認）' : '価格データ読み込み中…') + '</div>';
-    } else {
-      const cur = p.c;
-      const pnl = (cur - h.buy) * h.shares;
-      const pnlTxt = (pnl >= 0 ? '+' : '−') + yen(Math.abs(pnl)) + '円';
-      let st, cls;
-      if (cur >= tpLine){ st = '売り判断 ｜ 利確ライン到達（' + pnlTxt + '）'; cls = 'tp'; }
-      else if (cur <= slLine){ st = '売り判断 ｜ 損切りライン到達（' + pnlTxt + '）'; cls = 'sl'; }
-      else { st = '持続 ｜ いま ' + pnlTxt + ' ・ 利確まであと' + yen((tpLine - cur) * h.shares) + '円'; cls = 'hold'; }
-      inner =
-        '<div class="hstatus ' + cls + '">' + st + '</div>' +
-        '<div class="fact num"><span>いまの値段（' + (p.d ? p.d.slice(5).replace('-','/') : '') + '記帳）</span><span class="v">' + yen(cur) + '円</span></div>' +
-        '<div class="fact num"><span>買値 × 株数</span><span class="v">' + yen(h.buy) + '円 × ' + h.shares + '株</span></div>' +
-        '<div class="fact num"><span>利確ライン（+' + tp + '%＝+' + yen((tpLine - h.buy) * h.shares) + '円）</span><span class="v plus">' + yen(tpLine) + '円になったら売る</span></div>' +
-        '<div class="fact num"><span>損切りライン（−' + sl + '%＝−' + yen((h.buy - slLine) * h.shares) + '円）</span><span class="v minus">' + yen(slLine) + '円になったら売る</span></div>';
-    }
-    const nm = (prices && prices[h.code]) ? prices[h.code].n : '銘柄 ' + h.code;
-    out += '<div class="hcard ' + (inner.includes('hstatus tp') ? 'selltp' : inner.includes('hstatus sl"') ? 'sellsl' : '') + '">' +
-      '<div class="htop"><div class="hname">' + nm + ' <small class="num">' + h.code + '</small></div>' +
-      '<button class="hdel" data-i="' + idx + '">削除</button></div>' + inner + '</div>';
-  });
-  list.innerHTML = out;
-  list.querySelectorAll('.hdel').forEach(b => b.addEventListener('click', () => {
-    const holds2 = loadH(); holds2.splice(Number(b.dataset.i), 1); saveH(holds2); render();
-  }));
+function renderStats(){
+  const t = load(T_KEY);
+  const el = document.getElementById('stats');
+  if (!t.length){ el.innerHTML='<div class="note">まだ売却記録がありません</div>'; return; }
+  const pnls = t.map(x=>x.pnl);
+  const wins = pnls.filter(p=>p>0).length;
+  const total = pnls.reduce((a,b)=>a+b,0);
+  const avgW = wins? pnls.filter(p=>p>0).reduce((a,b)=>a+b,0)/wins : 0;
+  const lossN = pnls.length-wins;
+  const avgL = lossN? pnls.filter(p=>p<=0).reduce((a,b)=>a+b,0)/lossN : 0;
+  const avgHeld = t.reduce((a,x)=>a+(x.held||0),0)/t.length;
+  const pf = avgL<0 ? (avgW*wins)/Math.abs(avgL*lossN) : Infinity;
+  const cls = total>=0?'plus':'minus';
+  el.innerHTML =
+    '<div class="stat"><div class="sv '+cls+'">'+(total>=0?'+':'−')+yen(Math.abs(total))+'</div><div class="sl">通算損益（円）</div></div>'+
+    '<div class="stat"><div class="sv">'+Math.round(wins/pnls.length*100)+'%</div><div class="sl">勝率（'+wins+'勝'+lossN+'敗）</div></div>'+
+    '<div class="stat"><div class="sv">'+(isFinite(pf)?pf.toFixed(2):'∞')+'</div><div class="sl">損益率（総利益÷総損失）</div></div>'+
+    '<div class="stat"><div class="sv plus">+'+yen(avgW)+'</div><div class="sl">平均利益</div></div>'+
+    '<div class="stat"><div class="sv minus">'+yen(avgL)+'</div><div class="sl">平均損失</div></div>'+
+    '<div class="stat"><div class="sv">'+avgHeld.toFixed(0)+'日</div><div class="sl">平均保有日数</div></div>';
 }
 
-document.getElementById('aadd').addEventListener('click', () => {
-  const code = document.getElementById('acode').value.trim().toUpperCase();
-  const buy = parseFloat(document.getElementById('abuy').value);
-  const shares = parseInt(document.getElementById('ashares').value) || 100;
-  const err = document.getElementById('aerr');
-  if (!code || !(buy > 0)){ err.textContent = 'コードと買値を入力してください'; return; }
-  err.textContent = '';
-  const holds = loadH(); holds.push({code: code, buy: buy, shares: shares}); saveH(holds);
-  document.getElementById('acode').value=''; document.getElementById('abuy').value='';
-  render();
+function renderHist(){
+  const t = load(T_KEY).slice().reverse();
+  const el = document.getElementById('hist');
+  if (!t.length){ el.innerHTML='<div class="note">まだありません</div>'; return; }
+  el.innerHTML = t.map((x,i)=>'<div class="hrow"><span>'+x.name+' <small class="num">'+x.code+'</small> '+x.buyDate.slice(5).replace('-','/')+'→'+x.sellDate.slice(5).replace('-','/')+
+    '（'+x.held+'日・'+x.reason+'）</span><span class="num '+(x.pnl>=0?'plus':'minus')+'">'+(x.pnl>=0?'+':'−')+yen(Math.abs(x.pnl))+'円</span></div>').join('');
+}
+
+function render(){
+  const tp=parseFloat(tpIn.value)||TP_DEF, sl=parseFloat(slIn.value)||SL_DEF;
+  localStorage.setItem(TP_KEY,tpIn.value||''); localStorage.setItem(SL_KEY,slIn.value||'');
+  const list=document.getElementById('hlist'); const holds=load(H_KEY);
+  if(!holds.length){ list.innerHTML='<div class="card"><h2>持ち株一覧</h2><div class="note">まだ登録がありません</div></div>'; renderStats(); renderHist(); return; }
+  let out='';
+  holds.forEach((h,idx)=>{
+    const p=prices?prices[h.code]:null;
+    const tpL=h.buy*(1+tp/100), slL=h.buy*(1-sl/100);
+    const nm=(p&&p.n)?p.n:'銘柄 '+h.code;
+    const days = h.date ? Math.max(0, Math.round((Date.now()-new Date(h.date))/86400000)) : null;
+    let inner='', cls='';
+    if(!p){ inner='<div class="hstatus hold">'+(prices?'価格データなし（コードを確認）':'価格データ読み込み中…')+'</div>'; }
+    else{
+      const cur=p.c, pnl=(cur-h.buy)*h.shares, pnlPct=(cur/h.buy-1)*100;
+      const pt=(pnl>=0?'+':'−')+yen(Math.abs(pnl))+'円（'+(pnlPct>=0?'+':'')+pnlPct.toFixed(1)+'%）';
+      let st;
+      if(cur>=tpL){st='売り判断 ｜ 利確ライン到達 '+pt; cls='selltp';}
+      else if(cur<=slL){st='売り判断 ｜ 損切りライン到達 '+pt; cls='sellsl';}
+      else{st='持続 ｜ '+pt+' ・ 利確まであと'+yen((tpL-cur)*h.shares)+'円 ・ 損切りまで'+yen((cur-slL)*h.shares)+'円の余裕';}
+      const range=tpL-slL, pos=Math.max(0,Math.min(100,(cur-slL)/range*100));
+      inner='<div class="hstatus '+(cls==='selltp'?'tp':cls==='sellsl'?'sl':'hold')+'">'+st+'</div>'+
+        '<div class="pbar" style="--slp:0%;--tpp:100%;--pos:'+pos.toFixed(1)+'%"><div class="pin"></div></div>'+
+        '<div class="plabels"><span>損切り '+yen(slL)+'円</span><span>買値 '+yen(h.buy)+'円</span><span>利確 '+yen(tpL)+'円</span></div>'+
+        '<div class="fact num"><span>いまの値段（'+(p.d?p.d.slice(5).replace('-','/'):'')+'記帳）</span><span class="v">'+yen(cur)+'円 × '+h.shares+'株'+(days!==null?' ・ '+days+'日目':'')+'</span></div>';
+    }
+    out+='<div class="hcard '+cls+'"><div class="htop"><div class="hname">'+nm+' <small class="num">'+h.code+'</small></div>'+
+      '<div class="hbtns"><button class="hbtn sell" data-i="'+idx+'">売った</button><button class="hbtn del" data-i="'+idx+'">削除</button></div></div>'+inner+
+      '<div class="sellform" id="sf'+idx+'"><input class="rin num" id="sp'+idx+'" type="number" inputmode="decimal" placeholder="売値 '+(p?yen(p.c):'')+'">'+
+      '<select class="rin" id="sr'+idx+'"><option>利確</option><option>損切り</option><option>その他</option></select>'+
+      '<button class="abtn" data-i="'+idx+'" id="sc'+idx+'">記録して外す</button></div></div>';
+  });
+  list.innerHTML=out;
+  list.querySelectorAll('.hbtn.del').forEach(b=>b.addEventListener('click',()=>{const h=load(H_KEY);h.splice(+b.dataset.i,1);save(H_KEY,h);render();}));
+  list.querySelectorAll('.hbtn.sell').forEach(b=>b.addEventListener('click',()=>{document.getElementById('sf'+b.dataset.i).classList.toggle('on');}));
+  holds.forEach((h,idx)=>{
+    const btn=document.getElementById('sc'+idx); if(!btn) return;
+    btn.addEventListener('click',()=>{
+      const sp=parseFloat(document.getElementById('sp'+idx).value); if(!(sp>0)){alert('売値を入力してください');return;}
+      const p=prices?prices[h.code]:null; const nm=(p&&p.n)?p.n:'銘柄 '+h.code;
+      const today=new Date().toISOString().slice(0,10);
+      const held=h.date?Math.max(1,Math.round((Date.now()-new Date(h.date))/86400000)):0;
+      const t=load(T_KEY); t.push({code:h.code,name:nm,buy:h.buy,sell:sp,shares:h.shares,pnl:(sp-h.buy)*h.shares,buyDate:h.date||today,sellDate:today,held:held,reason:document.getElementById('sr'+idx).value}); save(T_KEY,t);
+      const hs=load(H_KEY); hs.splice(idx,1); save(H_KEY,hs); render();
+    });
+  });
+  renderStats(); renderHist();
+}
+document.getElementById('aadd').addEventListener('click',()=>{
+  const code=document.getElementById('acode').value.trim().toUpperCase(), buy=parseFloat(document.getElementById('abuy').value), shares=parseInt(document.getElementById('ashares').value)||100;
+  const err=document.getElementById('aerr'); if(!code||!(buy>0)){err.textContent='コードと買値を入力してください';return;} err.textContent='';
+  const h=load(H_KEY); h.push({code,buy,shares,date:new Date().toISOString().slice(0,10)}); save(H_KEY,h);
+  document.getElementById('acode').value=''; document.getElementById('abuy').value=''; render();
 });
-tpIn.value = localStorage.getItem(TP_KEY) || ''; slIn.value = localStorage.getItem(SL_KEY) || '';
-tpIn.addEventListener('input', render); slIn.addEventListener('input', render);
-fetch('prices.json').then(r => r.json()).then(j => {
-  prices = j.prices; gen = j.generated_at;
-  const u = document.getElementById('hupdated');
-  if (u) u.textContent = '価格の記帳: ' + gen.replace('T', ' ').slice(0, 16);
-  render();
-}).catch(() => { prices = {}; render(); });
+// 帳簿の「買った」ボタンからの遷移: ?add=コード
+const qs=new URLSearchParams(location.search); if(qs.get('add')){ document.getElementById('acode').value=qs.get('add'); document.getElementById('abuy').focus(); }
+tpIn.value=localStorage.getItem(TP_KEY)||''; slIn.value=localStorage.getItem(SL_KEY)||'';
+tpIn.addEventListener('input',render); slIn.addEventListener('input',render);
+fetch('prices.json').then(r=>r.json()).then(j=>{prices=j.prices;gen=j.generated_at;const u=document.getElementById('hupdated');if(u)u.textContent='価格の記帳: '+gen.replace('T',' ').slice(0,16);render();}).catch(()=>{prices={};render();});
 render();
 </script>"""
 
-    footnote = ("売りルールと持ち株データはこの端末のブラウザにだけ保存され、外部には送信されません。"
-                "価格は取引時間中は毎時、夜に確定値で記帳されたものです。"
-                "実際の売り注文は証券会社アプリで行ってください。")
+    footnote = ("売りルール・持ち株・売却履歴はこの端末のブラウザにだけ保存され、外部には送信されません。"
+                "価格は取引時間中は毎時、夜に確定値で記帳されたものです。実際の注文は証券会社アプリで行ってください。")
     return (SUBPAGE_TEMPLATE
             .replace("__NAVCSS__", NAV_CSS)
             .replace("__NAVJS__", NAV_JS)
@@ -2838,102 +2901,58 @@ render();
 
 
 def render_guide(dt):
-    """使い方ページ（設定値から自動生成するので仕様変更に追随する）"""
+    """使い方ページ（整理版）: 色分けした短いカード。指標の解説は「指標」タブへ"""
     c = CONFIG
     body = f"""
-<div class="card"><h2>これは何？</h2>
-<div class="gtext">おじいさま・おばあさまの株手法——毎日の四本値をノートに記録し、いつもより安くなったら買い、
-決めた利益で機械的に売る——をWeb化したものです。<b>下準備（記録・選定・計算）はシステムが毎日自動で行い、
-買う・売るの判断と注文は人間が行います。</b>このサイトに注文機能はありません。</div></div>
+<div class="gcard c-green"><div class="gh">🟢 これは何？</div>
+<div class="gt">おじいさま・おばあさまの株手法（毎日の四本値記録・普段より安くなったら買い・決めたルールで売る）をWeb化。
+<b>下準備はシステムが自動、買う・売るの判断と注文はあなた</b>。注文機能はありません。</div></div>
 
-<div class="card"><h2>毎日の使い方（1〜2分）</h2>
-<div class="gstep"><b>1. 夜、帳簿を開く</b> ホーム画面のアイコンから開き、合言葉を入れる（記憶させた端末は自動で開きます）</div>
-<div class="gstep"><b>2. 厳選{c["TOP_N"]}銘柄を眺める</b> 気になる銘柄をタップすると、選ばれた根拠（スコア内訳）・
-最新日の四本値・10日分のノート・Yahoo!ファイナンスへのリンクが開きます</div>
-<div class="gstep"><b>3. 買うと決めたら</b> 証券会社アプリで注文し、「持ち株」画面にコード・買値・株数を登録</div>
-<div class="gstep"><b>4. 売り時はシステムが監視</b> 持ち株画面が毎時の価格と突き合わせ、利確ライン・損切りライン到達を
-色付きで知らせます。赤やオレンジのカードが出たら売り注文を検討</div></div>
+<div class="gcard c-blue"><div class="gh">🔵 毎晩の流れ（1〜2分）</div>
+<ol class="steps">
+<li><b>帳簿を開く</b> ホーム画面のアイコン → 合言葉（記憶した端末は自動）</li>
+<li><b>厳選{c["TOP_N"]}銘柄を見る</b> タップで根拠・チャート・ノート・会社の発表が開く</li>
+<li><b>買うなら</b> 銘柄内の「買った→持ち株に登録」を押してから証券会社アプリで注文</li>
+<li><b>売り時は自動監視</b> 「持ち株」タブが利確／損切りライン到達を色で知らせる。売ったら「売った」で記録</li>
+</ol></div>
 
-<div class="card"><h2>画面の説明</h2>
-<div class="gstep"><b>帳簿</b> 全上場銘柄から選ばれた厳選{c["TOP_N"]}銘柄。持ち金を設定すると「100株買える銘柄」だけから選ばれます。
-★を付けた銘柄は常に最上部に固定。銘柄名の下の茶色い1行は、数字から機械生成した事実コメントです</div>
-<div class="gstep"><b>無傷</b> 帳簿とは逆の減点方式。「絶対に買ってはいけない条件」21項目に一つも該当しない銘柄＝無傷を筆頭に、
-減点の少ない順に上位100を毎回集計。株価とPER/PBRは毎日動くので顔ぶれも毎回変わります。帳簿と無傷の両方に載る銘柄は特に注目</div>
-<div class="gstep"><b>持ち株</b> 保有銘柄の登録と売り判断。利確（推奨+{c["TP_PCT"]:.0f}%）・損切り（推奨−8%）の%を設定すると、
-銘柄ごとに「◯円になったら売る」に換算されます</div>
-<div class="gstep"><b>全銘柄</b> 約4,000銘柄すべての判定台帳。候補・圏外にはスコア、除外・対象外には理由が付き、
-「なぜあの銘柄が載っていないか」が調べられます</div>
-<div class="gstep"><b>検証</b> 過去1年、この手法を機械的に続けていたらの成績。持ち金別（30万〜無制限）と
-損切り%別（なし〜−12%）の比較で、自分の設定の妥当性を数字で確かめられます</div></div>
+<div class="gcard c-paper"><div class="gh">📒 タブの役割</div>
+<div class="tabrow"><span class="tb">帳簿</span>加点方式の厳選{c["TOP_N"]}銘柄。持ち金・★・根拠・減点との相互参照</div>
+<div class="tabrow"><span class="tb">無傷</span>減点方式。「買ってはいけない条件」に該当しない銘柄から順に上位100</div>
+<div class="tabrow"><span class="tb">持ち株</span>登録→毎時の監視→売却記録→通算成績（勝率・損益率）</div>
+<div class="tabrow"><span class="tb">全銘柄</span>約4,000銘柄の台帳。並べ替え・検索・タップで全詳細</div>
+<div class="tabrow"><span class="tb">検証</span>採点ルールと売りルール自身の成績表。損切り%と持ち金の決め方</div>
+<div class="tabrow"><span class="tb">指標</span>PER・RSIなど全指標の図解。数字の読み方はここ</div></div>
 
-<div class="card"><h2>選定の仕組み（要約）</h2>
-<div class="gtext">全銘柄から、流動性不足・低位株・上場間もない銘柄を対象外にし、
-「終わった株」（1年高値から{int(c["DEAD_DRAWDOWN"]*100)}%以上下落など）と「危ない下げ方」
-（1日{c["KNIFE_DROP_1D"]:.0f}%超の急落・荒い値動き・下げ止まり未確認）を除外。
-残りを5観点（いまの安さ・下げの質・トレンドの地合い・過去1年の利確実績・売買のしやすさ)で採点し、
-上位{c["SHORTLIST_N"]}銘柄を候補に、そこから{c["TOP_N"]}銘柄を表示します。
-詳細は帳簿の「選定基準」カードと、各銘柄の根拠表示をご覧ください。</div></div>
+<div class="gcard c-yellow"><div class="gh">🟡 選定の仕組み（要約）</div>
+<div class="gt">全銘柄 → 対象外（流動性不足・低位株・上場浅）→ 除外（終わった株・急落直後・荒い値動き・下げ止まり未確認）→
+残りを<b>6観点で採点</b>（安さ／下げの質／トレンド／過去1年の利確実績／長期テクニカル／財務健全性）→ 上位{c["SHORTLIST_N"]}が候補 → 持ち金で買える{c["TOP_N"]}銘柄を表示。
+詳細は帳簿の「選定基準」カードと各銘柄の根拠。</div></div>
 
-<div class="card"><h2>設定とデータの保存場所</h2>
-<div class="gtext">持ち金・売りルール・★お気に入り・持ち株・合言葉の記憶は、<b>すべて閲覧している端末の中にだけ</b>保存されます。
-公開されているのは銘柄と株価という公開情報のみ。iPhoneとMacで設定は共有されないため、端末ごとに入力してください。</div></div>
+<div class="gcard c-red"><div class="gh">🔴 大事な前提</div>
+<div class="gt">・持ち金・売りルール・★・持ち株・売却履歴・合言葉の記憶は<b>すべてこの端末の中だけ</b>に保存（iPhoneとMacで別）<br>
+・データはJPX公式・Yahoo Finance・TDnet。表示は毎時の「写真」で、リアルタイムはYahooリンクで<br>
+・このサイトは判断材料の表示のみ。投資判断は自己責任で</div></div>
 
-<div class="card"><h2>指標の読み方（最低限これだけ）</h2>
-<div class="gstep"><b>PER（株価収益率）</b> 株価が「1年分の利益の何年分か」。目安は10倍未満=割安圏・10〜20倍=標準・20倍超=割高圏（成長期待が高いほど高くなる）。
-<b>注意:</b> 業績悪化で利益が減ると見かけのPERは上がり、逆に一時的な特別利益で下がることもある。業種によって水準が大きく違うので、同業と比べるのが基本</div>
-<div class="gstep"><b>PBR（株価純資産倍率）</b> 株価が「会社の純資産の何倍か」。1倍未満は理論上「会社を解散した方が高い」水準で割安のサインだが、
-<b>低いまま放置される「割安の罠」</b>も多い（稼ぐ力がない・資産の質が悪い等）。1倍割れ+業績健全なら注目、が正しい使い方</div>
-<div class="gstep"><b>ROE（自己資本利益率）</b> 会社が株主のお金でどれだけ効率よく利益を稼いだか。10%以上=優良、
-5%前後=標準、3%未満=収益力が弱い。日本株の平均は8〜9%程度。低PBRでもROEが低い会社は「割安の罠」になりやすい</div>
-<div class="gstep"><b>配当利回り（実績）</b> 株価に対する年間配当の割合。3〜4%は高配当の部類。株価下落で見かけの利回りが上がっている場合は減配リスクに注意</div>
-<div class="gstep"><b>RSI(14)</b> 直近14日の値動きの過熱感。30以下=売られすぎ（反発しやすい）、70以上=買われすぎ。下落トレンド中は30以下が続くこともある</div>
-<div class="gstep"><b>MACD</b> 短期と中期の勢いの差を見る指標。マイナス圏からの「買い転換（ゴールデンクロス）」は
-下げの勢いが尽きたサインとして最も広く使われる。転換直後が加点対象</div>
-<div class="gstep"><b>ボリンジャーバンド</b> 過去20日の値動きの標準偏差（σ）で「統計的に普通の範囲」を測る。
-−2σ以下は統計上約2%しか起きない売られすぎ水準で、反発しやすい</div>
-<div class="gstep"><b>移動平均乖離率</b> 25日平均線から何%離れているか。−8%を超える下方乖離は逆張りの定番圏。
-ただし−20%を超える乖離は「何か起きている」異常値で、むしろ警戒</div>
-<div class="gstep"><b>ゴールデンクロス</b> 50日平均線が200日平均線の上にある状態。長期の上昇形で、「上昇トレンド中の押し目」を拾うこの手法と相性が良い</div>
-<div class="gstep"><b>長期支持帯とタッチ回数</b> 過去に何度も反発した価格帯。定石は「〜3回目の試しまでは支持されやすく、4回目以降は割れやすい」。
-帯を明確に割ったら支持帯は無効（このシステムは自動で除外・警告します）</div>
-<div class="gstep"><b>地合いバナー</b> 帳簿上部の表示。日経平均が200日線の下にある間は市場全体が下落基調で、
-個別銘柄の押し目買いの成功率も下がる。慎重モードの合図です</div></div>
-
-<div class="card"><h2>操作のコツ</h2>
-<div class="gstep"><b>スワイプで画面切り替え</b> 画面を左右にスワイプすると、帳簿⇄持ち株⇄全銘柄⇄検証⇄使い方 を行き来できます（上部のタブでも移動可）</div>
-<div class="gstep"><b>財務の健全性は自動判定</b> PER・PBR・ROE・配当・時価総額・赤字の疑いは、システムが固定基準で
-自動的にスコアへ反映します（設定不要）。判定の内訳は各銘柄の「選ばれた根拠」に点数付きで表示されます</div>
-<div class="gstep"><b>銘柄コードのコピー</b> 一覧のコード（例: 2489 ⧉）をタップすると即コピーされます</div></div>
-
-<div class="card"><h2>SBI証券アプリ連携の初期設定（1回だけ・30秒）</h2>
-<div class="gstep"><b>1.</b> iPhoneの「ショートカット」アプリ（紫のアイコン・標準搭載）を開く</div>
-<div class="gstep"><b>2.</b> 右上の「＋」→「アクションを追加」→検索欄に「Appを開く」と入力して選択</div>
-<div class="gstep"><b>3.</b> 薄い字の「App」をタップ →「SBI証券 株」を選択</div>
-<div class="gstep"><b>4.</b> 上部の名前を「<b>SBIへ</b>」に変更（この名前が合言葉になります。一字一句この通りに）→ 完了</div>
-<div class="gstep">以後、帳簿の銘柄内の「SBI証券アプリで見る」を押すと、銘柄コードが自動でコピーされた状態で
-SBIアプリが起動します。SBIアプリの銘柄検索に<b>長押し→ペースト</b>すれば表示完了。
-※SBIアプリは外部から銘柄画面へ直接飛ぶ入口を公開していないため、これが最短の動線です</div></div>
-
-<div class="card"><h2>更新タイミングとよくある質問</h2>
-<div class="gstep"><b>いつ更新される？</b> 平日9:40〜14:40の毎時（取引時間中の途中経過）、15:45（大引け後）、
-20:30（夜の確定記帳・銘柄入れ替えの基準）。実行に10〜20分かかるため、表示は最大1時間ほど前の値です</div>
-<div class="gstep"><b>Yahooと数字が違う</b> このサイトは毎時の「写真」です。リアルタイムの板や気配は
-各銘柄のYahoo!ファイナンスリンクで確認してください</div>
-<div class="gstep"><b>昨日いた銘柄が消えた</b> 全銘柄画面でその銘柄を検索すると、今日の判定と理由が出ます</div>
-<div class="gstep"><b>データの出どころ</b> 銘柄一覧はJPX公式、株価はYahoo Finance、
-各銘柄の「会社からの発表」は東証の適時開示（TDnet）です。
-このサイトは判断材料の表示のみで、投資判断はご自身の責任で行ってください</div></div>
+<div class="gcard c-gray"><div class="gh">⚙️ 操作のコツ・初期設定</div>
+<div class="gt"><b>スワイプ</b>で左右のタブへ移動 ／ 銘柄コード（例 2489 ⧉）を<b>タップでコピー</b> ／
+<b>SBIアプリ連携</b>は1回だけ設定：ショートカットApp →「＋」→「Appを開く」→ SBI証券 株 → 名前を「SBIへ」に</div>
+<div class="gt" style="margin-top:6px"><b>更新タイミング</b> 平日 9:40〜14:40毎時・15:45・20:30（夜が入れ替え基準）。実行に20〜30分かかるため最大1時間前の値です</div></div>
 """
     extra_css = """
-  .gtext{font-size:12.5px; line-height:1.9; color:var(--ink);}
-  .gstep{font-size:12.5px; line-height:1.8; color:var(--ink); padding:7px 0;
-    border-bottom:1px dashed #f0ead9;}
-  .gstep:last-child{border-bottom:none;}
-  .gstep b, .gtext b{color:#4a3f28;}
+  .gcard{border-radius:14px; padding:13px 15px; margin-bottom:12px; border-left:6px solid;}
+  .c-green{background:#eef6ef; border-color:#3a5a40;} .c-blue{background:#eaf1fb; border-color:#2e5fa8;}
+  .c-paper{background:#faf6ec; border-color:#a99a76;} .c-yellow{background:#fdf6e6; border-color:#c9a227;}
+  .c-red{background:#fdeeee; border-color:#c62f2f;} .c-gray{background:#f0f0f4; border-color:#6e6e73;}
+  .gh{font-size:14px; font-weight:800; margin-bottom:8px;}
+  .gt{font-size:12.5px; line-height:1.85;}
+  .steps{padding-left:20px; font-size:12.5px; line-height:1.9;} .steps li{margin-bottom:3px;}
+  .tabrow{display:flex; gap:8px; align-items:baseline; font-size:12px; line-height:1.7; padding:4px 0; border-bottom:1px dashed #e7e0cf;}
+  .tb{flex:none; font-size:11px; font-weight:800; color:#fff; background:#1c1c1e; border-radius:6px; padding:2px 8px;}
 """
     weekdays = "月火水木金土日"
-    subtitle = f"このサイトの役割分担と毎日の流れ ・ {dt.month}/{dt.day}（{weekdays[dt.weekday()]}）時点の仕様"
-    footnote = "仕様を変えるとこのページも自動で追随します。困ったことがあればこのページを最初に見てください。"
+    subtitle = f"役割分担・毎晩の流れ・タブの意味 ・ {dt.month}/{dt.day}（{weekdays[dt.weekday()]}）時点の仕様"
+    footnote = "仕様を変えるとこのページも自動で追随します。指標の読み方は「指標」タブへ。"
     return (SUBPAGE_TEMPLATE
             .replace("__NAVCSS__", NAV_CSS)
             .replace("__NAVJS__", NAV_JS)
@@ -3185,6 +3204,254 @@ capIn.addEventListener('input', applyCap); allChk.addEventListener('change', app
             .replace("__FOOTNOTE__", footnote)
             .replace("__EXTRA_CSS__", extra_css)
             .replace("__SCRIPT__", script))
+
+
+# ------------------------------------------------------------
+# 「指標」ページ: 各指標をメーター図と具体例で図解（子供にも大人にも）
+# ------------------------------------------------------------
+def meter_svg(zones, ticks, marker=None, unit=""):
+    """横長メーター。zones=[(start,end,color,label)] ticks=[(value,label)]"""
+    W, H = 640, 92
+    lo = zones[0][0]; hi = zones[-1][1]
+    def x(v):
+        v = max(lo, min(hi, v))
+        return 20 + (v - lo) / (hi - lo) * (W - 40)
+    parts = [f'<svg viewBox="0 0 {W} {H}" xmlns="http://www.w3.org/2000/svg" style="width:100%; height:auto;">']
+    for s, e, col, lab in zones:
+        parts.append(f'<rect x="{x(s):.1f}" y="30" width="{x(e) - x(s):.1f}" height="22" rx="4" fill="{col}"/>')
+        parts.append(f'<text x="{(x(s) + x(e)) / 2:.1f}" y="45" font-size="12" font-weight="700" fill="#1c1c1e" text-anchor="middle">{lab}</text>')
+    for v, lab in ticks:
+        parts.append(f'<line x1="{x(v):.1f}" y1="52" x2="{x(v):.1f}" y2="60" stroke="#6e6e73" stroke-width="1.5"/>')
+        parts.append(f'<text x="{x(v):.1f}" y="74" font-size="11" fill="#6e6e73" text-anchor="middle">{lab}{unit}</text>')
+    if marker is not None:
+        mv, mlab = marker
+        parts.append(f'<path d="M {x(mv):.1f} 28 l -7 -12 l 14 0 z" fill="#1c1c1e"/>')
+        parts.append(f'<text x="{x(mv):.1f}" y="12" font-size="11" font-weight="800" fill="#1c1c1e" text-anchor="middle">{mlab}</text>')
+    parts.append("</svg>")
+    return "".join(parts)
+
+
+G, Y, R, B, N = "#b9dcc0", "#f5e6b3", "#f2c4a8", "#c9dcf3", "#eeeae0"  # 良い/注意/悪い/情報/中立
+
+INDICATORS = [
+    {
+        "key": "per", "name": "PER（株価収益率）", "tag": "割安・割高",
+        "one": "株価が「1年分の利益の何年分」か。低いほど利益に対して安い。",
+        "kid": "たとえば1年で100円もうかるお店を1,000円で買ったらPER10倍。10年で元が取れる、ということ。",
+        "meter": meter_svg([(0, 10, G, "割安圏"), (10, 20, Y, "標準"), (20, 40, R, "割高圏"), (40, 60, R, "異常")],
+                           [(0, "0"), (10, "10"), (20, "20"), (40, "40"), (60, "60")], marker=(15, "例: 15倍"), unit="倍"),
+        "cases": [
+            ("8倍", G, "利益に対して株価が安い。同業比較で確認し、業績が落ちていなければ「割安」で加点。"),
+            ("15倍", Y, "日本株の平均的な水準。これ単独では判断材料にならず、他の指標を見る。"),
+            ("70倍", R, "利益の70年分。成長期待が先行しており、期待が剥げると下げが深い。減点。"),
+        ],
+        "trap": "業績が悪化して利益が減ると見かけのPERは「上がる」。逆に一時的な特別利益で「下がる」。マイナス＝赤字。業種で水準がまったく違うので同業比較が基本。",
+        "score": "20倍以下 +8点 ／ 60倍超 −10点 ／ 赤字（マイナス）−20点。減点方式では60倍超−15、赤字−30。",
+    },
+    {
+        "key": "pbr", "name": "PBR（株価純資産倍率）", "tag": "資産に対する値段",
+        "one": "株価が「会社の純資産の何倍」か。1倍未満は理論上、会社を解散した方が高い水準。",
+        "kid": "1,000円の貯金が入った貯金箱を800円で売っている状態がPBR0.8倍。お得に見えるけど、貯金箱に穴が開いていないか（稼ぐ力）は要確認。",
+        "meter": meter_svg([(0, 0.5, Y, "注意"), (0.5, 1.5, G, "割安圏"), (1.5, 3, Y, "標準"), (3, 6, R, "割高"), (6, 8, R, "過熱")],
+                           [(0.5, "0.5"), (1, "1.0"), (1.5, "1.5"), (3, "3"), (6, "6"), (8, "8+")], marker=(1.2, "例: 1.2倍"), unit="倍"),
+        "cases": [
+            ("0.7倍", G, "純資産より安く売られている。ROEが低くなければ「割安の罠」ではなく本物の割安。加点。"),
+            ("2.0倍", Y, "標準的。成長企業ならこのくらいは普通。"),
+            ("9倍", R, "資産の9倍の値段。IT・バイオ系に多いが、資産面の下値支えがなく減点。"),
+        ],
+        "trap": "低PBRが何年も放置される「割安の罠」がある。理由は「稼ぐ力がない」か「資産の中身が悪い」。必ずROEとセットで見る。",
+        "score": "0.5〜1.5倍 +6点 ／ 8倍超 −8点。",
+    },
+    {
+        "key": "roe", "name": "ROE（自己資本利益率）", "tag": "稼ぐ力",
+        "one": "株主のお金（純資産）で、1年にどれだけ利益を出したか。会社の「稼ぐ力」そのもの。",
+        "kid": "100万円のお小遣い元手で1年に10万円もうけたらROE10%。同じ元手で3万円しかもうからない会社より優秀。",
+        "meter": meter_svg([(0, 3, R, "弱い"), (3, 5, Y, "注意"), (5, 10, N, "標準"), (10, 20, G, "優良"), (20, 30, G, "非常に高い")],
+                           [(0, "0"), (3, "3"), (5, "5"), (10, "10"), (20, "20")], marker=(8.5, "日本平均 約8.5%"), unit="%"),
+        "cases": [
+            ("15%", G, "資本効率が高い。低PBRと組み合わさっていれば「安くて稼ぐ」理想形。加点。"),
+            ("6%", N, "標準的。可もなく不可もなし。"),
+            ("1.5%", R, "元手のわりに稼げていない。低PBRの理由がこれなら「割安の罠」。減点。"),
+        ],
+        "trap": "借金を増やすとROEは見かけ上がる（レバレッジ）。極端に高いROE（40%超など）は自己資本が薄いだけの可能性もある。",
+        "score": "10%以上 +8点 ／ 3%未満 −5点。減点方式では3%未満−12。",
+    },
+    {
+        "key": "div", "name": "配当利回り", "tag": "持っているだけの収入",
+        "one": "株価に対する年間配当の割合。3〜4%は高配当の部類。",
+        "kid": "1,000円の株で年30円もらえたら利回り3%。銀行預金よりずっと高いが、株価は上下する。",
+        "meter": meter_svg([(0, 1, N, "低い"), (1, 3, Y, "標準"), (3, 5, G, "高配当"), (5, 8, Y, "高すぎ注意")],
+                           [(0, "0"), (1, "1"), (3, "3"), (5, "5"), (8, "8")], marker=(3.2, "例: 3.2%"), unit="%"),
+        "cases": [
+            ("3.5%", G, "配当が下値を支えやすい。押し目買いの安心材料。加点。"),
+            ("1.2%", Y, "成長投資に回す会社に多い。配当は判断材料にならない。"),
+            ("7%", R, "株価急落で見かけの利回りが跳ねているか、減配前の可能性。要警戒。"),
+        ],
+        "trap": "利回り＝配当÷株価なので、株価が下がるほど利回りは上がる。高利回りが「安さの結果」なのか「業績悪化の前兆」なのか見極めが必要。",
+        "score": "3%以上 +5点。",
+    },
+    {
+        "key": "rsi", "name": "RSI（14日）", "tag": "過熱感",
+        "one": "直近14日の値動きから「買われすぎ・売られすぎ」を0〜100で示す。",
+        "kid": "ボールを地面に強く叩きつけるほど跳ね返る、の「叩きつけ度」。30以下は強く叩きつけられた状態。",
+        "meter": meter_svg([(0, 30, G, "売られすぎ"), (30, 40, Y, "やや売られすぎ"), (40, 60, N, "中立"), (60, 70, Y, "やや買われすぎ"), (70, 100, R, "買われすぎ")],
+                           [(0, "0"), (30, "30"), (50, "50"), (70, "70"), (100, "100")], marker=(28, "例: 28")),
+        "cases": [
+            ("25", G, "売られすぎ。押し目買い手法との相性が最も良い状態。加点。"),
+            ("50", N, "中立。判断材料にならない。"),
+            ("78", R, "買われすぎ。ここから買うのは高値掴みになりやすい。減点方式で減点。"),
+        ],
+        "trap": "強い下落トレンド中はRSI30以下が「続く」ことがある（張り付き）。だからこそこのシステムは「下げ止まり確認」とセットで使う。",
+        "score": "30以下 +10点 ／ 40以下 +5点。減点方式では70超−6。",
+    },
+    {
+        "key": "macd", "name": "MACD", "tag": "勢いの転換",
+        "one": "短期と中期の平均線の差で「勢いの向き」を見る。マイナス圏からの買い転換が最も広く使われるサイン。",
+        "kid": "坂道を下っていた自転車が、ペダルを漕ぎ始めた瞬間を捉える指標。「まだ下り坂だけど勢いは上向き」がわかる。",
+        "meter": meter_svg([(0, 1, R, "下向き"), (1, 2, Y, "転換直後"), (2, 3, G, "上向き継続")],
+                           [(0.5, "シグナル線の下"), (1.5, "買い転換"), (2.5, "上")], marker=(1.5, "例: 買い転換")),
+        "cases": [
+            ("買い転換（直近5日）", G, "下げの勢いが尽きて反転し始めた。押し目買いのタイミングとして最良。+8点。"),
+            ("上向き継続", G, "勢いは上。追随買いは可だが押し目としては遅い。+4点。"),
+            ("下向き", R, "まだ下げの勢いが残る。ナイフの落下中。加点なし。"),
+        ],
+        "trap": "横ばい相場ではダマシ（転換→すぐ戻る）が多い。単独では使わず、支持帯やRSIと重ねる。",
+        "score": "直近5日以内の買い転換 +8点 ／ 上向き継続 +4点。",
+    },
+    {
+        "key": "boll", "name": "ボリンジャーバンド", "tag": "統計的な行きすぎ",
+        "one": "過去20日の値動きの「ばらつき（σ）」で普通の範囲を測る。−2σ以下は統計上約2%しか起きない売られすぎ。",
+        "kid": "身長の平均から極端に外れた人が珍しいのと同じ。−2σは「クラスで一番背が低い」レベルの珍しさ。珍しい状態は長続きしにくい。",
+        "meter": meter_svg([(-3, -2, G, "売られすぎ"), (-2, -1, Y, "下限付近"), (-1, 1, N, "普通の範囲"), (1, 2, Y, "上限付近"), (2, 3, R, "買われすぎ")],
+                           [(-2, "−2σ"), (-1, "−1σ"), (0, "中心"), (1, "+1σ"), (2, "+2σ")], marker=(-2.1, "例: −2.1σ")),
+        "cases": [
+            ("−2.3σ", G, "統計的な売られすぎ。平均への回帰（戻り）が期待できる。+8点。"),
+            ("−0.5σ", N, "普通の範囲。特に材料なし。"),
+            ("+2.2σ", R, "買われすぎ。過熱。減点方式で減点。"),
+        ],
+        "trap": "急落局面ではバンド自体が広がって「−2σに触れたまま下げ続ける」（バンドウォーク）ことがある。下げ止まり確認とセットで。",
+        "score": "−2σ以下 +8点 ／ −1.5σ以下 +4点。減点方式では+2σ超−6。",
+    },
+    {
+        "key": "dev", "name": "25日移動平均乖離率", "tag": "逆張りの定番",
+        "one": "25日平均線から何%離れているか。−8%を超える下方乖離は逆張りの定番圏。",
+        "kid": "ゴムひもを引っ張るほど戻る力が強くなる。ただし引っ張りすぎるとゴムが切れる（−20%超は異常事態）。",
+        "meter": meter_svg([(-30, -20, R, "異常乖離"), (-20, -8, G, "逆張り圏"), (-8, 0, N, "通常"), (0, 10, N, "通常（上）")],
+                           [(-30, "−30"), (-20, "−20"), (-8, "−8"), (0, "0"), (10, "+10")], marker=(-11, "例: −11%"), unit="%"),
+        "cases": [
+            ("−12%", G, "平均線から大きく下に離れ、戻りやすい位置。+6点。"),
+            ("−3%", N, "通常範囲。押し目としては浅い。"),
+            ("−25%", R, "乖離しすぎ。決算ミス等の「何か」が起きている可能性。−5点。"),
+        ],
+        "trap": "乖離率の「戻りやすい」は平均への回帰であって、上昇トレンド復帰の保証ではない。",
+        "score": "−8〜−20% +6点 ／ −20%超 −5点。減点方式でも−20%超は−10。",
+    },
+    {
+        "key": "gc", "name": "ゴールデンクロス（50日/200日線）", "tag": "長期の地合い",
+        "one": "50日平均線が200日平均線の上にある＝長期の上昇形。押し目買い手法との相性が最も良い環境。",
+        "kid": "最近1ヶ月の平均点が、1年の平均点より高い生徒。「調子が上向きの子」の悪い日を狙うのが押し目買い。",
+        "meter": meter_svg([(0, 1, R, "デッドクロス（50日線が下）"), (1, 2, G, "ゴールデンクロス（50日線が上）")],
+                           [(0.5, "長期は調整形"), (1.5, "長期は上昇形")], marker=(1.5, "例: GC中")),
+        "cases": [
+            ("GC継続中の押し目", G, "上昇トレンド中の一時的な下げ。この手法の理想形。+20点（200日線の上での下げ）+10点。"),
+            ("DC中の反発", R, "下落トレンド中の一時的な戻り。上値が重く、利確に届きにくい。減点方式で−10。"),
+        ],
+        "trap": "クロスの瞬間は「遅行」する（トレンドがだいぶ進んでから点灯）。タイミングではなく環境判断に使う。",
+        "score": "200日線の上での下げ +20点 ／ GC中 +10点。減点方式ではDC中−10。",
+    },
+    {
+        "key": "zone", "name": "長期支持帯とタッチ回数", "tag": "過去に買いが入った価格帯",
+        "one": "3年の谷を集めた「何度も反発した価格帯」。定石は「〜3回目までは支持されやすく、4回目以降は割れやすい」。",
+        "kid": "同じ場所で3回転んだら、4回目はそこが崩れているかもしれない。逆に2回しか転んでいない場所はまだ丈夫。",
+        "meter": meter_svg([(0, 3, G, "1〜3回目の試し（信頼圏）"), (3, 5, R, "4回目以降（割れやすい）")],
+                           [(1, "1回目"), (2, "2回目"), (3, "3回目"), (4, "4回目"), (5, "5回目")], marker=(3, "例: 3回目")),
+        "cases": [
+            ("過去2回反発・今3回目", G, "支持帯の直上での押し目。定石の信頼圏内。+12点。"),
+            ("過去4回反発・今5回目", R, "試されすぎ。次は割れる可能性が高まる。−5点・減点方式−8。"),
+            ("帯を明確に割った後", R, "支持帯は無効。このシステムは自動で候補から外す。"),
+        ],
+        "trap": "支持帯は「絶対の壁」ではなく「買い手が多かった記憶」。出来高を伴って割れたら素直に諦める。",
+        "score": "〜3回目 +12点 ／ 4回目以降 −5点。",
+    },
+    {
+        "key": "mkt", "name": "地合い（日経平均の200日線）", "tag": "市場全体の風向き",
+        "one": "日経平均が200日線の上か下か。下にある間は市場全体が下落基調で、個別の押し目買いの成功率も落ちる。",
+        "kid": "みんなが下り坂を歩いているときに、一人だけ上り坂を歩くのは大変。風向きを見てから歩き出す。",
+        "meter": meter_svg([(0, 1, R, "200日線の下（警戒）"), (1, 2, G, "200日線の上（順風）")],
+                           [(0.5, "全体が下落基調"), (1.5, "全体が上昇基調")], marker=(1.5, "例: 順風")),
+        "cases": [
+            ("上昇基調", G, "帳簿上部に緑のバナー。普段通りに押し目を拾ってよい。"),
+            ("下落基調", R, "オレンジの警戒バナー。買いは普段より慎重に、株数を減らす・見送るなどの判断を。"),
+        ],
+        "trap": "地合いは「傾向」であって個別銘柄の保証にはならない。逆に、悪い地合いで下げ止まっている銘柄は強い銘柄。",
+        "score": "スコアには入れず、帳簿上部のバナーで注意喚起。",
+    },
+]
+
+
+def render_indicators(dt):
+    cards = []
+    for ind in INDICATORS:
+        cases = "".join(
+            f'<div class="case"><span class="cv" style="background:{col}">{v}</span><span>{html.escape(t)}</span></div>'
+            for v, col, t in ind["cases"])
+        cards.append(f"""
+<details class="ind" id="{ind["key"]}">
+  <summary><span class="itag">{html.escape(ind["tag"])}</span><b>{html.escape(ind["name"])}</b><span class="chev">›</span></summary>
+  <div class="ibody">
+    <div class="one">{html.escape(ind["one"])}</div>
+    <div class="kid">🧒 {html.escape(ind["kid"])}</div>
+    <div class="meter">{ind["meter"]}</div>
+    <div class="ihead">具体例：この数字ならこう見る</div>
+    {cases}
+    <div class="ihead">落とし穴</div>
+    <div class="trap">{html.escape(ind["trap"])}</div>
+    <div class="ihead">このシステムでの扱い</div>
+    <div class="sc">{html.escape(ind["score"])}</div>
+  </div>
+</details>""")
+
+    legend = ('<div class="card"><h2>色の意味（全指標共通）</h2><div class="lg">'
+              f'<span style="background:{G}">良い・買い手法に有利</span>'
+              f'<span style="background:{Y}">注意・様子見</span>'
+              f'<span style="background:{R}">悪い・警戒</span>'
+              f'<span style="background:{N}">中立</span></div>'
+              '<div class="note">▲は具体例の位置。各指標をタップして開くと、子供向けのたとえ・メーター・数値別の見方・落とし穴・採点での扱いが見られます。'
+              '指標は単独で決めず、帳簿の「選ばれた根拠」のように複数を重ねて読むのが正しい使い方です。</div></div>')
+
+    extra_css = f"""
+  .lg{{display:flex; gap:6px; flex-wrap:wrap; margin-bottom:8px;}}
+  .lg span{{font-size:11px; font-weight:700; border-radius:6px; padding:4px 9px;}}
+  details.ind{{background:#fff; border-radius:14px; margin-bottom:10px; box-shadow:0 1px 3px rgba(0,0,0,.05);}}
+  details.ind summary{{list-style:none; cursor:pointer; display:flex; align-items:center; gap:8px;
+    padding:13px 14px; font-size:14px;}}
+  details.ind summary::-webkit-details-marker{{display:none;}}
+  .itag{{flex:none; font-size:9.5px; font-weight:800; color:#4a3f28; background:#f4eedd; border-radius:5px; padding:2px 6px;}}
+  .chev{{margin-left:auto; color:#c9bd9d; font-size:16px; font-weight:700; transition:transform .15s;}}
+  details[open] .chev{{transform:rotate(90deg);}}
+  .ibody{{padding:0 14px 14px; border-top:1px solid #f0ead9;}}
+  .one{{font-size:13px; line-height:1.8; padding:10px 0 4px; font-weight:700;}}
+  .kid{{font-size:12.5px; line-height:1.8; color:#3a5a40; background:#eef6ef; border-radius:10px; padding:9px 12px; margin:6px 0 10px;}}
+  .meter{{margin:6px 0 4px;}}
+  .ihead{{font-size:10.5px; font-weight:800; color:#7a6a45; letter-spacing:.06em; margin:12px 0 6px;}}
+  .case{{display:flex; gap:8px; align-items:flex-start; font-size:12px; line-height:1.7; padding:5px 0; border-bottom:1px dashed #f0ead9;}}
+  .cv{{flex:none; min-width:64px; text-align:center; font-weight:800; border-radius:6px; padding:2px 6px; font-size:11.5px;}}
+  .trap{{font-size:12px; line-height:1.8; color:#8a5a17; background:#fdf6e6; border-radius:10px; padding:8px 12px;}}
+  .sc{{font-size:12px; line-height:1.7; color:var(--ink2);}}
+"""
+    weekdays = "月火水木金土日"
+    subtitle = f"数字を「読める」ようになるための図解 ・ タップで開閉 ・ {dt.month}/{dt.day}（{weekdays[dt.weekday()]}）時点の採点基準"
+    footnote = "各指標の閾値はこのシステムの現在の設定に基づきます。相場環境や業種で最適値は変わるため、絶対的な基準ではなく「よく使われる目安」としてご覧ください。"
+    return (SUBPAGE_TEMPLATE
+            .replace("__NAVCSS__", NAV_CSS)
+            .replace("__NAVJS__", NAV_JS)
+            .replace("__NAV__", nav_html("indicators"))
+            .replace("__TITLE__", "指標の読み方")
+            .replace("__SUBTITLE__", subtitle)
+            .replace("__BODY__", legend + "".join(cards))
+            .replace("__FOOTNOTE__", footnote)
+            .replace("__EXTRA_CSS__", extra_css)
+            .replace("__SCRIPT__", ""))
 
 
 # ------------------------------------------------------------
@@ -3488,6 +3755,7 @@ def main():
                         extras.get("factor_stats")), encoding="utf-8")
     (DOCS / "holdings.html").write_text(render_holdings(dt_now), encoding="utf-8")
     (DOCS / "guide.html").write_text(render_guide(dt_now), encoding="utf-8")
+    (DOCS / "indicators.html").write_text(render_indicators(dt_now), encoding="utf-8")
     (DOCS / "clean.html").write_text(
         render_clean(extras.get("clean_ranked") or [], extras.get("clean_stats") or {}, dt_now),
         encoding="utf-8")
