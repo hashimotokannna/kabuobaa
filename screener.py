@@ -1599,6 +1599,11 @@ def run_screening():
             r["t_score"] = c.get("t_score")
             r["tri"] = c.get("tri", False)
             r["soon"] = r["code"] in soon_codes
+        e_g = detail_map.get(r["code"])
+        if e_g is not None:
+            ag, rf, n_ev = all_green_flags(e_g)
+            r["all_green"], r["red_free"], r["n_eval"] = ag, rf, n_ev
+            e_g["all_green"], e_g["red_free"], e_g["n_eval"] = ag, rf, n_ev
         e2 = detail_map.get(r["code"])
         if e2 is not None and c is not None:
             e2["q_score"] = c.get("q_score"); e2["t_score"] = c.get("t_score")
@@ -1813,6 +1818,7 @@ def make_demo_data():
                             "score": round(s["score"], 1), "cand_rank": i + 1,
                             "demerit": s.get("demerit"), "demerit_rank": s.get("demerit_rank"),
                             "q_score": s.get("q_score"), "t_score": s.get("t_score"), "tri": s.get("tri", False),
+                            "all_green": all_green_flags(s)[0], "red_free": all_green_flags(s)[1], "n_eval": all_green_flags(s)[2],
                             "status": "picked", "reason": ""})
     all_results += [
         {"code": "9999", "name": "デモ圏外株", "market": "プライム", "sector": "サービス業",
@@ -2034,6 +2040,58 @@ EXEC_CSS = """
 """
 
 
+def meter_zones(s):
+    """各指標がどのゾーンにいるかを返す: {指標名: 'G'|'B'|'Y'|'R'|'N'}（判定不能は含めない）"""
+    fu = s.get("fund") or {}
+    lg = s.get("long") or {}
+    z = {}
+    def zone(val, bands):
+        for lo, hi, col in bands:
+            if lo <= val < hi:
+                return col
+        return bands[-1][2] if val >= bands[-1][1] else bands[0][2]
+    per = fu.get("per")
+    if per is not None:
+        z["PER"] = zone(per, [(0, 10, "B"), (10, 20, "G"), (20, 40, "Y"), (40, 1e9, "R")]) if per >= 0 else "R"
+    pbr = fu.get("pbr")
+    if pbr is not None:
+        z["PBR"] = zone(pbr, [(0, 0.5, "Y"), (0.5, 1.5, "B"), (1.5, 3, "G"), (3, 1e9, "R")])
+    roe = fu.get("roe")
+    if roe is not None:
+        z["ROE"] = zone(roe, [(-1e9, 3, "R"), (3, 5, "Y"), (5, 10, "G"), (10, 1e9, "B")])
+    dy = fu.get("div_yield")
+    if dy is not None:
+        z["配当"] = zone(dy, [(0, 1, "N"), (1, 3, "G"), (3, 5, "B"), (5, 1e9, "Y")])
+    rsi = lg.get("rsi")
+    if rsi is not None:
+        z["RSI"] = zone(rsi, [(0, 30, "G"), (30, 40, "Y"), (40, 60, "N"), (60, 70, "Y"), (70, 101, "R")])
+    bs = s.get("boll_sigma")
+    if bs is not None:
+        z["ボリンジャー"] = zone(bs, [(-1e9, -2, "G"), (-2, -1, "Y"), (-1, 1, "N"), (1, 2, "Y"), (2, 1e9, "R")])
+    dv = s.get("dev25")
+    if dv is not None:
+        z["25日線乖離"] = zone(dv, [(-1e9, -20, "R"), (-20, -8, "G"), (-8, 0, "N"), (0, 1e9, "N")])
+    ms = s.get("macd_state")
+    if ms:
+        z["MACD"] = {"below": "R", "golden_recent": "Y", "above": "G"}[ms]
+    gc = lg.get("gc")
+    if gc is not None:
+        z["50/200日線"] = "G" if gc else "R"
+    zz = lg.get("zone")
+    if zz:
+        z["支持帯の試し"] = "G" if (zz.get("touches", 0) + 1) <= 3 else "R"
+    return z
+
+
+def all_green_flags(s):
+    """(all_green, red_free, evaluated_count)。all_green=赤も黄も無し（緑/青/中立のみ）、red_free=赤なし"""
+    z = meter_zones(s)
+    cols = list(z.values())
+    if not cols:
+        return False, False, 0
+    return ("R" not in cols and "Y" not in cols), ("R" not in cols), len(cols)
+
+
 def stock_meters_html(s):
     """その銘柄の指標がいまどの圏内かを、指標タブと同じ配色のミニメーターで並べる"""
     fu = s.get("fund") or {}
@@ -2093,7 +2151,9 @@ def stock_meters_html(s):
         bar("20日高値から", [(0, 3, N), (3, 5, Y), (5, 8, G), (8, 15, Y)], 0, 15, dp, f"−{dp:.1f}%")
     if not items:
         return ""
-    return ('<div class="nhead">いまの指標の位置</div>'
+    ag, rf, n_ev = all_green_flags(s)
+    tag = (' <span class="agtag">オールグリーン</span>' if ag else (' <span class="agtag rf">赤なし</span>' if rf else ""))
+    return (f'<div class="nhead">いまの指標の位置（評価{n_ev}指標）{tag}</div>'
             '<div class="mlegend"><span style="background:#b9dcc0">安心・標準</span>'
             '<span style="background:#c9dcf3">魅力あり（要確認）</span>'
             '<span style="background:#f5e6b3">注意</span><span style="background:#f2c4a8">警戒</span>'
@@ -2105,6 +2165,8 @@ def stock_meters_html(s):
 
 METER_CSS = """
   .meters{margin:4px 0 6px;}
+  .agtag{display:inline-block; font-size:9px; font-weight:800; color:#1a5c37; background:#b9dcc0; border-radius:4px; padding:1px 6px; margin-left:4px;}
+  .agtag.rf{background:#e9f3ea;}
   .mlegend{display:flex; gap:4px; flex-wrap:wrap; margin:2px 0 6px;}
   .mlegend span{font-size:9px; font-weight:700; border-radius:4px; padding:2px 6px; color:#1c1c1e;}
   .mrow{display:flex; align-items:center; gap:8px; padding:3px 0;}
@@ -2562,7 +2624,7 @@ def render_html(data):
 <meta name="robots" content="noindex, nofollow">
 <link rel="apple-touch-icon" href="icon.png">
 <link rel="icon" type="image/png" href="icon.png">
-<title>Kabuobaa - 今夜の厳選{cfg["TOP_N"]}銘柄</title>
+<title>今夜の厳選{cfg["TOP_N"]}銘柄 ｜ 株ノート</title>
 <style>
   :root{{
     --ink:#1c1c1e; --ink2:#6e6e73; --ink3:#aeaeb2;
@@ -2792,16 +2854,16 @@ NAV_CSS = """
 """
 
 NAV_ITEMS = [
-    ("index.html", "帳簿", "index"),
-    ("universe.html", "全銘柄", "universe"),
-    ("indicators.html", "指標", "indicators"),
-    ("guide.html", "使い方", "guide"),
+    ("guide.html", "はじめに", "guide"),
+    ("indicators.html", "指標の読み方", "indicators"),
+    ("universe.html", "全銘柄台帳", "universe"),
+    ("index.html", "今夜の厳選", "index"),
 ]
 
 
 NAV_JS = """<script>
 (function(){
-  const order = ['index.html', 'universe.html', 'indicators.html', 'guide.html'];
+  const order = ['guide.html', 'indicators.html', 'universe.html', 'index.html'];
   let here = location.pathname.split('/').pop();
   if (!here) here = 'index.html';
   const idx = order.indexOf(here);
@@ -2845,7 +2907,7 @@ SUBPAGE_TEMPLATE = """<!DOCTYPE html>
 <meta name="robots" content="noindex, nofollow">
 <link rel="apple-touch-icon" href="icon.png">
 <link rel="icon" type="image/png" href="icon.png">
-<title>__TITLE__</title>
+<title>__TITLE__ ｜ 株ノート</title>
 <style>
   :root{--ink:#1c1c1e; --ink2:#6e6e73; --ink3:#aeaeb2; --paper:#faf6ec;
     --paper-line:#e7e0cf; --bg:#f2f2f7; --line:#e5e5ea; --cheap:#c62f2f; --cheap-bg:#fdeeee;
@@ -3064,7 +3126,7 @@ if (capIn){
             .replace("__NAVCSS__", NAV_CSS)
             .replace("__NAVJS__", NAV_JS)
             .replace("__NAV__", nav_html("backtest"))
-            .replace("__TITLE__", "手法の検証レポート")
+            .replace("__TITLE__", "手法の検証レポート — ルール自身の成績表")
             .replace("__SUBTITLE__", subtitle)
             .replace("__BODY__", "\n".join(body))
             .replace("__FOOTNOTE__", footnote)
@@ -3099,6 +3161,10 @@ def render_universe(all_results, stats, dt):
         chips.append(f'<button class="fbtn" data-f="__flaw" style="background:#e9f3ea; color:#1a5c37">無傷 {n_flaw:,}</button>')
     if n_soon:
         chips.append(f'<button class="fbtn" data-f="__soon" style="background:#fdf3e3; color:#b06a00">まもなく {n_soon:,}</button>')
+    n_ag = sum(1 for r in all_results if r.get("all_green"))
+    n_rf = sum(1 for r in all_results if r.get("red_free"))
+    chips.append(f'<button class="fbtn" data-f="__ag" style="background:#b9dcc0; color:#1a5c37">オールグリーン {n_ag:,}</button>')
+    chips.append(f'<button class="fbtn" data-f="__rf" style="background:#e9f3ea; color:#3a5a40">赤なし {n_rf:,}</button>')
     n_exec = sum(1 for r in all_results if r.get("exec_change"))
     if n_exec:
         chips.append(f'<button class="fbtn" data-f="__exec" style="background:#c62f2f; color:#fff">社長交代 {n_exec:,}</button>')
@@ -3117,6 +3183,7 @@ def render_universe(all_results, stats, dt):
                  '<option value="tri">帳簿の三層合格を先頭に</option>'
                  '<option value="fav">★お気に入り・持ち株を先頭に</option>'
                  '<option value="exec">社長交代の開示ありを先頭に</option>'
+                 '<option value="ag">オールグリーンを先頭に</option>'
                  '<option value="drop">高値からの下落率が大きい順</option>'
                  '<option value="close">株価が高い順</option>'
                  '<option value="close_asc">株価が安い順</option>'
@@ -3130,6 +3197,17 @@ def render_universe(all_results, stats, dt):
         g = SECTOR_GROUPS.get(r.get("sector", ""), DEFAULT_GROUP)
         groups.setdefault(g, []).append(r)
     ordered_groups = sorted(groups.items(), key=lambda kv: len(kv[1]), reverse=True)
+
+    def _norm(s):
+        import unicodedata, re as _re
+        t = unicodedata.normalize("NFKC", s or "").lower()
+        # ひらがな→カタカナ統一
+        t = "".join(chr(ord(ch) + 0x60) if "ぁ" <= ch <= "ゖ" else ch for ch in t)
+        # 空白・記号・法人格の定型語を除去
+        t = _re.sub(r"[\s\-\u30fb・．.,、。()（）\[\]「」『』&＆/／]", "", t)
+        for w in ("ホールディングス", "ホールディング", "グループ", "株式会社", "hd", "ｈｄ"):
+            t = t.replace(w, "")
+        return t
 
     def row_html(r):
         label, bg, fg, _d = STATUS_DEF[r["status"]]
@@ -3148,12 +3226,13 @@ def render_universe(all_results, stats, dt):
             return default if v is None else v
         return (
             f'<details class="udet" data-s="{r["status"]}" data-code="{r["code"]}" '
-            f'data-t="{html.escape(r["name"].lower())} {r["code"]}" '
+            f'data-t="{html.escape(_norm(r["name"]))} {html.escape(r["name"].lower())} {r["code"]}" '
             f'data-name="{html.escape(r["name"])}" '
             f'data-dm="{_n(r.get("demerit"), 9999)}" data-sc="{_n(r.get("score"), -1)}" '
             f'data-q="{_n(r.get("q_score"), -1)}" data-tm="{_n(r.get("t_score"), -1)}" '
             f'data-tri="{1 if r.get("tri") else 0}" data-soon="{1 if r.get("soon") else 0}" '
             f'data-exec="{1 if r.get("exec_change") else 0}" '
+            f'data-ag="{1 if r.get("all_green") else 0}" data-rf="{1 if r.get("red_free") else 0}" data-nev="{r.get("n_eval", 0)}" '
             f'data-close="{_n(r.get("close"), -1)}" data-drop="{_n(r.get("drop_pct"), -1)}" '
             f'data-mkt="{html.escape(r.get("market", ""))}" data-sec="{html.escape(r.get("sector", ""))}">'
             f'<summary class="urow">'
@@ -3163,6 +3242,7 @@ def render_universe(all_results, stats, dt):
             + ('<span class="mark tri">帳簿</span>' if r.get("tri") and r["status"] == "picked" else "")
             + ('<span class="mark soon">まもなく</span>' if r.get("soon") else "")
             + ('<span class="mark exec">社長交代</span>' if r.get("exec_change") else "")
+            + ('<span class="mark ag">オールグリーン</span>' if r.get("all_green") else "")
             + f'<button class="uhold" data-code="{r["code"]}" aria-label="持ち株">持</button>'
             + f'<span class="num uc">{r["code"]}</span>{reason_html}</span>'
             f'<button class="ufav" data-code="{r["code"]}" aria-label="お気に入り">★</button>'
@@ -3216,6 +3296,7 @@ def render_universe(all_results, stats, dt):
   .mark{display:inline-block; font-size:9px; font-weight:800; border-radius:4px; padding:1px 5px; margin-right:3px; vertical-align:1px;}
   .mark.tri{background:#1c1c1e; color:#fff;} .mark.soon{background:#fdf3e3; color:#b06a00;}
   .mark.exec{background:#c62f2f; color:#fff;}
+  .mark.ag{background:#b9dcc0; color:#1a5c37;}
 """ + EXEC_CSS + """
   .uhold{display:inline-block; font-size:9px; font-weight:800; border-radius:4px; padding:1px 5px; margin-right:3px;
     vertical-align:1px; border:1px solid #d9d2bf; background:#fff; color:#c9bd9d; cursor:pointer; line-height:1.4;}
@@ -3256,16 +3337,27 @@ def render_universe(all_results, stats, dt):
     script = """<script>
 const rows = Array.from(document.querySelectorAll('details.udet'));
 let filter = 'all';
+function normQ(s){
+  let t = (s || '').normalize('NFKC').toLowerCase();
+  t = t.replace(/[\u3041-\u3096]/g, ch => String.fromCharCode(ch.charCodeAt(0) + 0x60));
+  t = t.replace(/[\s\-・.,、。()（）\[\]「」『』&\/]/g, '');
+  for (const w of ['ホールディングス','ホールディング','グループ','株式会社','hd']) t = t.split(w).join('');
+  return t;
+}
 function apply(){
-  const q = document.getElementById('q').value.trim().toLowerCase();
+  const raw = document.getElementById('q').value.trim();
+  const terms = raw.split(/[\s　]+/).filter(Boolean).map(normQ).filter(Boolean);
   for (const r of rows){
+    const hay = r.dataset.t;
+    const okQ = terms.length === 0 || terms.every(t => hay.includes(t));
     const okF = (filter === 'all' || r.dataset.s === filter
                  || (filter === '__flaw' && r.dataset.dm === '0')
                  || (filter === '__soon' && r.dataset.soon === '1')
                  || (filter === '__exec' && r.dataset.exec === '1')
+                 || (filter === '__ag' && r.dataset.ag === '1')
+                 || (filter === '__rf' && r.dataset.rf === '1')
                  || (filter === '__fav' && r.dataset.fav === '1')
                  || (filter === '__hold' && r.dataset.hold === '1'));
-    const okQ = (!q || r.dataset.t.includes(q));
     r.classList.toggle('hidden', !(okF && okQ));
   }
   if (!flat){
@@ -3342,6 +3434,7 @@ const cmp = {
   tri:       (a, b) => (+b.dataset.tri - +a.dataset.tri) || (+b.dataset.soon - +a.dataset.soon) || (+b.dataset.sc - +a.dataset.sc),
   fav:       (a, b) => (+b.dataset.fav - +a.dataset.fav) || (+b.dataset.hold - +a.dataset.hold) || (+b.dataset.sc - +a.dataset.sc),
   exec:      (a, b) => (+b.dataset.exec - +a.dataset.exec) || (+b.dataset.sc - +a.dataset.sc),
+  ag:        (a, b) => (+b.dataset.ag - +a.dataset.ag) || (+b.dataset.rf - +a.dataset.rf) || (+b.dataset.nev - +a.dataset.nev) || (+b.dataset.sc - +a.dataset.sc),
   drop:      (a, b) => +b.dataset.drop - +a.dataset.drop,
   close:     (a, b) => +b.dataset.close - +a.dataset.close,
   close_asc: (a, b) => +a.dataset.close - +b.dataset.close,
@@ -3376,7 +3469,9 @@ if (savedSort && cmp[savedSort]){ document.getElementById('sort').value = savedS
     body = ('<div class="card"><h2>判定の凡例</h2>' + legend + "</div>"
             + "".join(chips)
             + '<div class="list">' + "\n".join(rows) + "</div>")
-    footnote = ("「対象外」は上場間もない・株価100円未満・売買代金が少ない、のいずれか。"
+    footnote = ("「オールグリーン」は各銘柄の指標メーターに赤（警戒）も黄（注意）も無い銘柄（判定できた指標のみで評価）、"
+                "「赤なし」は警戒だけが無い銘柄。指標が少ない銘柄ほど該当しやすい点に注意し、詳細を開いて評価済み指標の数も確認してください。"
+                "「対象外」は上場間もない・株価100円未満・売買代金が少ない、のいずれか。"
                 "「除外」は終わった株（1年高値から大幅下落・長期下落トレンド）に加え、"
                 "直近の急落（落ちるナイフ）・荒すぎる値動き・1年安値圏更新中・下げ止まり未確認を含みます。"
                 "各行に個別の理由を表示。判定は毎回の実行で更新されます。")
@@ -3384,7 +3479,7 @@ if (savedSort && cmp[savedSort]){ document.getElementById('sort').value = savedS
             .replace("__NAVCSS__", NAV_CSS)
             .replace("__NAVJS__", NAV_JS)
             .replace("__NAV__", nav_html("universe"))
-            .replace("__TITLE__", "全銘柄の判定一覧")
+            .replace("__TITLE__", "全銘柄台帳 — 約4,000銘柄の判定と根拠")
             .replace("__SUBTITLE__", subtitle)
             .replace("__BODY__", body)
             .replace("__FOOTNOTE__", footnote)
@@ -3571,7 +3666,7 @@ render();
             .replace("__NAVCSS__", NAV_CSS)
             .replace("__NAVJS__", NAV_JS)
             .replace("__NAV__", nav_html("holdings"))
-            .replace("__TITLE__", "持ち株の管理")
+            .replace("__TITLE__", "持ち株の管理 — 売り時の監視と成績")
             .replace("__SUBTITLE__", subtitle)
             .replace("__BODY__", body)
             .replace("__FOOTNOTE__", footnote)
@@ -3589,16 +3684,16 @@ def render_guide(dt):
 
 <div class="gcard c-blue"><div class="gh">🔵 毎晩の流れ（1〜2分）</div>
 <ol class="steps">
-<li><b>帳簿を開く</b> ホーム画面のアイコン → 合言葉（記憶した端末は自動）</li>
+<li><b>「今夜の厳選」を開く</b> ホーム画面のアイコン → 合言葉（記憶した端末は自動）</li>
 <li><b>厳選{c["TOP_N"]}銘柄を見る</b> タップで根拠・チャート・ノート・会社の発表が開く</li>
 <li><b>買うなら</b> 銘柄内の「買った→持ち株に登録」を押してから証券会社アプリで注文</li>
 <li><b>売り時は自動監視</b> 「持ち株の管理」（このページ最下部）が利確／損切りライン到達を色で知らせる。売ったら「売った」で記録</li>
 </ol></div>
 
 <div class="gcard c-paper"><div class="gh">📒 タブの役割</div>
-<div class="tabrow"><span class="tb">帳簿</span>安全×質×タイミングの三層で選んだ厳選{c["TOP_N"]}銘柄＋「まもなく買い場」の待ち銘柄。持ち金・★・根拠</div>
-<div class="tabrow"><span class="tb">全銘柄</span>約4,000銘柄の台帳。安全（減点）・質・タイミングの3スコア、無傷／まもなく絞り込み、並べ替え、タップで全詳細（指標メーター付き）</div>
-<div class="tabrow"><span class="tb">指標</span>PER・RSIなど全指標の図解。数字の読み方はここ</div></div>
+<div class="tabrow"><span class="tb">今夜の厳選</span>安全×質×タイミングの三層で選んだ厳選{c["TOP_N"]}銘柄＋「まもなく買い場」の待ち銘柄。持ち金・★・根拠</div>
+<div class="tabrow"><span class="tb">全銘柄台帳</span>約4,000銘柄の台帳。安全（減点）・質・タイミングの3スコア、無傷／まもなく絞り込み、並べ替え、タップで全詳細（指標メーター付き）</div>
+<div class="tabrow"><span class="tb">指標の読み方</span>PER・RSIなど全指標の図解。数字の読み方はここ</div></div>
 
 <div class="gcard c-yellow"><div class="gh">🟡 選定の仕組み（要約）</div>
 <div class="gt">全銘柄 → 対象外（流動性不足・低位株・上場浅）→ 除外（終わった株・急落直後・荒い値動き・下げ止まり未確認）→
@@ -3643,7 +3738,7 @@ def render_guide(dt):
             .replace("__NAVCSS__", NAV_CSS)
             .replace("__NAVJS__", NAV_JS)
             .replace("__NAV__", nav_html("guide"))
-            .replace("__TITLE__", "使い方")
+            .replace("__TITLE__", "はじめに — この株ノートの使い方")
             .replace("__SUBTITLE__", subtitle)
             .replace("__BODY__", body)
             .replace("__FOOTNOTE__", footnote)
@@ -4134,7 +4229,7 @@ def render_indicators(dt):
             .replace("__NAVCSS__", NAV_CSS)
             .replace("__NAVJS__", NAV_JS)
             .replace("__NAV__", nav_html("indicators"))
-            .replace("__TITLE__", "指標の読み方")
+            .replace("__TITLE__", "指標の読み方 — 数字を判断に変える図解")
             .replace("__SUBTITLE__", subtitle)
             .replace("__BODY__", legend + "".join(cards))
             .replace("__FOOTNOTE__", footnote)
