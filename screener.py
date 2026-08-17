@@ -1148,21 +1148,35 @@ def fetch_tdnet(session, code, days_back=30, limit=3):
 # 直近の決算開示日ぶんを走査して素材キャッシュ（fund_cache.json）に積み上げる
 # ------------------------------------------------------------
 def jquants_id_token(session):
-    mail = os.environ.get("JQUANTS_MAIL", "").strip()
-    pw = os.environ.get("JQUANTS_PASSWORD", "")
-    if not mail or not pw:
-        return None
+    """IDトークンを得る。優先順: ①JQUANTS_REFRESH_TOKEN（ダッシュボードから貼ったもの）
+    ②JQUANTS_MAIL+JQUANTS_PASSWORD からリフレッシュトークンを自動発行"""
+    refresh = os.environ.get("JQUANTS_REFRESH_TOKEN", "").strip()
+    src_label = "貼付トークン"
+    if not refresh:
+        mail = os.environ.get("JQUANTS_MAIL", "").strip()
+        pw = os.environ.get("JQUANTS_PASSWORD", "")
+        if not mail or not pw:
+            return None
+        src_label = "メール認証"
+        try:
+            r = session.post("https://api.jquants.com/v1/token/auth_user",
+                             json={"mailaddress": mail, "password": pw}, timeout=30)
+            r.raise_for_status()
+            refresh = r.json().get("refreshToken")
+        except Exception as e:  # noqa: BLE001
+            print(f"  ! J-Quants認証に失敗（メール+パスワード）: {e}", file=sys.stderr)
+            return None
     try:
-        r = session.post("https://api.jquants.com/v1/token/auth_user",
-                         json={"mailaddress": mail, "password": pw}, timeout=30)
-        r.raise_for_status()
-        refresh = r.json().get("refreshToken")
         r2 = session.post("https://api.jquants.com/v1/token/auth_refresh",
                           params={"refreshtoken": refresh}, timeout=30)
         r2.raise_for_status()
-        return r2.json().get("idToken")
+        tok = r2.json().get("idToken")
+        print(f"  J-Quants認証OK（{src_label}）")
+        return tok
     except Exception as e:  # noqa: BLE001
-        print(f"  ! J-Quants認証に失敗: {e}", file=sys.stderr)
+        print(f"  ! J-Quants IDトークン取得に失敗（{src_label}）: {e}"
+              + ("　※貼付トークンは1週間で失効します。ダッシュボードから取り直してください" if src_label == "貼付トークン" else ""),
+              file=sys.stderr)
         return None
 
 
