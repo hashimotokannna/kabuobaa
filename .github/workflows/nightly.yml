@@ -39,8 +39,7 @@ jobs:
       - name: スクリーニング実行
         env:
           PAGE_PASSWORD: ${{ secrets.PAGE_PASSWORD }}
-          JQUANTS_MAIL: ${{ secrets.JQUANTS_MAIL }}
-          JQUANTS_PASSWORD: ${{ secrets.JQUANTS_PASSWORD }}
+          JQUANTS_API_KEY: ${{ secrets.JQUANTS_API_KEY }}
           JQUANTS_REFRESH_TOKEN: ${{ secrets.JQUANTS_REFRESH_TOKEN }}
           TEST_LIMIT: ${{ inputs.limit }}
         run: python screener.py
