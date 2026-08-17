@@ -1147,37 +1147,12 @@ def fetch_tdnet(session, code, days_back=30, limit=3):
 # 全銘柄分を1銘柄1リクエストで取ると重いので、日次でまとめて取れる date 指定を使い、
 # 直近の決算開示日ぶんを走査して素材キャッシュ（fund_cache.json）に積み上げる
 # ------------------------------------------------------------
-def jquants_id_token(session):
-    """IDトークンを得る。優先順: ①JQUANTS_REFRESH_TOKEN（ダッシュボードから貼ったもの）
-    ②JQUANTS_MAIL+JQUANTS_PASSWORD からリフレッシュトークンを自動発行"""
-    refresh = os.environ.get("JQUANTS_REFRESH_TOKEN", "").strip()
-    src_label = "貼付トークン"
-    if not refresh:
-        mail = os.environ.get("JQUANTS_MAIL", "").strip()
-        pw = os.environ.get("JQUANTS_PASSWORD", "")
-        if not mail or not pw:
-            return None
-        src_label = "メール認証"
-        try:
-            r = session.post("https://api.jquants.com/v1/token/auth_user",
-                             json={"mailaddress": mail, "password": pw}, timeout=30)
-            r.raise_for_status()
-            refresh = r.json().get("refreshToken")
-        except Exception as e:  # noqa: BLE001
-            print(f"  ! J-Quants認証に失敗（メール+パスワード）: {e}", file=sys.stderr)
-            return None
-    try:
-        r2 = session.post("https://api.jquants.com/v1/token/auth_refresh",
-                          params={"refreshtoken": refresh}, timeout=30)
-        r2.raise_for_status()
-        tok = r2.json().get("idToken")
-        print(f"  J-Quants認証OK（{src_label}）")
-        return tok
-    except Exception as e:  # noqa: BLE001
-        print(f"  ! J-Quants IDトークン取得に失敗（{src_label}）: {e}"
-              + ("　※貼付トークンは1週間で失効します。ダッシュボードから取り直してください" if src_label == "貼付トークン" else ""),
-              file=sys.stderr)
+def jquants_headers():
+    """V2認証: APIキーをヘッダーに載せるだけ（期限切れなし）"""
+    key = os.environ.get("JQUANTS_API_KEY", "").strip() or os.environ.get("JQUANTS_REFRESH_TOKEN", "").strip()
+    if not key:
         return None
+    return {"x-api-key": key}
 
 
 def _to_float(v):
@@ -1187,57 +1162,89 @@ def _to_float(v):
         return None
 
 
+def _pick(d, *names):
+    """複数候補のフィールド名から最初に存在するものの値を返す（V2略称・V1名の両対応）"""
+    for n in names:
+        if n in d and d[n] not in (None, "", "-"):
+            return d[n]
+    return None
+
+
+# V2/V1 のフィールド名候補（応答の実名は初回ログで確認し、必要なら追加する）
+JQ_F = {
+    "code":     ("Code", "LocalCode"),
+    "disc":     ("DiscDate", "DisclosedDate", "DisclosureDate"),
+    "eps":      ("EPS", "EarningsPerShare"),
+    "bps":      ("BPS", "BookValuePerShare"),
+    "equity":   ("Eq", "Equity", "NetAssets"),
+    "shares":   ("ShOutFY", "ShOut", "IssuedShares",
+                 "NumberOfIssuedAndOutstandingSharesAtTheEndOfFiscalYearIncludingTreasuryStock"),
+    "treasury": ("TrShFY", "TrSh", "TreasuryShares", "NumberOfTreasuryStockAtTheEndOfFiscalYear"),
+    "fc_eps":   ("FEPS", "ForecastEPS", "ForecastEarningsPerShare"),
+    "period":   ("CurPerEn", "CurrentPeriodEndDate"),
+}
+
+
 def jquants_fetch_materials(session, days_back=100):
-    """直近days_back日の決算開示を日付ごとに取得し、{code: {eps,bvps,shares,equity,asof}} を返す。
-    同一銘柄は最新の開示を採用。無料プランは12週遅延のため、遅延を見込んで長めに走査する"""
-    tok = jquants_id_token(session)
-    if not tok:
+    """V2 /fins/summary を開示日ごとに走査し {code: {eps,bvps,shares,equity,asof}} を返す。
+    同一銘柄は最新の開示を採用。無料プランは12週遅延のため長めに走査する"""
+    headers = jquants_headers()
+    if not headers:
         return {}
-    headers = {"Authorization": f"Bearer {tok}"}
     out = {}
     today = datetime.now(JST).date()
     n_req = 0
+    printed_fields = False
     for i in range(days_back):
         d = today - timedelta(days=i)
         if d.weekday() >= 5:
             continue
-        ds = d.strftime("%Y-%m-%d")
+        ds = d.strftime("%Y%m%d")  # V2は YYYYMMDD
         pagination = None
         while True:
             params = {"date": ds}
             if pagination:
                 params["pagination_key"] = pagination
             try:
-                r = session.get("https://api.jquants.com/v1/fins/statements",
+                r = session.get("https://api.jquants.com/v2/fins/summary",
                                 params=params, headers=headers, timeout=60)
                 n_req += 1
                 if r.status_code == 429:
                     time.sleep(3)
                     continue
+                if r.status_code in (401, 403):
+                    print(f"  ! J-Quants認証エラー HTTP {r.status_code}: APIキー（JQUANTS_API_KEY）を確認してください "
+                          f"{r.text[:120]}", file=sys.stderr)
+                    return {}
                 if r.status_code != 200:
                     break
                 j = r.json()
-            except Exception:  # noqa: BLE001
+            except Exception as e:  # noqa: BLE001
+                print(f"  ! J-Quants取得エラー({ds}): {e}", file=sys.stderr)
                 break
-            for st in j.get("statements") or []:
-                code = str(st.get("LocalCode") or "")
+            rows = j.get("data") or j.get("statements") or []
+            if rows and not printed_fields:
+                print(f"  J-Quants応答フィールド例: {sorted(rows[0].keys())[:60]}")
+                printed_fields = True
+            for st in rows:
+                code = str(_pick(st, *JQ_F["code"]) or "")
                 code = code[:-1] if len(code) == 5 and code.endswith("0") else code
                 if not code:
                     continue
-                disclosed = st.get("DisclosedDate") or ds
+                disclosed = str(_pick(st, *JQ_F["disc"]) or ds)
+                if len(disclosed) == 8 and disclosed.isdigit():
+                    disclosed = f"{disclosed[:4]}-{disclosed[4:6]}-{disclosed[6:]}"
                 prev = out.get(code)
                 if prev and prev.get("asof", "") >= disclosed:
                     continue
-                eps = _to_float(st.get("EarningsPerShare"))
-                bvps = _to_float(st.get("BookValuePerShare"))
-                equity = _to_float(st.get("Equity"))
-                shares = _to_float(st.get("NumberOfIssuedAndOutstandingSharesAtTheEndOfFiscalYearIncludingTreasuryStock"))
-                treasury = _to_float(st.get("NumberOfTreasuryStockAtTheEndOfFiscalYear"))
+                eps = _to_float(_pick(st, *JQ_F["eps"]))
+                bvps = _to_float(_pick(st, *JQ_F["bps"]))
+                equity = _to_float(_pick(st, *JQ_F["equity"]))
+                shares = _to_float(_pick(st, *JQ_F["shares"]))
+                treasury = _to_float(_pick(st, *JQ_F["treasury"]))
                 if shares and treasury:
                     shares = shares - treasury
-                # 予想EPSがあれば参考保持（PERは実績EPS優先）
-                fc_eps = _to_float(st.get("ForecastEarningsPerShare"))
-                # BPSが無ければ純資産÷株数で補完
+                fc_eps = _to_float(_pick(st, *JQ_F["fc_eps"]))
                 if bvps is None and equity and shares:
                     bvps = equity / shares
                 mat = {k: v for k, v in (("eps", eps), ("bvps", bvps), ("shares", shares),
