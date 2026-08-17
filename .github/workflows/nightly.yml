@@ -41,6 +41,7 @@ jobs:
           PAGE_PASSWORD: ${{ secrets.PAGE_PASSWORD }}
           JQUANTS_MAIL: ${{ secrets.JQUANTS_MAIL }}
           JQUANTS_PASSWORD: ${{ secrets.JQUANTS_PASSWORD }}
+          JQUANTS_REFRESH_TOKEN: ${{ secrets.JQUANTS_REFRESH_TOKEN }}
           TEST_LIMIT: ${{ inputs.limit }}
         run: python screener.py
 
