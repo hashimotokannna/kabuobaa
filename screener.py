@@ -1141,6 +1141,104 @@ def fetch_tdnet(session, code, days_back=30, limit=3):
         return []
 
 
+# ------------------------------------------------------------
+# J-Quants（JPX公式）から財務素材（EPS・BPS・純資産・発行株数）を取得
+# 認証はメール+パスワードから毎回トークンを自動発行（リフレッシュトークンの1週間期限に依存しない）
+# 全銘柄分を1銘柄1リクエストで取ると重いので、日次でまとめて取れる date 指定を使い、
+# 直近の決算開示日ぶんを走査して素材キャッシュ（fund_cache.json）に積み上げる
+# ------------------------------------------------------------
+def jquants_id_token(session):
+    mail = os.environ.get("JQUANTS_MAIL", "").strip()
+    pw = os.environ.get("JQUANTS_PASSWORD", "")
+    if not mail or not pw:
+        return None
+    try:
+        r = session.post("https://api.jquants.com/v1/token/auth_user",
+                         json={"mailaddress": mail, "password": pw}, timeout=30)
+        r.raise_for_status()
+        refresh = r.json().get("refreshToken")
+        r2 = session.post("https://api.jquants.com/v1/token/auth_refresh",
+                          params={"refreshtoken": refresh}, timeout=30)
+        r2.raise_for_status()
+        return r2.json().get("idToken")
+    except Exception as e:  # noqa: BLE001
+        print(f"  ! J-Quants認証に失敗: {e}", file=sys.stderr)
+        return None
+
+
+def _to_float(v):
+    try:
+        return float(v) if v not in (None, "", "-") else None
+    except (TypeError, ValueError):
+        return None
+
+
+def jquants_fetch_materials(session, days_back=100):
+    """直近days_back日の決算開示を日付ごとに取得し、{code: {eps,bvps,shares,equity,asof}} を返す。
+    同一銘柄は最新の開示を採用。無料プランは12週遅延のため、遅延を見込んで長めに走査する"""
+    tok = jquants_id_token(session)
+    if not tok:
+        return {}
+    headers = {"Authorization": f"Bearer {tok}"}
+    out = {}
+    today = datetime.now(JST).date()
+    n_req = 0
+    for i in range(days_back):
+        d = today - timedelta(days=i)
+        if d.weekday() >= 5:
+            continue
+        ds = d.strftime("%Y-%m-%d")
+        pagination = None
+        while True:
+            params = {"date": ds}
+            if pagination:
+                params["pagination_key"] = pagination
+            try:
+                r = session.get("https://api.jquants.com/v1/fins/statements",
+                                params=params, headers=headers, timeout=60)
+                n_req += 1
+                if r.status_code == 429:
+                    time.sleep(3)
+                    continue
+                if r.status_code != 200:
+                    break
+                j = r.json()
+            except Exception:  # noqa: BLE001
+                break
+            for st in j.get("statements") or []:
+                code = str(st.get("LocalCode") or "")
+                code = code[:-1] if len(code) == 5 and code.endswith("0") else code
+                if not code:
+                    continue
+                disclosed = st.get("DisclosedDate") or ds
+                prev = out.get(code)
+                if prev and prev.get("asof", "") >= disclosed:
+                    continue
+                eps = _to_float(st.get("EarningsPerShare"))
+                bvps = _to_float(st.get("BookValuePerShare"))
+                equity = _to_float(st.get("Equity"))
+                shares = _to_float(st.get("NumberOfIssuedAndOutstandingSharesAtTheEndOfFiscalYearIncludingTreasuryStock"))
+                treasury = _to_float(st.get("NumberOfTreasuryStockAtTheEndOfFiscalYear"))
+                if shares and treasury:
+                    shares = shares - treasury
+                # 予想EPSがあれば参考保持（PERは実績EPS優先）
+                fc_eps = _to_float(st.get("ForecastEarningsPerShare"))
+                # BPSが無ければ純資産÷株数で補完
+                if bvps is None and equity and shares:
+                    bvps = equity / shares
+                mat = {k: v for k, v in (("eps", eps), ("bvps", bvps), ("shares", shares),
+                                          ("equity", equity), ("fc_eps", fc_eps)) if v is not None}
+                if mat:
+                    mat["asof"] = disclosed
+                    out[code] = mat
+            pagination = j.get("pagination_key")
+            if not pagination:
+                break
+        time.sleep(0.15)
+    print(f"  J-Quants: {n_req}リクエストで {len(out)}銘柄の財務素材を取得")
+    return out
+
+
 FUND_CACHE_PATH = DOCS / "fund_cache.json"
 
 
@@ -1169,12 +1267,20 @@ def fetch_fundamentals(session, codes, closes=None):
     persisted = load_fund_cache()
     today = datetime.now(JST).date().isoformat()
 
+    # J-Quants（あれば）: 決算開示ベースの素材を取り込み、保存分より新しければ上書き
+    jq = jquants_fetch_materials(session) if session is not None else {}
+    for code, mat in jq.items():
+        prev = persisted.get(code) or {}
+        if not prev or (mat.get("asof", "") >= prev.get("asof", "")):
+            merged = {**prev, **mat}
+            persisted[code] = merged
+
     for code in codes:
         fresh = _FUND_CACHE.get(code) or {}
         prev = persisted.get(code) or {}
         # 素材のマージ: 今回の値を優先、無ければ前回保存分
         mat = {}
-        for k in ("eps", "bvps", "shares", "dy"):
+        for k in ("eps", "bvps", "shares", "dy", "equity", "fc_eps"):
             v = fresh.get(k, prev.get(k))
             if v is not None:
                 mat[k] = v
@@ -2353,7 +2459,7 @@ def render_html(data):
                 frows.append(f'<div class="fact"><span>時価総額</span>'
                              f'<span class="num">{fu["mcap_oku"]:,}億円</span></div>')
             if frows:
-                src_note = ("PER・PBR・ROE・時価総額は、決算数字（EPS・BPS・発行株数）と最新株価からこのシステムが算出"
+                src_note = ("PER・PBR・ROE・時価総額は、決算短信の数字（EPS・BPS・発行株数／JPX J-Quants）と最新株価からこのシステムが算出"
                             if fu.get("computed") else "この銘柄は決算数字が取得できず、配信元の指標値を参照")
                 fund_html = ('<div class="nhead">ファンダメンタル指標</div>' + "".join(frows)
                              + f'<div class="discnote">{src_note}。読み方は「使い方」ページ参照。低PER・低PBRには'
