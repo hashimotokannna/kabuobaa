@@ -1177,7 +1177,7 @@ JQ_F = {
     "eps":      ("EPS", "EarningsPerShare"),
     "bps":      ("BPS", "BookValuePerShare"),
     "equity":   ("Eq", "Equity", "NetAssets"),
-    "shares":   ("ShOutFY", "ShOut", "IssuedShares",
+    "shares":   ("ShOutFY", "ShOut", "IssuedShares", "AvgSh",
                  "NumberOfIssuedAndOutstandingSharesAtTheEndOfFiscalYearIncludingTreasuryStock"),
     "treasury": ("TrShFY", "TrSh", "TreasuryShares", "NumberOfTreasuryStockAtTheEndOfFiscalYear"),
     "fc_eps":   ("FEPS", "ForecastEPS", "ForecastEarningsPerShare"),
@@ -1227,8 +1227,9 @@ def jquants_fetch_materials(session, days_back=100):
                 print(f"  J-Quants応答フィールド例: {sorted(rows[0].keys())[:60]}")
                 printed_fields = True
             for st in rows:
-                code = str(_pick(st, *JQ_F["code"]) or "")
-                code = code[:-1] if len(code) == 5 and code.endswith("0") else code
+                code = str(_pick(st, *JQ_F["code"]) or "").strip()
+                if len(code) == 5 and code[-1] == "0":
+                    code = code[:-1]      # 5桁表記（末尾0）→4桁
                 if not code:
                     continue
                 disclosed = str(_pick(st, *JQ_F["disc"]) or ds)
@@ -1295,6 +1296,14 @@ def fetch_fundamentals(session, codes, closes=None):
         if not prev or (mat.get("asof", "") >= prev.get("asof", "")):
             merged = {**prev, **mat}
             persisted[code] = merged
+    if jq:
+        jq_keys = list(jq.keys())[:5]
+        code_keys = list(codes)[:5]
+        matched = sum(1 for c in codes if c in persisted)
+        print(f"  診断: 素材コード例={jq_keys} / 株価コード例={code_keys} / "
+              f"一致={matched}/{len(codes)} / 保存予定={len(persisted)}件")
+        ex = next(iter(jq.values()))
+        print(f"  診断: 素材の中身例={ex}")
 
     for code in codes:
         fresh = _FUND_CACHE.get(code) or {}
@@ -1340,6 +1349,7 @@ def fetch_fundamentals(session, codes, closes=None):
             out[code] = entry
 
     save_fund_cache(persisted)
+    print(f"  ファンダ計算: {len(out)}銘柄にPER/PBR等を付与（素材キャッシュ {len(persisted)}件を保存: {FUND_CACHE_PATH}）")
     return out
 
 
