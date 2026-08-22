@@ -1599,6 +1599,9 @@ canvas.drag{cursor:grabbing;}
 .legend .lgh{display:flex; justify-content:space-between; gap:10px; align-items:baseline;}
 .legend .lgx{cursor:pointer; color:var(--cy); font-weight:700; letter-spacing:0;}
 .legend .lgopen{cursor:pointer; color:var(--cy); font-weight:700;}
+.legend .lgall{gap:8px; padding-top:4px;}
+.legend .lgbtn{cursor:pointer; font-size:10px; font-weight:800; color:var(--cy);
+  border:1px solid var(--line2); border-radius:5px; padding:2px 9px;}
 .legend .mean{margin-top:5px; padding-top:5px; border-top:1px solid var(--line);
   font-size:9.5px; color:var(--dim); line-height:1.6;}
 .legend .mean b{color:var(--tx2);}
@@ -1681,9 +1684,9 @@ canvas.drag{cursor:grabbing;}
     </div>
     <div class="modes" id="modes">
       <button data-m="sec" class="on">業種</button>
-      <button data-m="pbr">割安度</button>
-      <button data-m="tob">TOB素地</button>
       <button data-m="pick">今夜の厳選</button>
+      <button data-m="mine">マイ銘柄</button>
+      <button data-m="mkt">市場区分</button>
     </div>
     <button class="tbtn on" id="spin">自動回転</button>
     <button class="tbtn" id="reset">視点リセット</button>
@@ -1717,7 +1720,7 @@ canvas.drag{cursor:grabbing;}
     <p>① <b>乗り換え候補さがし</b> ── 気になる銘柄を検索してフォーカス。糸の先に「同じ体質でPBRがもっと安い」銘柄がいれば、比較検討の候補になります。</p>
     <p>② <b>厳選銘柄の"仲間"を先回り</b> ── 色モードを「今夜の厳選」にして緑の点の周りを見る。近くの暗い点は<b>同じ体質でまだ買い場が来ていない</b>銘柄＝ウォッチリストの種です。</p>
     <p>③ <b>ほんとうの分散投資</b> ── 持ち株同士がこの空間で近すぎたら、実は同じリスクを重ねて持っているだけかも。<b>離れた場所から選ぶと分散になります</b>。</p>
-    <p>④ <b>TOB素地の鉱脈</b> ── 色モードを「TOB素地」にすると、紫の濃い一角＝「安くて健全でため込み体質」の集団が浮かびます。</p>
+    <p>④ <b>自分だけの地図</b> ── 色モードを「マイ銘柄」にして凡例の「その他」を非表示にすると、★と持ち株だけの空間に。持ち株同士が固まっていたら分散を、★の近くの無印は次の候補を意味します。</p>
     <p style="color:#8fa0b8">注意: 距離は「体質と値動きの類似」です。取引関係・サプライチェーン・ニュースの繋がりはまだ含まれていません。</p>
     <button class="gostart" id="howclose">閉じる</button>
   </div>
@@ -1770,7 +1773,7 @@ function rgbaOf(hex,a){
 var DATA=null, ST=[], byCode={}, GROUPS=[], WHY={}, AXES=[];
 var MODE='sec', SHOW_EX=true, SPIN=true;
 var rotY=0.6, rotX=0.32, zoom=1, ox=0, oy=0, autoT=0;
-var focusI=-1, fEdges=[], hiddenG={}, camGoal=null;
+var focusI=-1, fEdges=[], camGoal=null;
 var EDGES=[], prio=[];
 /* カメラ設定（この端末に保存） */
 var CAM_KEY='kabuobaa_map_cam';
@@ -1825,69 +1828,69 @@ function projPt(x,y,z){
   return {x:W/2+x2*f*sc+ox, y:H/2-y2*f*sc+oy, pz:z2, f:f};
 }
 
-/* ═══ colors ═══ */
-function colPBR(p){
-  if(p==null) return '#3a4658';
-  if(p<0.7) return '#4dd7ff';
-  if(p<1.0) return '#3ddc97';
-  if(p<2.0) return '#8fa0b8';
-  if(p<4.0) return '#ffc14d';
-  return '#ff5a76';
+/* ═══ colors & category filters ═══
+   各モードは「カテゴリ分け」を持ち、凡例のタップで表示/非表示できる */
+var MARKETS=[], FAVS=new Set(), HOLDS=new Set();
+var MKTCOL={'プライム':'#4dd7ff','スタンダード':'#3ddc97','グロース':'#b78cff','札幌':'#ffc14d','福岡':'#ff9c6b'};
+var HID={sec:{}, pick:{}, mine:{}, mkt:{}};
+function catsOf(){
+  if(MODE==='sec') return GROUPS.map(function(g,i){return {label:g, color:PAL[i%PAL.length]};});
+  if(MODE==='pick') return [
+    {label:'三層合格（今夜の厳選圏）', color:'#3ddc97'},
+    {label:'高スコア候補', color:'#4dd7ff'},
+    {label:'その他', color:'#33405c'}];
+  if(MODE==='mine') return [
+    {label:'★お気に入り', color:'#ffc14d'},
+    {label:'持ち株', color:'#5b8cff'},
+    {label:'★かつ持ち株', color:'#ff5a76'},
+    {label:'その他', color:'#33405c'}];
+  return MARKETS.map(function(m,i){return {label:m||'不明', color:MKTCOL[m]||PAL[i%PAL.length]};});
 }
-function colTOB(t){
-  if(t==null) return '#3a4658';
-  if(t>=55) return '#e0a9ff';
-  if(t>=40) return '#b78cff';
-  if(t>=25) return '#7a6fd8';
-  if(t>=12) return '#4a5a8a';
-  return '#33405c';
+function catOf(s){
+  if(MODE==='sec') return s.g;
+  if(MODE==='pick') return s.tri?0:((s.score!=null&&s.score>=120)?1:2);
+  if(MODE==='mine'){
+    var f=FAVS.has(s.code), hh=HOLDS.has(s.code);
+    return (f&&hh)?2:(f?0:(hh?1:3));
+  }
+  return s.m||0;
 }
-function isHidden(s){ return hiddenG[s.g]===true; }
-function colorOf(s){
-  if(MODE==='sec') return PAL[s.g%PAL.length];
-  if(MODE==='pbr') return colPBR(s.pbr);
-  if(MODE==='tob') return colTOB(s.tob);
-  if(MODE==='pick') return s.tri? '#3ddc97' : (s.score!=null && s.score>=120? '#4dd7ff' : '#33405c');
-  return '#8fa0b8';
+function isHidden(s){ return HID[MODE][s.cat]===true; }
+function refreshColors(){
+  var cats=catsOf();
+  for(var i=0;i<ST.length;i++){
+    var s=ST[i];
+    s.cat=catOf(s);
+    s.col=(cats[s.cat]||cats[0]||{color:'#8fa0b8'}).color;
+  }
+  legend();
 }
-function refreshColors(){ for(var i=0;i<ST.length;i++) ST[i].col=colorOf(ST[i]); legend(); }
+function loadMine(){
+  FAVS=new Set(); HOLDS=new Set();
+  try{ JSON.parse(localStorage.getItem('kabuobaa_favs')||'[]').forEach(function(c){FAVS.add(String(c));}); }catch(e){}
+  try{ JSON.parse(localStorage.getItem('kabuobaa_holdmarks')||'[]').forEach(function(c){HOLDS.add(String(c));}); }catch(e){}
+  try{ JSON.parse(localStorage.getItem('kabuobaa_holdings')||'[]').forEach(function(hd){ if(hd&&hd.code) HOLDS.add(String(hd.code)); }); }catch(e){}
+}
 
+var MODE_TITLE={sec:'業種カテゴリ', pick:'今夜の厳選', mine:'マイ銘柄（★・持ち株）', mkt:'市場区分'};
 function legend(){
   var el=document.getElementById('legend'), h='';
-  var nHid=Object.keys(hiddenG).filter(function(k){return hiddenG[k];}).length;
+  var hid=HID[MODE];
+  var nHid=Object.keys(hid).filter(function(k){return hid[k];}).length;
   if(!CAM.legendOpen){
-    el.innerHTML='<div class="row lgopen">凡例と見方 ▸'+(nHid?'（業種フィルタ中）':'')+'</div>';
+    el.innerHTML='<div class="row lgopen">凡例と見方 ▸'+(nHid?'（絞り込み中）':'')+'</div>';
     el.querySelector('.lgopen').addEventListener('click',function(){
       CAM.legendOpen=true; saveCam(); legend();
     });
     return;
   }
   h+='<div class="t lgh">凡例と見方 <span class="lgx">▾ たたむ</span></div>';
-  if(MODE==='sec'){
-    h+='<div class="t">業種カテゴリ（タップで表示/非表示）</div>';
-    for(var i=0;i<GROUPS.length;i++)
-      h+='<div class="row gtog'+(hiddenG[i]?' off':'')+'" data-g="'+i+'"><span class="sw" style="background:'+PAL[i%PAL.length]+'"></span>'+esc(GROUPS[i])+'</div>';
-    if(nHid) h+='<div class="row gclear">▶ 非表示 '+nHid+'件をすべて戻す</div>';
-  }else if(MODE==='pbr'){
-    h+='<div class="t">割安度（PBR）</div>'
-     +'<div class="row"><span class="sw" style="background:#4dd7ff"></span>0.7倍未満（超割安圏）</div>'
-     +'<div class="row"><span class="sw" style="background:#3ddc97"></span>1倍割れ</div>'
-     +'<div class="row"><span class="sw" style="background:#8fa0b8"></span>1〜2倍（標準）</div>'
-     +'<div class="row"><span class="sw" style="background:#ffc14d"></span>2〜4倍</div>'
-     +'<div class="row"><span class="sw" style="background:#ff5a76"></span>4倍以上</div>';
-  }else if(MODE==='tob'){
-    h+='<div class="t">TOB素地スコア</div>'
-     +'<div class="row"><span class="sw" style="background:#e0a9ff"></span>55点以上（素地が濃い）</div>'
-     +'<div class="row"><span class="sw" style="background:#b78cff"></span>40〜54点</div>'
-     +'<div class="row"><span class="sw" style="background:#7a6fd8"></span>25〜39点</div>'
-     +'<div class="row"><span class="sw" style="background:#33405c"></span>それ以下・判定不能</div>';
-  }else{
-    h+='<div class="t">今夜の厳選</div>'
-     +'<div class="row"><span class="sw" style="background:#3ddc97"></span>三層合格（厳選・帳簿入り）</div>'
-     +'<div class="row"><span class="sw" style="background:#4dd7ff"></span>高スコア候補</div>'
-     +'<div class="row"><span class="sw" style="background:#33405c"></span>その他</div>';
-  }
-  if(MODE!=='sec'&&nHid) h+='<div class="row gclear">▶ 業種フィルタ中（'+nHid+'件非表示）・タップで解除</div>';
+  h+='<div class="t">'+MODE_TITLE[MODE]+'（タップで表示/非表示）</div>';
+  var cats=catsOf();
+  for(var i=0;i<cats.length;i++)
+    h+='<div class="row gtog'+(hid[i]?' off':'')+'" data-g="'+i+'"><span class="sw" style="background:'+cats[i].color+'"></span>'+esc(cats[i].label)+'</div>';
+  h+='<div class="row lgall"><span class="lgbtn" data-a="show">全て表示</span><span class="lgbtn" data-a="hide">全て非表示</span></div>';
+  if(MODE==='mine') h+='<div class="mean">★と持ち株は「今夜の厳選」「全銘柄台帳」で付けた印（この端末に保存）。「その他」を非表示にすると自分の銘柄だけの地図になります。</div>';
   h+='<div class="mean">この空間の見方: <b>近く＝体質と値動きが似ている</b> ・ 中心ほど平均的な銘柄、外側ほど個性が強い ・ 奥にある点は霧で薄く見えます（3D）</div>';
   el.innerHTML=h;
   el.querySelector('.lgx').addEventListener('click',function(){
@@ -1895,11 +1898,17 @@ function legend(){
   });
   el.querySelectorAll('.gtog').forEach(function(r){
     r.addEventListener('click',function(){
-      var g=+r.dataset.g; hiddenG[g]=!hiddenG[g]; legend();
+      var g=+r.dataset.g; hid[g]=!hid[g]; legend();
     });
   });
-  var gc=el.querySelector('.gclear');
-  if(gc) gc.addEventListener('click',function(){ hiddenG={}; legend(); });
+  el.querySelectorAll('.lgbtn').forEach(function(b){
+    b.addEventListener('click',function(){
+      var cats2=catsOf();
+      if(b.dataset.a==='show'){ HID[MODE]={}; }
+      else { for(var k3=0;k3<cats2.length;k3++) hid[k3]=true; }
+      legend();
+    });
+  });
 }
 
 /* ═══ stars ═══ */
@@ -2390,7 +2399,8 @@ fetch('map.json').then(function(r){
   if(!r.ok) throw new Error('map.jsonがまだ生成されていません');
   return r.json();
 }).then(function(j){
-  DATA=j; GROUPS=j.groups||[]; WHY=j.why||{}; AXES=j.axes||[];
+  DATA=j; GROUPS=j.groups||[]; WHY=j.why||{}; AXES=j.axes||[]; MARKETS=j.markets||[];
+  loadMine();
   if(j.dims){ var dn=document.getElementById('dimN'); if(dn) dn.textContent=j.dims; }
   document.getElementById('spin').classList.toggle('on',SPIN);
   ST=j.stocks.map(function(a,i){
