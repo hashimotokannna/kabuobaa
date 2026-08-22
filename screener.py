@@ -1241,6 +1241,845 @@ TOB_MISSING_NOTE = ("このスコアに入っていない決定的な要因: 親
 
 
 # ------------------------------------------------------------
+# 関連銘柄マップ: 全銘柄を「財務 × テクニカル × 値動きの連動」で
+# 高次元ベクトル化し、類似度グラフと3D埋め込み座標を計算する。
+# 専門家が頭の中でやる「似ている銘柄の連想」を機械化した空間。
+# 依存は numpy のみ（pandasに同梱・requirements変更不要）。
+# ------------------------------------------------------------
+SIM_WHY = [  # 類似の根拠フラグ（ビット順・フロントと共有）
+    (1,   "同業種"),
+    (2,   "企業規模が近い"),
+    (4,   "財務体質が近い"),
+    (8,   "割安度が近い"),
+    (16,  "値動きが連動"),
+    (32,  "高配当同士"),
+    (64,  "値動きの荒さが近い"),
+    (128, "同じ市場区分"),
+]
+
+
+def build_stock_map(detail_map, series=None, k_neighbors=8):
+    """detail_map から docs/map.json を生成し、各銘柄に similar(top5) を付与する。
+    返り値: マップに載せた銘柄数（素材不足なら 0）"""
+    import numpy as np
+
+    entries = [e for e in detail_map.values()
+               if e.get("status") != "fail" and e.get("close") is not None]
+    n = len(entries)
+    if n < 10:
+        return 0
+    codes = [e["code"] for e in entries]
+
+    # ---------- 数値特徴量（欠損は中央値で補完 → 1-99%でクリップ → 標準化） ----------
+    def fu(e):
+        return e.get("fund") or {}
+
+    def col(fn):
+        out = np.full(n, np.nan)
+        for i, e in enumerate(entries):
+            try:
+                v = fn(e)
+                if v is not None and math.isfinite(float(v)):
+                    out[i] = float(v)
+            except Exception:  # noqa: BLE001
+                pass
+        return out
+
+    cols = [
+        col(lambda e: math.log10(fu(e)["mcap_oku"]) if fu(e).get("mcap_oku") else None),
+        col(lambda e: math.log(max(0.05, fu(e)["pbr"])) if fu(e).get("pbr") is not None else None),
+        col(lambda e: math.log(min(150.0, fu(e)["per"])) if (fu(e).get("per") or 0) > 0 else None),
+        col(lambda e: fu(e).get("roe")),
+        col(lambda e: fu(e).get("equity_ratio")),
+        col(lambda e: fu(e).get("op_margin")),
+        col(lambda e: fu(e).get("div_yield")),
+        col(lambda e: fu(e).get("payout")),
+        col(lambda e: e.get("vol20")),
+        col(lambda e: e.get("pos1y")),
+        col(lambda e: e.get("drawdown_1y")),
+        col(lambda e: math.log10(e["turnover"]) if e.get("turnover") else None),
+    ]
+    X = np.stack(cols, axis=1)
+    for j in range(X.shape[1]):
+        c = X[:, j]
+        med = np.nanmedian(c)
+        if not np.isfinite(med):
+            med = 0.0
+        c = np.where(np.isfinite(c), c, med)
+        lo, hi = np.percentile(c, 1), np.percentile(c, 99)
+        c = np.clip(c, lo, hi)
+        sd = c.std()
+        X[:, j] = (c - c.mean()) / (sd if sd > 1e-9 else 1.0)
+
+    # 業種のone-hot（専門家の連想の第一軸「同業他社」を強めに効かせる）
+    secs = [e.get("sector") or "" for e in entries]
+    uniq_sec = sorted(set(secs))
+    S = np.zeros((n, len(uniq_sec)))
+    for i, s in enumerate(secs):
+        S[i, uniq_sec.index(s)] = 1.0
+    F = np.concatenate([X, S * 1.6], axis=1)  # 同業種は強めに・ただし異業種でも体質が瓜二つなら近傍に入れる
+
+    # ---------- 類似度①: 特徴ベクトルのコサイン ----------
+    Fn = F / (np.linalg.norm(F, axis=1, keepdims=True) + 1e-9)
+    cosS = (Fn @ Fn.T).astype(np.float32)
+
+    # ---------- 類似度②: 値動きの相関（直近130営業日の日次リターン） ----------
+    corr = None
+    if series:
+        date_map = {}
+        for i, c in enumerate(codes):
+            s = series.get(c)
+            if s and len(s[0]) >= 60:
+                date_map[i] = dict(zip(s[0], s[1]))
+        if len(date_map) >= 10:
+            all_dates = sorted({d for m in date_map.values() for d in m})[-130:]
+            P = np.full((len(all_dates), n), np.nan)
+            for i, m in date_map.items():
+                P[:, i] = [m.get(d, np.nan) for d in all_dates]
+            R = np.diff(P, axis=0) / np.where(np.isfinite(P[:-1]), P[:-1], np.nan)
+            mask = np.isfinite(R)
+            R0 = np.where(mask, R, 0.0)
+            cnt = mask.sum(0)
+            mu = R0.sum(0) / np.maximum(1, cnt)
+            Rc = np.where(mask, R - mu, 0.0)
+            sd = np.sqrt((Rc ** 2).sum(0) / np.maximum(1, cnt)) + 1e-12
+            Rn = (Rc / sd).astype(np.float32)
+            pair_cnt = (mask.astype(np.float32).T @ mask.astype(np.float32))
+            corr = (Rn.T @ Rn) / np.maximum(20.0, pair_cnt)
+            corr = np.clip(corr, -1.0, 1.0)
+
+    cosC = np.clip(cosS, -1, 1)
+    corr_ok = corr is not None
+    if corr_ok:
+        # 相関が計算できたペアだけ 0.55:0.45 で混合。できないペアはコサインのみ（%の物差しを揃える）
+        has = np.zeros(n, dtype=bool)
+        for i, c in enumerate(codes):
+            s2 = series.get(c) if series else None
+            has[i] = bool(s2 and len(s2[0]) >= 60)
+        pair_has = has[:, None] & has[None, :]
+        combined = np.where(pair_has, 0.55 * cosC + 0.45 * corr, cosC)
+    else:
+        combined = cosC.copy()
+        corr = np.zeros_like(cosS)
+    np.fill_diagonal(combined, -9.0)
+
+    # ---------- 近傍 top-k と「なぜ似ているか」フラグ ----------
+    kk = min(k_neighbors, n - 1)
+    nb_idx = np.argpartition(-combined, kk, axis=1)[:, :kk]
+    row = np.arange(n)[:, None]
+    order = np.argsort(-combined[row, nb_idx], axis=1)
+    nb_idx = nb_idx[row, order]
+
+    def _sf(v):
+        try:
+            v = float(v)
+            return v if math.isfinite(v) else None
+        except (TypeError, ValueError):
+            return None
+
+    def why_flags(i, j):
+        f = 0
+        if secs[i] and secs[i] == secs[j]:
+            f |= 1
+        mi, mj = _sf(fu(entries[i]).get("mcap_oku")), _sf(fu(entries[j]).get("mcap_oku"))
+        if mi and mj and mi > 0 and mj > 0 and abs(math.log10(mi) - math.log10(mj)) < 0.3:
+            f |= 2
+        ei, ej = _sf(fu(entries[i]).get("equity_ratio")), _sf(fu(entries[j]).get("equity_ratio"))
+        ri, rj = _sf(fu(entries[i]).get("roe")), _sf(fu(entries[j]).get("roe"))
+        if None not in (ei, ej, ri, rj) and abs(ei - ej) < 12 and abs(ri - rj) < 6:
+            f |= 4
+        pi, pj = _sf(fu(entries[i]).get("pbr")), _sf(fu(entries[j]).get("pbr"))
+        if pi and pj and pi > 0 and pj > 0 and abs(math.log(pi) - math.log(pj)) < 0.22:
+            f |= 8
+        if corr[i, j] >= 0.55:
+            f |= 16
+        di, dj = _sf(fu(entries[i]).get("div_yield")), _sf(fu(entries[j]).get("div_yield"))
+        if di is not None and dj is not None and di >= 3 and dj >= 3:
+            f |= 32
+        vi, vj = _sf(entries[i].get("vol20")), _sf(entries[j].get("vol20"))
+        if vi is not None and vj is not None and abs(vi - vj) < 0.5:
+            f |= 64
+        if entries[i].get("market") and entries[i].get("market") == entries[j].get("market"):
+            f |= 128
+        return f
+
+    # ---------- 3D埋め込み: PCA初期化 → 近傍引力・ランダム斥力の力学法（決定的） ----------
+    Fc = F - F.mean(0)
+    try:
+        U, sv, _ = np.linalg.svd(Fc, full_matrices=False)
+        pos = (U[:, :3] * sv[:3]).astype(np.float64)
+    except Exception:  # noqa: BLE001
+        pos = np.random.default_rng(0).normal(size=(n, 3))
+    pos = pos / (pos.std() + 1e-9)
+    rng = np.random.default_rng(42)
+    iters = 220 if n > 500 else 120
+    for it in range(iters):
+        target = pos[nb_idx].mean(axis=1)
+        ridx = rng.integers(0, n, (n, 6))
+        diff = pos[:, None, :] - pos[ridx]
+        dist2 = (diff ** 2).sum(-1, keepdims=True) + 1e-3
+        rep = (diff / dist2).mean(axis=1)
+        alpha = 0.14 * (1.0 - it / iters)
+        pos += alpha * (0.75 * (target - pos) + 0.45 * rep)
+    pos = pos - pos.mean(0)
+    pos = pos / (np.abs(pos).max() + 1e-9) * 2.6
+
+    # ---------- 出力 ----------
+    groups = sorted({SECTOR_GROUPS.get(s, DEFAULT_GROUP) for s in secs})
+    g_idx = {g: i for i, g in enumerate(groups)}
+    markets = sorted({e.get("market") or "" for e in entries})
+    m_idx = {m: i for i, m in enumerate(markets)}
+    stocks_out = []
+    for i, e in enumerate(entries):
+        f = fu(e)
+        nbs = []
+        for j in nb_idx[i]:
+            j = int(j)
+            sim01 = float(np.clip((combined[i, j] + 0.2) / 1.2, 0, 1))
+            nbs.extend([codes[j], round(sim01 * 100), why_flags(i, j)])
+        stocks_out.append([
+            e["code"], e["name"],
+            g_idx[SECTOR_GROUPS.get(secs[i], DEFAULT_GROUP)],
+            m_idx.get(e.get("market") or "", 0),
+            round(float(pos[i, 0]), 3), round(float(pos[i, 1]), 3), round(float(pos[i, 2]), 3),
+            (round(math.log10(f["mcap_oku"]), 2) if f.get("mcap_oku") else None),
+            (round(f["pbr"], 2) if f.get("pbr") is not None else None),
+            (int(round(e["score"])) if e.get("score") is not None else None),
+            e.get("tob"),
+            1 if e.get("tri") else 0,
+            round(e["close"], 1),
+            (round(e["drop_pct"], 1) if e.get("drop_pct") is not None else None),
+            e.get("status", ""),
+            nbs,
+        ])
+        # 詳細ページ用の「似ている銘柄」top5（根拠ラベル付き・優先順はマップ側と同一）
+        why_lut = dict(SIM_WHY)
+        prio = [16, 1, 4, 8, 2, 32, 64, 128]
+        sims = []
+        for j in nb_idx[i][:5]:
+            j = int(j)
+            flags = why_flags(i, j)
+            labels = [why_lut[b] for b in prio if flags & b][:3]
+            sims.append({"code": codes[j], "name": entries[j]["name"],
+                         "sim": round(float(np.clip((combined[i, j] + 0.2) / 1.2, 0, 1)) * 100),
+                         "why": labels,
+                         "ex": entries[j].get("status") in ("dead", "skip")})
+        e["similar"] = sims
+
+    payload = {
+        "generated_at": datetime.now(JST).isoformat(),
+        "groups": groups,
+        "markets": markets,
+        "why": {str(bit): lab for bit, lab in SIM_WHY},
+        "stocks": stocks_out,
+    }
+    DOCS.mkdir(exist_ok=True)
+    (DOCS / "map.json").write_text(json.dumps(payload, ensure_ascii=False,
+                                              separators=(",", ":")), encoding="utf-8")
+    print(f"  関連銘柄マップ: {n:,}銘柄を埋め込み（値動き相関 {'あり' if corr_ok else 'なし'}）")
+    return n
+
+
+MAP_TEMPLATE = r"""<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<link rel="apple-touch-icon" href="icon.png">
+<link rel="icon" type="image/png" href="icon.png">
+<title>関連銘柄マップ ｜ 株ノート</title>
+<style>
+:root{
+  --bg:#080b10; --panel:#0e1420; --panel2:#0b0f16;
+  --line:#1e293b; --line2:#2b3a52;
+  --tx:#dce5f2; --tx2:#8fa0b8; --dim:#6b7a91;
+  --cy:#4dd7ff; --gr:#3ddc97; --am:#ffc14d; --rd:#ff5a76; --pu:#b78cff; --bl:#5b8cff;
+}
+*{box-sizing:border-box; margin:0; padding:0; -webkit-tap-highlight-color:transparent;}
+html,body{height:100%; overflow:hidden; background:var(--bg);}
+body{color:var(--tx); font-family:"Hiragino Sans","Yu Gothic",system-ui,sans-serif;
+  font-size:13px; line-height:1.65; -webkit-font-smoothing:antialiased;}
+.mono{font-family:ui-monospace,Menlo,Consolas,monospace;}
+#app{display:flex; flex-direction:column; height:100%; height:100dvh;}
+
+.hdr{flex:none; display:flex; align-items:center; gap:10px; padding:0 12px; height:46px;
+  background:linear-gradient(180deg,#0d1219,#080b10); border-bottom:1px solid var(--line);}
+.hdr .back{color:var(--tx2); text-decoration:none; font-size:12px; font-weight:700; flex:none;}
+.hdr .logo{font-family:ui-monospace,Menlo,monospace; font-size:12px; font-weight:700;
+  letter-spacing:.2em; color:var(--cy); text-shadow:0 0 16px rgba(77,215,255,.4); flex:none;}
+.hdr .cnt{font-family:ui-monospace,Menlo,monospace; font-size:10px; color:var(--dim); letter-spacing:.08em;
+  margin-left:auto; flex:none;}
+
+.toolrow{flex:none; display:flex; gap:6px; align-items:center; padding:7px 10px;
+  background:var(--panel2); border-bottom:1px solid var(--line); overflow-x:auto;
+  -webkit-overflow-scrolling:touch; scrollbar-width:none;}
+.toolrow::-webkit-scrollbar{display:none;}
+.toolwrap{position:relative; flex:none;}
+.toolwrap::after{content:''; position:absolute; right:0; top:0; bottom:0; width:36px;
+  background:linear-gradient(90deg, rgba(11,15,22,0), #0b0f16); pointer-events:none;}
+.srchwrap{position:relative; flex:none;}
+.srch{width:168px; background:#0a0f18; border:1px solid var(--line2); border-radius:6px;
+  color:var(--tx); font-size:13px; padding:6px 9px; outline:none;}
+.srch:focus{border-color:var(--cy);}
+.sugg{position:absolute; left:0; top:34px; width:238px; background:#0d1420; border:1px solid var(--line2);
+  border-radius:6px; z-index:40; max-height:250px; overflow-y:auto; display:none;
+  box-shadow:0 10px 34px rgba(0,0,0,.5);}
+.sugg.show{display:block;}
+.sugg .it{padding:7px 10px; font-size:12px; cursor:pointer; border-top:1px solid #131a28;}
+.sugg .it:first-child{border-top:none;}
+.sugg .it:hover{background:#141d2e;}
+.sugg .it small{color:var(--dim); font-family:ui-monospace,Menlo,monospace; margin-left:5px;}
+.modes{display:flex; border:1px solid var(--line2); border-radius:6px; overflow:hidden; flex:none;}
+.modes button{border:0; padding:6px 10px; font-size:10.5px; font-weight:700; letter-spacing:.06em;
+  background:transparent; color:var(--dim); cursor:pointer; white-space:nowrap;}
+.modes button.on{background:var(--cy); color:#06131a;}
+.tbtn{flex:none; border:1px solid var(--line2); border-radius:6px; background:transparent;
+  color:var(--tx2); font-size:10.5px; font-weight:700; padding:6px 9px; cursor:pointer; white-space:nowrap;}
+.tbtn.on{border-color:var(--cy); color:var(--cy);}
+
+.main{flex:1; display:flex; min-height:0; position:relative;}
+#stage{flex:1; position:relative; min-width:0; overflow:hidden;
+  background:radial-gradient(120% 90% at 50% 40%, #0d141f 0%, #080b10 70%);}
+canvas{display:block; width:100%; height:100%; cursor:grab; touch-action:none;}
+canvas.drag{cursor:grabbing;}
+
+.legend{position:absolute; left:10px; bottom:10px; pointer-events:none;
+  background:rgba(9,13,19,.78); backdrop-filter:blur(6px); border:1px solid var(--line);
+  border-radius:6px; padding:7px 10px; max-width:230px; z-index:5;}
+.legend .t{font-size:9.5px; font-weight:700; color:var(--dim); letter-spacing:.14em; margin-bottom:3px;}
+.legend .row{display:flex; align-items:center; gap:6px; font-size:10.5px; color:var(--tx2); padding:1px 0;}
+.legend .sw{width:9px; height:9px; border-radius:50%; flex:none;}
+.hint{position:absolute; right:10px; top:10px; pointer-events:none; font-size:10px; color:var(--dim);
+  background:rgba(9,13,19,.7); border:1px solid var(--line); border-radius:6px; padding:5px 9px; z-index:5;}
+
+.panel{flex:none; width:0; overflow:hidden; background:var(--panel); border-left:1px solid var(--line);
+  transition:width .18s ease; display:flex; flex-direction:column;}
+.panel.show{width:320px;}
+.pbody{flex:1; overflow-y:auto; padding:14px; min-width:290px;}
+.pclose{position:absolute; right:10px; top:10px; border:1px solid var(--line2); background:transparent;
+  color:var(--dim); border-radius:5px; font-size:12px; padding:2px 8px; cursor:pointer;}
+.pn{font-size:17px; font-weight:800; color:#eaf3ff; padding-right:40px; line-height:1.4;}
+.pc{font-family:ui-monospace,Menlo,monospace; font-size:11px; color:var(--dim); margin-bottom:8px;}
+.pfacts{display:flex; flex-wrap:wrap; gap:5px; margin-bottom:12px;}
+.pf{font-size:10.5px; color:var(--tx2); background:#101828; border:1px solid var(--line);
+  border-radius:5px; padding:3px 8px;}
+.ph{font-size:10px; font-weight:700; color:var(--dim); letter-spacing:.16em; margin:12px 0 6px;}
+.nb{display:block; background:#0f1624; border:1px solid var(--line); border-radius:8px;
+  padding:8px 10px; margin-bottom:6px; cursor:pointer;}
+.nb:hover{border-color:var(--line2);}
+.nb .nbn{font-size:13px; font-weight:700; color:#e8f1ff;}
+.nb .nbn small{font-family:ui-monospace,Menlo,monospace; color:var(--dim); font-weight:400; margin-left:5px;}
+.nb .sim{float:right; font-family:ui-monospace,Menlo,monospace; font-size:12px; font-weight:700; color:var(--cy);}
+.nb .why{margin-top:3px; display:flex; flex-wrap:wrap; gap:4px;}
+.nb .wt{font-size:9px; font-weight:700; color:#9fd8b4; background:rgba(61,220,151,.1);
+  border:1px solid rgba(61,220,151,.28); border-radius:4px; padding:1px 6px;}
+.nb .wt.mv{color:#ffd9a3; background:rgba(255,193,77,.1); border-color:rgba(255,193,77,.3);}
+.plinks{display:flex; gap:6px; margin-top:12px;}
+.plink{flex:1; display:block; text-align:center; text-decoration:none; font-size:11.5px; font-weight:700;
+  color:var(--cy); border:1px solid var(--line2); border-radius:7px; padding:8px 4px;}
+.plink.y{color:var(--am);}
+
+/* モバイル: パネルは下からのシート */
+@media (max-width: 760px){
+  .main{flex-direction:column;}
+  body.focused .legend{display:none;}
+  .panel{width:100%; border-left:none; border-top:1px solid var(--line);
+    transition:height .18s ease; height:0;}
+  .panel.show{width:100%; height:46%;}
+  .pbody{min-width:0;}
+  .legend{max-width:180px;}
+  .srch{width:132px;}
+}
+.intro{position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
+  background:rgba(8,11,16,.86); z-index:30; padding:20px;}
+.introcard{max-width:430px; background:var(--panel); border:1px solid var(--line2); border-radius:12px;
+  padding:20px 22px; box-shadow:0 20px 60px rgba(0,0,0,.5);}
+.introcard h1{font-size:16px; color:var(--cy); margin-bottom:10px; letter-spacing:.04em;}
+.introcard p{font-size:12px; color:var(--tx2); line-height:1.9; margin-bottom:8px;}
+.introcard b{color:var(--tx);}
+.gostart{width:100%; margin-top:8px; border:none; border-radius:8px; background:var(--cy); color:#06131a;
+  font-size:14px; font-weight:800; padding:11px; cursor:pointer;}
+.nointro{display:block; margin-top:8px; text-align:center; font-size:10.5px; color:var(--dim);
+  background:none; border:none; cursor:pointer; width:100%;}
+#loading{position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
+  color:var(--dim); font-family:ui-monospace,Menlo,monospace; font-size:12px; letter-spacing:.2em; z-index:20;}
+</style>
+</head>
+<body>
+<div id="app">
+  <div class="hdr">
+    <a class="back" href="index.html">‹ 株ノート</a>
+    <div class="logo">関連銘柄マップ</div>
+    <div class="cnt mono" id="cnt">…</div>
+  </div>
+  <div class="toolwrap"><div class="toolrow">
+    <div class="srchwrap">
+      <input id="q" class="srch" type="search" placeholder="銘柄名・コード検索" autocomplete="off">
+      <div id="sugg" class="sugg"></div>
+    </div>
+    <div class="modes" id="modes">
+      <button data-m="sec" class="on">業種</button>
+      <button data-m="pbr">割安度</button>
+      <button data-m="tob">TOB素地</button>
+      <button data-m="pick">今夜の厳選</button>
+    </div>
+    <button class="tbtn on" id="spin">自動回転</button>
+    <button class="tbtn" id="reset">視点リセット</button>
+    <button class="tbtn on" id="showex">除外も表示</button>
+  </div></div>
+  <div class="main">
+    <div id="stage">
+      <canvas id="cv"></canvas>
+      <div id="loading">LOADING MAP…</div>
+      <div class="hint">ドラッグ=回転 ・ ホイール/ピンチ=拡大 ・ タップ=銘柄</div>
+      <div class="legend" id="legend"></div>
+    </div>
+    <div class="panel" id="panel">
+      <div class="pbody" style="position:relative">
+        <button class="pclose" id="pclose">✕</button>
+        <div id="pcontent"></div>
+      </div>
+    </div>
+  </div>
+</div>
+<div class="intro" id="intro" style="display:none">
+  <div class="introcard">
+    <h1>◈ 関連銘柄マップ ── 銘柄の意味空間</h1>
+    <p>全銘柄を<b>財務体質 × テクニカル × 値動きの連動</b>という高次元のパラメータでベクトル化し、
+    似ている銘柄が近くに集まるように3D空間へ配置しました。</p>
+    <p>専門家が「この銘柄に似た会社といえば…」と頭の中で連想する動きを、機械の埋め込み空間で再現したものです。</p>
+    <p><b>タップした銘柄</b>から光の糸が伸びる先が「発想が繋がる銘柄」。なぜ似ているか（同業種・値動きが連動・財務体質が近い…）も表示されます。</p>
+    <button class="gostart" id="gostart">空間に入る</button>
+    <button class="nointro" id="nointro">次回からこの説明を表示しない</button>
+  </div>
+</div>
+<script>
+(function(){
+'use strict';
+/* ═══ palette ═══ */
+var PAL=['#4dd7ff','#ff5a76','#3ddc97','#ffc14d','#b78cff','#ff9c6b','#5b8cff','#ffe066','#a8e05f','#f28ab5','#e8c49a','#66d9c2'];
+function rgbaOf(hex,a){
+  var c=[parseInt(hex.slice(1,3),16),parseInt(hex.slice(3,5),16),parseInt(hex.slice(5,7),16)];
+  return 'rgba('+c[0]+','+c[1]+','+c[2]+','+a+')';
+}
+/* ═══ state ═══ */
+var DATA=null, ST=[], byCode={}, GROUPS=[], WHY={};
+var MODE='sec', SHOW_EX=true, SPIN=true;
+var rotY=0.6, rotX=0.32, zoom=1, autoT=0;
+var focusI=-1, fEdges=[];
+var W=0,H=0,DPR=1;
+var cv=document.getElementById('cv'), ctx=cv.getContext('2d');
+
+function resize(){
+  var st=document.getElementById('stage');
+  DPR=Math.min(2,window.devicePixelRatio||1);
+  W=st.clientWidth; H=st.clientHeight;
+  cv.width=W*DPR; cv.height=H*DPR;
+  ctx.setTransform(DPR,0,0,DPR,0,0);
+}
+window.addEventListener('resize',resize);
+
+/* ═══ projection ═══ */
+function projAll(){
+  var cy=Math.cos(rotY), sy=Math.sin(rotY), cx=Math.cos(rotX), sx=Math.sin(rotX);
+  var sc=Math.min(W,H)*0.19*zoom;
+  for(var i=0;i<ST.length;i++){
+    var s=ST[i];
+    var x=s.x*cy+s.z*sy, z=-s.x*sy+s.z*cy, y=s.y;
+    var y2=y*cx-z*sx, z2=y*sx+z*cx;
+    var f=4.6/(4.6-z2*0.85);
+    s.px=W/2+x*f*sc; s.py=H/2-y2*f*sc; s.pz=z2; s.pf=f;
+  }
+}
+function fogA(s){ return Math.max(0.18, Math.min(1, 0.62-0.3*s.pz+0.38)); }
+
+/* ═══ colors ═══ */
+function colPBR(p){
+  if(p==null) return '#3a4658';
+  if(p<0.7) return '#4dd7ff';
+  if(p<1.0) return '#3ddc97';
+  if(p<2.0) return '#8fa0b8';
+  if(p<4.0) return '#ffc14d';
+  return '#ff5a76';
+}
+function colTOB(t){
+  if(t==null) return '#3a4658';
+  if(t>=55) return '#e0a9ff';
+  if(t>=40) return '#b78cff';
+  if(t>=25) return '#7a6fd8';
+  if(t>=12) return '#4a5a8a';
+  return '#33405c';
+}
+function colorOf(s){
+  if(MODE==='sec') return PAL[s.g%PAL.length];
+  if(MODE==='pbr') return colPBR(s.pbr);
+  if(MODE==='tob') return colTOB(s.tob);
+  if(MODE==='pick') return s.tri? '#3ddc97' : (s.score!=null && s.score>=120? '#4dd7ff' : '#33405c');
+  return '#8fa0b8';
+}
+function refreshColors(){ for(var i=0;i<ST.length;i++) ST[i].col=colorOf(ST[i]); legend(); }
+
+function legend(){
+  var el=document.getElementById('legend'), h='';
+  if(MODE==='sec'){
+    h='<div class="t">業種カテゴリ</div>';
+    for(var i=0;i<GROUPS.length;i++)
+      h+='<div class="row"><span class="sw" style="background:'+PAL[i%PAL.length]+'"></span>'+esc(GROUPS[i])+'</div>';
+  }else if(MODE==='pbr'){
+    h='<div class="t">割安度（PBR）</div>'
+     +'<div class="row"><span class="sw" style="background:#4dd7ff"></span>0.7倍未満（超割安圏）</div>'
+     +'<div class="row"><span class="sw" style="background:#3ddc97"></span>1倍割れ</div>'
+     +'<div class="row"><span class="sw" style="background:#8fa0b8"></span>1〜2倍（標準）</div>'
+     +'<div class="row"><span class="sw" style="background:#ffc14d"></span>2〜4倍</div>'
+     +'<div class="row"><span class="sw" style="background:#ff5a76"></span>4倍以上</div>';
+  }else if(MODE==='tob'){
+    h='<div class="t">TOB素地スコア</div>'
+     +'<div class="row"><span class="sw" style="background:#e0a9ff"></span>55点以上（素地が濃い）</div>'
+     +'<div class="row"><span class="sw" style="background:#b78cff"></span>40〜54点</div>'
+     +'<div class="row"><span class="sw" style="background:#7a6fd8"></span>25〜39点</div>'
+     +'<div class="row"><span class="sw" style="background:#33405c"></span>それ以下・判定不能</div>';
+  }else{
+    h='<div class="t">今夜の厳選</div>'
+     +'<div class="row"><span class="sw" style="background:#3ddc97"></span>三層合格（厳選・帳簿入り）</div>'
+     +'<div class="row"><span class="sw" style="background:#4dd7ff"></span>高スコア候補</div>'
+     +'<div class="row"><span class="sw" style="background:#33405c"></span>その他</div>';
+  }
+  el.innerHTML=h;
+}
+
+/* ═══ stars ═══ */
+var STARS=[];
+for(var i=0;i<150;i++){
+  var th=Math.random()*Math.PI*2, ph=Math.acos(Math.random()*2-1);
+  STARS.push({x:Math.sin(ph)*Math.cos(th)*30, y:Math.cos(ph)*22, z:Math.sin(ph)*Math.sin(th)*30,
+              tw:Math.random()*6.28, sz:Math.random()*1.1+0.4});
+}
+
+/* ═══ draw loop ═══ */
+var order=[], lastSort=0;
+function draw(ts){
+  ctx.clearRect(0,0,W,H);
+  var cy=Math.cos(rotY), sy=Math.sin(rotY);
+  for(var i=0;i<STARS.length;i++){
+    var st=STARS[i];
+    var x=st.x*cy+st.z*sy, z=-st.x*sy+st.z*cy;
+    if(z>0) continue;
+    var px=W/2+x*10, py=H/2-st.y*10;
+    if(px<-8||px>W+8||py<-8||py>H+8) continue;
+    ctx.globalAlpha=0.08+0.08*Math.sin(ts*0.0012+st.tw);
+    ctx.fillStyle='#9db8e8';
+    ctx.beginPath(); ctx.arc(px,py,st.sz,0,Math.PI*2); ctx.fill();
+  }
+  ctx.globalAlpha=1;
+  if(!ST.length) return;
+  projAll();
+  if(ts-lastSort>120){ order.sort(function(a,b){return ST[b].pz-ST[a].pz;}); lastSort=ts; }
+
+  var focused=focusI>=0, fset=null;
+  if(focused){
+    fset={}; fset[focusI]=1;
+    for(var e=0;e<fEdges.length;e++) fset[fEdges[e].j]=1;
+  }
+  /* edges first */
+  if(focused){
+    var F=ST[focusI];
+    for(var e2=0;e2<fEdges.length;e2++){
+      var ed=fEdges[e2], T=ST[ed.j];
+      if(!SHOW_EX && T.ex) continue;
+      var g=ctx.createLinearGradient(F.px,F.py,T.px,T.py);
+      g.addColorStop(0,rgbaOf('#4dd7ff',0.55));
+      g.addColorStop(1,rgbaOf(T.col,0.75));
+      ctx.strokeStyle=g; ctx.lineWidth=1+ed.sim/60;
+      ctx.beginPath(); ctx.moveTo(F.px,F.py); ctx.lineTo(T.px,T.py); ctx.stroke();
+      var t=(ts*0.0006+e2*0.17)%1;
+      var mx=F.px+(T.px-F.px)*t, my=F.py+(T.py-F.py)*t;
+      ctx.fillStyle='rgba(200,235,255,0.85)';
+      ctx.beginPath(); ctx.arc(mx,my,1.6,0,Math.PI*2); ctx.fill();
+    }
+  }
+  /* points */
+  var zf=Math.pow(zoom,0.5);
+  var glowMin=ST.length>1500?2.6:1.8;
+  for(var oi=0;oi<order.length;oi++){
+    var idx=order[oi], s=ST[idx];
+    if(!SHOW_EX && s.ex) continue;
+    if(s.px<-20||s.px>W+20||s.py<-20||s.py>H+20) continue;
+    var r=(1.1+s.size)*s.pf*zf;
+    var a=fogA(s)*(s.ex?0.45:1);
+    if(focused) a*= fset[idx]? 1 : 0.07;
+    if(a<0.02) continue;
+    if(fset&&fset[idx]){ r*=1.35; }
+    if(r>glowMin && a>0.25){
+      ctx.globalAlpha=a*0.22;
+      ctx.fillStyle=s.col;
+      ctx.beginPath(); ctx.arc(s.px,s.py,r*2.4,0,Math.PI*2); ctx.fill();
+    }
+    ctx.globalAlpha=a;
+    ctx.fillStyle=s.col;
+    ctx.beginPath(); ctx.arc(s.px,s.py,r,0,Math.PI*2); ctx.fill();
+    if(s.tri && MODE!=='pick' && r>1.6){
+      ctx.globalAlpha=a*0.9; ctx.strokeStyle='rgba(255,255,255,.7)'; ctx.lineWidth=0.8;
+      ctx.beginPath(); ctx.arc(s.px,s.py,r+1.6,0,Math.PI*2); ctx.stroke();
+    }
+  }
+  ctx.globalAlpha=1;
+  /* focus label */
+  if(focused){
+    var FS=ST[focusI];
+    var lr=(1.1+FS.size)*FS.pf*Math.pow(zoom,0.5)*1.35;
+    ctx.strokeStyle='rgba(77,215,255,.9)'; ctx.lineWidth=1.4;
+    ctx.beginPath(); ctx.arc(FS.px,FS.py,lr+3.5+Math.sin(ts*0.004)*1.2,0,Math.PI*2); ctx.stroke();
+    labelFor(FS,FS.name,15,'#eaf6ff');
+    for(var e3=0;e3<fEdges.length;e3++){
+      var TT=ST[fEdges[e3].j];
+      if(!SHOW_EX && TT.ex) continue;
+      labelFor(TT,TT.name,11.5,'#cfe0f5');
+    }
+  }
+}
+function labelFor(s,txt,fs,colr){
+  ctx.font='700 '+fs+'px "Hiragino Sans",sans-serif';
+  var w=ctx.measureText(txt).width;
+  ctx.fillStyle='rgba(6,10,16,.72)';
+  ctx.fillRect(s.px+8, s.py-fs, w+10, fs+7);
+  ctx.fillStyle=colr;
+  ctx.fillText(txt, s.px+13, s.py+3);
+}
+function loop(ts){
+  if(SPIN && Date.now()-lastPointer>1400){ rotY+=0.0016; }
+  draw(ts||0);
+  requestAnimationFrame(loop);
+}
+
+/* ═══ interaction ═══ */
+var lastPointer=0, dragging=false, lx=0, ly=0, moved=0;
+var pinchD=0, activePtrs=0, pinching=false;
+cv.addEventListener('pointerdown',function(e){
+  activePtrs++;
+  if(activePtrs>1){ pinching=true; dragging=false; }
+  else { dragging=true; moved=0; }
+  lx=e.clientX; ly=e.clientY; cv.classList.add('drag');
+  cv.setPointerCapture(e.pointerId); lastPointer=Date.now();
+});
+cv.addEventListener('pointermove',function(e){
+  if(pinching||!dragging) return;
+  var dx=e.clientX-lx, dy=e.clientY-ly;
+  moved+=Math.abs(dx)+Math.abs(dy);
+  rotY+=dx*0.0058; rotX+=dy*0.0046;
+  rotX=Math.max(-1.4,Math.min(1.4,rotX));
+  lx=e.clientX; ly=e.clientY; lastPointer=Date.now();
+});
+function endPointer(e, allowTap){
+  activePtrs=Math.max(0,activePtrs-1);
+  if(activePtrs===0){
+    if(allowTap && !pinching && dragging && moved<7) tapAt(e.clientX,e.clientY);
+    pinching=false; dragging=false; cv.classList.remove('drag');
+  }
+  lastPointer=Date.now();
+}
+cv.addEventListener('pointerup',function(e){ endPointer(e,true); });
+cv.addEventListener('pointercancel',function(e){ endPointer(e,false); });
+cv.addEventListener('wheel',function(e){
+  e.preventDefault();
+  zoom*=Math.pow(1.0015,-e.deltaY);
+  zoom=Math.max(0.35,Math.min(6,zoom)); lastPointer=Date.now();
+},{passive:false});
+cv.addEventListener('touchmove',function(e){
+  if(e.touches.length===2){
+    var d=Math.hypot(e.touches[0].clientX-e.touches[1].clientX, e.touches[0].clientY-e.touches[1].clientY);
+    if(pinchD>0){ zoom*=d/pinchD; zoom=Math.max(0.35,Math.min(6,zoom)); }
+    pinchD=d; dragging=false; lastPointer=Date.now();
+  }
+},{passive:true});
+cv.addEventListener('touchend',function(){ pinchD=0; });
+
+function tapAt(cx2,cyy){
+  var rect=cv.getBoundingClientRect();
+  var x=cx2-rect.left, y=cyy-rect.top;
+  var best=-1, bd=900;
+  for(var i=0;i<ST.length;i++){
+    var s=ST[i];
+    if(!SHOW_EX&&s.ex) continue;
+    var d=(s.px-x)*(s.px-x)+(s.py-y)*(s.py-y);
+    if(d<bd){ bd=d; best=i; }
+  }
+  if(best>=0) focusOn(best); else clearFocus();
+}
+
+/* ═══ focus & panel ═══ */
+function whyTags(flags){
+  var out=[], bits=[16,1,4,8,2,32,64,128];
+  for(var b=0;b<bits.length;b++){
+    if(flags & bits[b]){
+      var lab=WHY[String(bits[b])];
+      if(lab) out.push(lab);
+    }
+    if(out.length>=3) break;
+  }
+  return out;
+}
+function focusOn(i){
+  focusI=i; fEdges=[];
+  var s=ST[i];
+  for(var k=0;k<s.nb.length;k+=3){
+    var j=byCode[s.nb[k]];
+    if(j!=null) fEdges.push({j:j, sim:s.nb[k+1], flags:s.nb[k+2]});
+  }
+  var facts=[];
+  if(s.close!=null) facts.push('終値 '+s.close.toLocaleString()+'円');
+  if(s.pbr!=null) facts.push('PBR '+s.pbr+'倍');
+  if(s.msize!=null){
+    var oku=Math.pow(10,s.msize);
+    facts.push('時価総額 '+(oku>=10000?(oku/10000).toFixed(1)+'兆円':Math.round(oku).toLocaleString()+'億円'));
+  }
+  if(s.score!=null) facts.push('総合 '+s.score+'点');
+  if(s.tob!=null) facts.push('TOB素地 '+s.tob+'点');
+  if(s.drop!=null) facts.push('高値から −'+s.drop+'%');
+  var mchip = s.tri? '<span class="pf" style="color:#3ddc97;border-color:rgba(61,220,151,.4)">三層合格（今夜の厳選圏）</span>':'';
+  var exchip = s.ex? '<span class="pf" style="color:#ffc14d;border-color:rgba(255,193,77,.4)">今夜の判定: 除外・対象外</span>':'';
+  var h='<div class="pn">'+esc(s.name)+'</div>'
+    +'<div class="pc">'+s.code+' ・ '+esc(GROUPS[s.g]||'')+'</div>'
+    +'<div class="pfacts">'+facts.map(function(f){return '<span class="pf">'+f+'</span>';}).join('')+mchip+exchip+'</div>'
+    +'<div class="ph">◈ 発想が繋がる銘柄（似ている順）</div>';
+  for(var e=0;e<fEdges.length;e++){
+    var t=ST[fEdges[e].j];
+    var tags=whyTags(fEdges[e].flags);
+    var exwarn = t.ex? '<span class="wt" style="color:#ffc14d;background:rgba(255,193,77,.1);border-color:rgba(255,193,77,.3)">今夜の判定は除外・対象外</span>' : '';
+    h+='<div class="nb" data-i="'+fEdges[e].j+'">'
+      +'<span class="sim">'+fEdges[e].sim+'%</span>'
+      +'<div class="nbn">'+esc(t.name)+'<small>'+esc(t.code)+'</small></div>'
+      +'<div class="why">'+tags.map(function(w,ix){return '<span class="wt'+(ix===0&&(fEdges[e].flags&16)?' mv':'')+'">'+esc(w)+'</span>';}).join('')+exwarn+'</div>'
+      +'</div>';
+  }
+  h+='<div class="plinks">'
+    +'<a class="plink y" href="https://finance.yahoo.co.jp/quote/'+s.code+'.T" target="_blank" rel="noopener">Yahoo!ファイナンス →</a>'
+    +'<a class="plink" href="universe.html?q='+s.code+'">台帳で判定を見る</a>'
+    +'</div>';
+  var pc=document.getElementById('pcontent');
+  pc.innerHTML=h;
+  pc.querySelectorAll('.nb').forEach(function(el){
+    el.addEventListener('click',function(){ focusOn(+el.dataset.i); });
+  });
+  document.getElementById('panel').classList.add('show');
+  document.body.classList.add('focused');
+  setTimeout(resize,200);
+}
+function clearFocus(){
+  focusI=-1; fEdges=[];
+  document.body.classList.remove('focused');
+  document.getElementById('panel').classList.remove('show');
+  setTimeout(resize,200);
+}
+document.getElementById('pclose').addEventListener('click',clearFocus);
+function esc(t){return String(t).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});}
+
+/* ═══ search ═══ */
+function normQ(s){
+  var t=(s||'').normalize('NFKC').toLowerCase();
+  t=t.replace(/[ぁ-ゖ]/g,function(ch){return String.fromCharCode(ch.charCodeAt(0)+0x60);});
+  t=t.replace(/[\s\-・.,、。()（）\[\]「」『』&\/]/g,'');
+  ['ホールディングス','ホールディング','グループ','株式会社','hd'].forEach(function(w){t=t.split(w).join('');});
+  return t;
+}
+var qEl=document.getElementById('q'), sugg=document.getElementById('sugg');
+qEl.addEventListener('input',function(){
+  var v=normQ(qEl.value.trim());
+  if(!v){ sugg.classList.remove('show'); return; }
+  var hits=[];
+  for(var i=0;i<ST.length&&hits.length<8;i++){
+    if(ST[i].norm.indexOf(v)>=0||ST[i].code.indexOf(v)>=0) hits.push(i);
+  }
+  if(!hits.length){ sugg.classList.remove('show'); return; }
+  sugg.innerHTML=hits.map(function(i){
+    return '<div class="it" data-i="'+i+'">'+esc(ST[i].name)+'<small>'+ST[i].code+'</small></div>';
+  }).join('');
+  sugg.classList.add('show');
+  sugg.querySelectorAll('.it').forEach(function(el){
+    el.addEventListener('click',function(){
+      sugg.classList.remove('show'); qEl.value='';
+      focusOn(+el.dataset.i);
+    });
+  });
+});
+document.addEventListener('click',function(e){
+  if(!e.target.closest('.srchwrap')) sugg.classList.remove('show');
+});
+
+/* ═══ toolbar ═══ */
+document.querySelectorAll('#modes button').forEach(function(b){
+  b.addEventListener('click',function(){
+    document.querySelectorAll('#modes button').forEach(function(x){x.classList.remove('on');});
+    b.classList.add('on'); MODE=b.dataset.m; refreshColors();
+  });
+});
+document.getElementById('spin').addEventListener('click',function(){
+  SPIN=!SPIN; this.classList.toggle('on',SPIN);
+});
+document.getElementById('reset').addEventListener('click',function(){
+  rotY=0.6; rotX=0.32; zoom=1;
+});
+document.getElementById('showex').addEventListener('click',function(){
+  SHOW_EX=!SHOW_EX; this.classList.toggle('on',SHOW_EX);
+});
+
+/* ═══ intro ═══ */
+var INTRO_KEY='kabuobaa_map_intro';
+function maybeIntro(){
+  var skip=false;
+  try{ skip=localStorage.getItem(INTRO_KEY)==='1'; }catch(e){}
+  if(!skip){ document.getElementById('intro').style.display='flex'; }
+}
+document.getElementById('gostart').addEventListener('click',function(){
+  document.getElementById('intro').style.display='none';
+});
+document.getElementById('nointro').addEventListener('click',function(){
+  try{ localStorage.setItem(INTRO_KEY,'1'); }catch(e){}
+  document.getElementById('intro').style.display='none';
+});
+
+/* ═══ load ═══ */
+fetch('map.json').then(function(r){
+  if(!r.ok) throw new Error('map.jsonがまだ生成されていません');
+  return r.json();
+}).then(function(j){
+  DATA=j; GROUPS=j.groups||[]; WHY=j.why||{};
+  ST=j.stocks.map(function(a,i){
+    var szRaw=a[7]; var size=szRaw==null?0.5:Math.max(0.2,(szRaw-1.2)*0.75);
+    return {code:a[0], name:a[1], g:a[2], m:a[3], x:a[4], y:a[5], z:a[6],
+      size:size, msize:szRaw, pbr:a[8], score:a[9], tob:a[10], tri:a[11]===1,
+      close:a[12], drop:a[13], status:a[14], nb:a[15]||[],
+      ex:(a[14]==='dead'||a[14]==='skip'), norm:normQ(a[1]), col:'#888', px:0,py:0,pz:0,pf:1};
+  });
+  byCode={}; ST.forEach(function(s,i){byCode[s.code]=i;});
+  order=ST.map(function(_,i){return i;});
+  var gTime='';
+  try{ var gd=new Date(j.generated_at); gTime=' ・ '+(gd.getMonth()+1)+'/'+gd.getDate()+' '+('0'+gd.getHours()).slice(-2)+':'+('0'+gd.getMinutes()).slice(-2)+'時点'; }catch(e){}
+  document.getElementById('cnt').textContent=ST.length.toLocaleString()+' STOCKS'+gTime;
+  document.getElementById('loading').style.display='none';
+  refreshColors();
+  resize();
+  var mq=new URLSearchParams(location.search).get('c');
+  if(mq&&byCode[mq]!=null){ focusOn(byCode[mq]); }
+  else { maybeIntro(); }
+}).catch(function(e){
+  document.getElementById('loading').textContent='⚠ '+e.message;
+});
+resize();
+requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>
+"""
+
+
+def render_map(map_n, dt):
+    """関連銘柄マップページ（map.json を読む独立アプリ。ダーク宇宙テーマ）"""
+    return MAP_TEMPLATE
+
+
+# ------------------------------------------------------------
 # 仮想実行: 「◎になったら翌日の始値で100株買い、+5000円の指値で売る」
 # を過去1年の日足でなぞる（検証レポート用）
 # ------------------------------------------------------------
@@ -1805,6 +2644,7 @@ def run_screening():
 
     candidates, dead_count, skip_count, fail_count = [], 0, 0, 0
     all_results, sim_records, sim_universe = [], [], []
+    map_series = {}  # 関連銘柄マップ用: 全銘柄の直近130営業日の終値
     slagg = {v: {"sl": v, "tp_count": 0, "sl_count": 0, "realized": 0.0,
                  "open": 0, "open_pnl": 0.0, "open_worst": 0.0, "open_held_sum": 0} for v in SL_VARIANTS}
     factor_stats = {k: {"with": [0, 0], "without": [0, 0]}
@@ -1835,6 +2675,8 @@ def run_screening():
                 **stock, **m, "status": status, "reason": reason,
                 "days": days[-10:], "long": long_m,
             }
+            map_series[stock["code"]] = ([d["date"] for d in days[-130:]],
+                                         [d["close"] for d in days[-130:]])
             if status == "dead":
                 dead_count += 1
                 all_results.append({**base, "status": "dead", "reason": reason})
@@ -2042,6 +2884,7 @@ def run_screening():
     extras = {"factor_stats": factor_stats, "market": market,
               "fund_available": fund_ok, "detail_map": detail_map,
               "clean_ranked": clean_ranked, "soon": soon_list,
+              "map_series": map_series,
               "clean_stats": {"screened": len(detail_map),
                               "flawless": sum(1 for e in detail_map.values() if e.get("demerit") == 0)}}
     return picked, stats, all_results, sim_records, portfolio, slstats, extras
@@ -2286,8 +3129,33 @@ def make_demo_data():
     detail_map["6800"] = {"code": "6800", "name": "デモ右肩下がり", "market": "スタンダード",
                           "sector": "電気機器", "suffix": ".T", "status": "dead",
                           "reason": "1年高値から55%下落", "days": [], "long": {}}
+    # マップ用の疑似値動き（同業種は共通ファクターで連動させ、相関類似が機能することを確認できるように）
+    map_series = {}
+    from datetime import date as _d2, timedelta as _td2
+    _days130 = []
+    _d = _d2(2026, 8, 21)
+    while len(_days130) < 130:
+        if _d.weekday() < 5:
+            _days130.append(_d.isoformat())
+        _d -= _td2(days=1)
+    _days130.reverse()
+    _mkt_path = [rng.gauss(0, 1) for _ in range(130)]
+    _sec_factor = {}
+    for s in picked:
+        sec = s["sector"]
+        if sec not in _sec_factor:
+            _sec_factor[sec] = [rng.gauss(0, 1) for _ in range(130)]
+        fpath = _sec_factor[sec]
+        px = s["close"]
+        ser = []
+        for k in range(130):
+            px *= 1 + 0.004 * _mkt_path[k] + 0.007 * fpath[k] + rng.gauss(0, 0.009)
+            ser.append(px)
+        scale = s["close"] / ser[-1]
+        map_series[s["code"]] = (_days130, [round(v * scale, 1) for v in ser])
     extras = {
         "detail_map": detail_map,
+        "map_series": map_series,
         "clean_ranked": clean_ranked, "soon": soon_list,
         "clean_stats": {"screened": 1480, "flawless": 3},
         "factor_stats": {
@@ -4122,6 +4990,14 @@ def render_universe(all_results, stats, dt):
   .linkrow .ylink{flex:1; min-width:45%; margin-top:0; border:none; cursor:pointer; font-family:inherit;}
   .ylink.sbi{color:#1a5c37; background:#e9f3ea;}
   .ylink.buy{color:#fff; background:#1c1c1e;}
+  .simrow{display:flex; align-items:center; gap:7px; font-size:11.5px; color:var(--ink);
+    text-decoration:none; padding:6px 0; border-bottom:1px dashed #f0ead9;}
+  .simrow b{flex:none; max-width:46%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+  .simrow .simw{flex:1; min-width:0; font-size:9.5px; color:var(--ink3); overflow:hidden;
+    text-overflow:ellipsis; white-space:nowrap; text-align:right;}
+  .simrow .simp{flex:none; font-weight:800; color:#2e4d7b;}
+  .simex{flex:none; font-size:9px; font-weight:800; color:#b06a00; background:#fdf3e3;
+    border-radius:4px; padding:1px 5px;}
 """ + SPARK_CSS + UPDATE_CSS + """
 """
     script = """<script>
@@ -4253,6 +5129,11 @@ function applySort(){
 document.getElementById('sort').addEventListener('change', applySort);
 const savedSort = localStorage.getItem('kabuobaa_usort');
 if (savedSort && cmp[savedSort]){ document.getElementById('sort').value = savedSort; applySort(); }
+// マップ等からの遷移: ?q=コード で検索欄に自動入力して該当銘柄を開く
+const qp = new URLSearchParams(location.search).get('q');
+if (qp){ const qe=document.getElementById('q'); qe.value=qp; apply();
+  const hit=rows.find(r=>r.dataset.code===qp);
+  if(hit){ hit.open=true; setTimeout(()=>hit.scrollIntoView({block:'center'}), 150); } }
 </script>"""
 
     weekdays = "月火水木金土日"
@@ -4550,6 +5431,7 @@ def render_guide(dt):
 <div class="gcard c-sub"><div class="gh">🧩 その他の機能（サブシステム）</div>
 <div class="gt">メインの4タブとは別に、使いたい人向けの補助機能です。</div>
 <a class="subbtn" href="holdings.html"><b>持ち株の管理</b><span>保有銘柄の登録 → 毎時の監視（利確／損切りライン到達を色で通知）→ 売却記録 → 通算成績（勝率・損益率）。「今夜の厳選」の「買った」ボタンからも登録できます</span></a>
+<a class="subbtn" href="map.html"><b>関連銘柄マップ（3D空間）</b><span>全銘柄を財務×テクニカル×値動きの高次元ベクトルで埋め込み、似ている銘柄が近くに並ぶ宇宙空間。銘柄をタップすると「発想が繋がる銘柄」へ光の糸が伸び、なぜ似ているかも表示</span></a>
 <a class="subbtn" href="tob.html"><b>TOB素地ランキング</b><span>買収・非公開化されやすい「体質」を診断士の定石（PBR・時価総額・ため込み度など9観点）で全銘柄採点した順位表。確率の予測ではなく、最後の確認は人間の役割</span></a>
 <a class="subbtn" href="backtest.html"><b>手法の検証レポート</b><span>採点ルールと売りルール自身の成績表。損切り%の最適比較（★）、持ち金別シミュレーション、どの根拠が実際に効いているかの実測</span></a></div>
 
@@ -4833,11 +5715,26 @@ def render_stock_detail(e):
                          f'<span>始:{d["open"]:,.0f} 高:{d["high"]:,.0f} '
                          f'安:{d["low"]:,.0f} 終:{d["close"]:,.0f}</span></div>')
 
+    sims = e.get("similar") or []
+    if sims:
+        parts.append('<div class="nhead">発想が繋がる・似ている銘柄（マップの近傍）</div>')
+        for sv in sims:
+            why = "・".join(sv.get("why") or []) or "総合的に近い"
+            exmark = '<span class="simex">除外中</span>' if sv.get("ex") else ""
+            parts.append(f'<a class="simrow" href="map.html?c={sv["code"]}">'
+                         f'<b>{html.escape(sv["name"])}</b> <span class="num">{sv["code"]}</span>{exmark}'
+                         f'<span class="simw">{html.escape(why)}</span>'
+                         f'<span class="num simp">{sv["sim"]}%</span></a>')
+        parts.append('<div class="discnote">「財務体質 × テクニカル × 値動きの連動」の高次元ベクトルで近い銘柄。'
+                     'タップすると関連銘柄マップの3D空間で、その銘柄を中心とした繋がりが開きます。'
+                     '「除外中」は今夜の判定で除外・対象外になっている銘柄（推奨ではありません）。</div>')
+
     yahoo_url = f'https://finance.yahoo.co.jp/quote/{e["code"]}{e.get("suffix", ".T")}'
     parts.append(f'<div class="linkrow">'
                  f'<a class="ylink" href="{yahoo_url}" target="_blank" rel="noopener">Yahoo!ファイナンス →</a>'
                  f'<button type="button" class="ylink sbi" onclick="openSBI(\'{e["code"]}\', event)">SBI証券アプリで見る</button>'
                  f'<a class="ylink buy" href="holdings.html?add={e["code"]}">買った→持ち株に登録</a>'
+                 f'<a class="ylink" href="map.html?c={e["code"]}">🗺 関連マップで見る</a>'
                  f'</div>')
     return "".join(parts)
 
@@ -5788,6 +6685,13 @@ def main():
         if e is not None and e.get("tob") is not None:
             r["tob"] = e["tob"]
             r["tob_announced"] = e.get("tob_announced", False)
+
+    # 関連銘柄マップ（高次元ベクトル化 → 3D埋め込み → 類似度グラフ）
+    try:
+        map_n = build_stock_map(detail_map_all, extras.get("map_series"))
+    except Exception as _map_ex:  # noqa: BLE001
+        print(f"  関連銘柄マップの生成に失敗（他のページは継続）: {_map_ex}")
+        map_n = 0
     data["soon"] = [{
         "code": s["code"], "name": s["name"], "market": s.get("market", ""),
         "close": round(s["close"], 1), "cost": round(s["close"] * 100),
@@ -5822,6 +6726,7 @@ def main():
     (DOCS / "indicators.html").write_text(render_indicators(dt_now), encoding="utf-8")
     (DOCS / "tob.html").write_text(
         render_tob(tob_ranked, len(detail_map_all), dt_now), encoding="utf-8")
+    (DOCS / "map.html").write_text(render_map(map_n, dt_now), encoding="utf-8")
     # 無傷ランキングは全銘柄一覧（絞り込み「無傷」・ソート「安全順」）に統合したため単独ページは廃止
     write_details(extras.get("detail_map") or {})
 
