@@ -1505,6 +1505,7 @@ def build_stock_map(detail_map, series=None, k_neighbors=8):
         "markets": markets,
         "why": {str(bit): lab for bit, lab in SIM_WHY},
         "axes": axes_meta,
+        "dims": int(F.shape[1]),
         "stocks": stocks_out,
     }
     DOCS.mkdir(exist_ok=True)
@@ -1570,6 +1571,8 @@ body{color:var(--tx); font-family:"Hiragino Sans","Yu Gothic",system-ui,sans-ser
 .sugg .it:first-child{border-top:none;}
 .sugg .it:hover{background:#141d2e;}
 .sugg .it small{color:var(--dim); font-family:ui-monospace,Menlo,monospace; margin-left:5px;}
+.sugg .cnt-it{padding:6px 10px; font-size:10px; color:var(--dim); font-weight:700;
+  border-bottom:1px solid #131a28; letter-spacing:.05em;}
 .modes{display:flex; border:1px solid var(--line2); border-radius:6px; overflow:hidden; flex:none;}
 .modes button{border:0; padding:6px 10px; font-size:10.5px; font-weight:700; letter-spacing:.06em;
   background:transparent; color:var(--dim); cursor:pointer; white-space:nowrap;}
@@ -1593,6 +1596,9 @@ canvas.drag{cursor:grabbing;}
 .legend .gtog{cursor:pointer;}
 .legend .gtog.off{opacity:.32; text-decoration:line-through;}
 .legend .gclear{cursor:pointer; color:var(--cy); font-weight:700;}
+.legend .lgh{display:flex; justify-content:space-between; gap:10px; align-items:baseline;}
+.legend .lgx{cursor:pointer; color:var(--cy); font-weight:700; letter-spacing:0;}
+.legend .lgopen{cursor:pointer; color:var(--cy); font-weight:700;}
 .legend .mean{margin-top:5px; padding-top:5px; border-top:1px solid var(--line);
   font-size:9.5px; color:var(--dim); line-height:1.6;}
 .legend .mean b{color:var(--tx2);}
@@ -1683,12 +1689,13 @@ canvas.drag{cursor:grabbing;}
     <button class="tbtn" id="reset">視点リセット</button>
     <button class="tbtn on" id="showex">除外も表示</button>
     <button class="tbtn" id="camset">⚙ カメラ設定</button>
+    <button class="tbtn" id="howbtn">❓ 仕組みと使い道</button>
   </div></div>
   <div class="main">
     <div id="stage">
       <canvas id="cv"></canvas>
       <div id="loading">LOADING MAP…</div>
-      <div class="hint">ドラッグ=回転 ・ ホイール/ピンチ=拡大 ・ タップ=銘柄</div>
+      <div class="hint" id="hint">1本指=回転 ・ 2本指=移動＆拡大 ・ ダブルタップ=ズーム ・ タップ=銘柄 <span id="hintx" style="pointer-events:auto; cursor:pointer; color:#4dd7ff; font-weight:700; margin-left:4px;">✕</span></div>
       <div class="legend" id="legend"></div>
     </div>
     <div class="panel" id="panel">
@@ -1697,6 +1704,22 @@ canvas.drag{cursor:grabbing;}
         <div id="pcontent"></div>
       </div>
     </div>
+  </div>
+</div>
+<div class="intro" id="howsheet" style="display:none">
+  <div class="introcard">
+    <h1>❓ この空間の仕組みと使い道</h1>
+    <p><b>仕組み</b> ── AIが言葉を数千次元のパラメータ（埋め込み）で扱い「意味の近い言葉を近くに置く」のと同じ発想です。
+    このマップは全銘柄をPER・PBR・ROE・配当利回り・自己資本比率・時価総額・値動きの荒さ・業種など
+    <b><span id="dimN">約45</span>次元のパラメータベクトル</b>にし、さらに直近130営業日の値動きの連動（相関）を混ぜて銘柄同士の距離を計算。
+    それを毎晩、似た銘柄が近くに来るように3次元へ圧縮しています。</p>
+    <p><b>使い道の具体例</b></p>
+    <p>① <b>乗り換え候補さがし</b> ── 気になる銘柄を検索してフォーカス。糸の先に「同じ体質でPBRがもっと安い」銘柄がいれば、比較検討の候補になります。</p>
+    <p>② <b>厳選銘柄の"仲間"を先回り</b> ── 色モードを「今夜の厳選」にして緑の点の周りを見る。近くの暗い点は<b>同じ体質でまだ買い場が来ていない</b>銘柄＝ウォッチリストの種です。</p>
+    <p>③ <b>ほんとうの分散投資</b> ── 持ち株同士がこの空間で近すぎたら、実は同じリスクを重ねて持っているだけかも。<b>離れた場所から選ぶと分散になります</b>。</p>
+    <p>④ <b>TOB素地の鉱脈</b> ── 色モードを「TOB素地」にすると、紫の濃い一角＝「安くて健全でため込み体質」の集団が浮かびます。</p>
+    <p style="color:#8fa0b8">注意: 距離は「体質と値動きの類似」です。取引関係・サプライチェーン・ニュースの繋がりはまだ含まれていません。</p>
+    <button class="gostart" id="howclose">閉じる</button>
   </div>
 </div>
 <div class="intro" id="camsheet" style="display:none">
@@ -1714,6 +1737,10 @@ canvas.drag{cursor:grabbing;}
       <button data-v="0">なし</button><button data-v="0.5">弱い</button><button data-v="1">標準</button></span></div>
     <div class="setrow"><span>座標軸の表示</span><span class="seg" data-k="axes">
       <button data-v="true">表示</button><button data-v="false">非表示</button></span></div>
+    <div class="setrow"><span>銘柄名の常時表示</span><span class="seg" data-k="labels">
+      <button data-v="true">表示</button><button data-v="false">非表示</button></span></div>
+    <div class="setrow"><span>つながり線（星座）</span><span class="seg" data-k="links">
+      <button data-v="true">表示</button><button data-v="false">非表示</button></span></div>
     <div class="setnote">霧は「奥にある点ほど薄く」の3D表現です。軸の名前は毎晩、実データとの相関から自動で付き直します。</div>
     <button class="gostart" id="camclose">閉じる</button>
   </div>
@@ -1725,6 +1752,7 @@ canvas.drag{cursor:grabbing;}
     似ている銘柄が近くに集まるように3D空間へ配置しました。</p>
     <p>専門家が「この銘柄に似た会社といえば…」と頭の中で連想する動きを、機械の埋め込み空間で再現したものです。</p>
     <p><b>タップした銘柄</b>から光の糸が伸びる先が「発想が繋がる銘柄」。なぜ似ているか（同業種・値動きが連動・財務体質が近い…）も表示されます。</p>
+    <p>詳しい仕組みと使い道の具体例は、上の「❓ 仕組みと使い道」からいつでも読めます。</p>
     <button class="gostart" id="gostart">空間に入る</button>
     <button class="nointro" id="nointro">次回からこの説明を表示しない</button>
   </div>
@@ -1741,11 +1769,13 @@ function rgbaOf(hex,a){
 /* ═══ state ═══ */
 var DATA=null, ST=[], byCode={}, GROUPS=[], WHY={}, AXES=[];
 var MODE='sec', SHOW_EX=true, SPIN=true;
-var rotY=0.6, rotX=0.32, zoom=1, autoT=0;
+var rotY=0.6, rotX=0.32, zoom=1, ox=0, oy=0, autoT=0;
 var focusI=-1, fEdges=[], hiddenG={}, camGoal=null;
+var EDGES=[], prio=[];
 /* カメラ設定（この端末に保存） */
 var CAM_KEY='kabuobaa_map_cam';
-var CAM={invX:false, invY:false, sens:1, spin:1, fog:1, axes:true, spinOn:true};
+var CAM={invX:false, invY:false, sens:1, spin:1, fog:1, axes:true, spinOn:true,
+         labels:true, links:true, legendOpen:true};
 try{ var cs=JSON.parse(localStorage.getItem(CAM_KEY)||'{}');
   for(var ck in CAM){ if(cs[ck]!==undefined) CAM[ck]=cs[ck]; } }catch(e){}
 SPIN=CAM.spinOn!==false;
@@ -1779,7 +1809,7 @@ function projAll(){
     var x=s.x*cy+s.z*sy, z=-s.x*sy+s.z*cy, y=s.y;
     var y2=y*cx-z*sx, z2=y*sx+z*cx;
     var f=4.6/(4.6-z2*0.85);
-    s.px=W/2+x*f*sc; s.py=H/2-y2*f*sc; s.pz=z2; s.pf=f;
+    s.px=W/2+x*f*sc+ox; s.py=H/2-y2*f*sc+oy; s.pz=z2; s.pf=f;
   }
 }
 function fogA(s){
@@ -1792,7 +1822,7 @@ function projPt(x,y,z){
   var sc=Math.min(W,H)*0.19*zoom;
   var x2=x*cy+z*sy, z1=-x*sy+z*cy, y2=y*cx-z1*sx, z2=y*sx+z1*cx;
   var f=4.6/(4.6-z2*0.85);
-  return {x:W/2+x2*f*sc, y:H/2-y2*f*sc, pz:z2, f:f};
+  return {x:W/2+x2*f*sc+ox, y:H/2-y2*f*sc+oy, pz:z2, f:f};
 }
 
 /* ═══ colors ═══ */
@@ -1825,26 +1855,34 @@ function refreshColors(){ for(var i=0;i<ST.length;i++) ST[i].col=colorOf(ST[i]);
 function legend(){
   var el=document.getElementById('legend'), h='';
   var nHid=Object.keys(hiddenG).filter(function(k){return hiddenG[k];}).length;
+  if(!CAM.legendOpen){
+    el.innerHTML='<div class="row lgopen">凡例と見方 ▸'+(nHid?'（業種フィルタ中）':'')+'</div>';
+    el.querySelector('.lgopen').addEventListener('click',function(){
+      CAM.legendOpen=true; saveCam(); legend();
+    });
+    return;
+  }
+  h+='<div class="t lgh">凡例と見方 <span class="lgx">▾ たたむ</span></div>';
   if(MODE==='sec'){
-    h='<div class="t">業種カテゴリ（タップで表示/非表示）</div>';
+    h+='<div class="t">業種カテゴリ（タップで表示/非表示）</div>';
     for(var i=0;i<GROUPS.length;i++)
       h+='<div class="row gtog'+(hiddenG[i]?' off':'')+'" data-g="'+i+'"><span class="sw" style="background:'+PAL[i%PAL.length]+'"></span>'+esc(GROUPS[i])+'</div>';
     if(nHid) h+='<div class="row gclear">▶ 非表示 '+nHid+'件をすべて戻す</div>';
   }else if(MODE==='pbr'){
-    h='<div class="t">割安度（PBR）</div>'
+    h+='<div class="t">割安度（PBR）</div>'
      +'<div class="row"><span class="sw" style="background:#4dd7ff"></span>0.7倍未満（超割安圏）</div>'
      +'<div class="row"><span class="sw" style="background:#3ddc97"></span>1倍割れ</div>'
      +'<div class="row"><span class="sw" style="background:#8fa0b8"></span>1〜2倍（標準）</div>'
      +'<div class="row"><span class="sw" style="background:#ffc14d"></span>2〜4倍</div>'
      +'<div class="row"><span class="sw" style="background:#ff5a76"></span>4倍以上</div>';
   }else if(MODE==='tob'){
-    h='<div class="t">TOB素地スコア</div>'
+    h+='<div class="t">TOB素地スコア</div>'
      +'<div class="row"><span class="sw" style="background:#e0a9ff"></span>55点以上（素地が濃い）</div>'
      +'<div class="row"><span class="sw" style="background:#b78cff"></span>40〜54点</div>'
      +'<div class="row"><span class="sw" style="background:#7a6fd8"></span>25〜39点</div>'
      +'<div class="row"><span class="sw" style="background:#33405c"></span>それ以下・判定不能</div>';
   }else{
-    h='<div class="t">今夜の厳選</div>'
+    h+='<div class="t">今夜の厳選</div>'
      +'<div class="row"><span class="sw" style="background:#3ddc97"></span>三層合格（厳選・帳簿入り）</div>'
      +'<div class="row"><span class="sw" style="background:#4dd7ff"></span>高スコア候補</div>'
      +'<div class="row"><span class="sw" style="background:#33405c"></span>その他</div>';
@@ -1852,6 +1890,9 @@ function legend(){
   if(MODE!=='sec'&&nHid) h+='<div class="row gclear">▶ 業種フィルタ中（'+nHid+'件非表示）・タップで解除</div>';
   h+='<div class="mean">この空間の見方: <b>近く＝体質と値動きが似ている</b> ・ 中心ほど平均的な銘柄、外側ほど個性が強い ・ 奥にある点は霧で薄く見えます（3D）</div>';
   el.innerHTML=h;
+  el.querySelector('.lgx').addEventListener('click',function(){
+    CAM.legendOpen=false; saveCam(); legend();
+  });
   el.querySelectorAll('.gtog').forEach(function(r){
     r.addEventListener('click',function(){
       var g=+r.dataset.g; hiddenG[g]=!hiddenG[g]; legend();
@@ -1895,6 +1936,32 @@ function draw(ts){
     fset={}; fset[focusI]=1;
     for(var e=0;e<fEdges.length;e++) fset[fEdges[e].j]=1;
   }
+  /* 常時のつながり線（星座）: 強い類似ペアだけを淡く。フォーカス中は消して主役の糸に譲る。
+     描画はアルファ3段階のバケツにまとめて3ストロークで済ませる（4000銘柄でも60fps） */
+  if(CAM.links && !focused && EDGES.length){
+    var EB0=[],EB1=[],EB2=[];
+    for(var ei=0;ei<EDGES.length;ei++){
+      var EA=ST[EDGES[ei][0]], EBv=ST[EDGES[ei][1]];
+      if(!SHOW_EX&&(EA.ex||EBv.ex)) continue;
+      if(isHidden(EA)||isHidden(EBv)) continue;
+      if((EA.px<0&&EBv.px<0)||(EA.px>W&&EBv.px>W)||(EA.py<0&&EBv.py<0)||(EA.py>H&&EBv.py>H)) continue;
+      var eal=(0.045+0.07*(EDGES[ei][2]-50)/50)*Math.min(fogA(EA),fogA(EBv));
+      if(eal<0.02) continue;
+      (eal<0.05?EB0:(eal<0.085?EB1:EB2)).push(EA.px,EA.py,EBv.px,EBv.py);
+    }
+    ctx.lineWidth=0.7;
+    var bAls=[0.035,0.065,0.1], bArr=[EB0,EB1,EB2];
+    for(var bi=0;bi<3;bi++){
+      var arr2=bArr[bi];
+      if(!arr2.length) continue;
+      ctx.strokeStyle='rgba(122,168,228,'+bAls[bi]+')';
+      ctx.beginPath();
+      for(var pi3=0;pi3<arr2.length;pi3+=4){
+        ctx.moveTo(arr2[pi3],arr2[pi3+1]); ctx.lineTo(arr2[pi3+2],arr2[pi3+3]);
+      }
+      ctx.stroke();
+    }
+  }
   /* edges first */
   if(focused){
     var F=ST[focusI];
@@ -1914,14 +1981,14 @@ function draw(ts){
     }
   }
   /* points */
-  var zf=Math.pow(zoom,0.5);
-  var glowMin=ST.length>1500?2.6:1.8;
+  var zf=Math.pow(zoom,0.22);   /* 拡大しても球はあまり大きくしない（ぼやけ防止・ユーザ要望） */
+  var glowMin=ST.length>1500?5.2:1.8;   /* 大規模時は大きな点だけ光らせて60fpsを守る */
   for(var oi=0;oi<order.length;oi++){
     var idx=order[oi], s=ST[idx];
     if(!SHOW_EX && s.ex) continue;
     if(isHidden(s)) continue;
     if(s.px<-20||s.px>W+20||s.py<-20||s.py>H+20) continue;
-    var r=(1.1+s.size)*s.pf*zf;
+    var r=Math.min(8.5,(1.1+s.size)*s.pf*zf);
     var a=fogA(s)*(s.ex?0.45:1);
     if(focused) a*= fset[idx]? 1 : 0.07;
     if(a<0.02) continue;
@@ -1940,10 +2007,28 @@ function draw(ts){
     }
   }
   ctx.globalAlpha=1;
+  /* 常時銘柄名: 大型・厳選銘柄から優先し、重なる場所には出さない */
+  if(CAM.labels && !focused && prio.length){
+    var cells={}, placed=0, maxL=(W<520)?30:60;
+    ctx.font='600 9.5px "Hiragino Sans",sans-serif';
+    for(var pi2=0;pi2<prio.length && placed<maxL;pi2++){
+      var ls=ST[prio[pi2]];
+      if((!SHOW_EX&&ls.ex)||isHidden(ls)) continue;
+      if(ls.px<8||ls.px>W-8||ls.py<14||ls.py>H-6) continue;
+      if(ls.pz<-1.7) continue;
+      var gx=Math.floor(ls.px/94), gy=Math.floor(ls.py/26);
+      if(cells[gx+'_'+gy]||cells[(gx+1)+'_'+gy]||cells[(gx-1)+'_'+gy]) continue;
+      cells[gx+'_'+gy]=1; placed++;
+      ctx.globalAlpha=Math.min(0.8, fogA(ls)*0.85+0.05);
+      ctx.fillStyle=ls.tri?'#d9ffe8':'#a9bcd6';
+      ctx.fillText(ls.sn, ls.px+6, ls.py+3.5);
+    }
+    ctx.globalAlpha=1;
+  }
   /* focus label */
   if(focused){
     var FS=ST[focusI];
-    var lr=(1.1+FS.size)*FS.pf*Math.pow(zoom,0.5)*1.35;
+    var lr=Math.min(8.5,(1.1+FS.size)*FS.pf*Math.pow(zoom,0.22))*1.35;
     ctx.strokeStyle='rgba(77,215,255,.9)'; ctx.lineWidth=1.4;
     ctx.beginPath(); ctx.arc(FS.px,FS.py,lr+3.5+Math.sin(ts*0.004)*1.2,0,Math.PI*2); ctx.stroke();
     labelFor(FS,FS.name,15,'#eaf6ff');
@@ -1988,55 +2073,123 @@ function loop(ts){
     var TW=Math.PI*2;
     var dyw=(((camGoal.y-rotY)%TW)+TW)%TW; if(dyw>Math.PI) dyw-=TW;
     rotY+=dyw*0.11; rotX+=(camGoal.x-rotX)*0.11; zoom+=(camGoal.z-zoom)*0.11;
+    ox+=(0-ox)*0.11; oy+=(0-oy)*0.11;
     if(Math.abs(dyw)<0.01&&Math.abs(camGoal.x-rotX)<0.01&&Math.abs(camGoal.z-zoom)<0.02) camGoal=null;
-  } else if(SPIN && Date.now()-lastPointer>1400){ rotY+=0.0016*CAM.spin; }
+  } else if(PTRS.size===0){
+    /* 指を離した後の慣性（プロ仕様のヌルッと感） */
+    if(Math.abs(velY)>0.00004||Math.abs(velX)>0.00004){
+      rotY+=velY; rotX=Math.max(-1.4,Math.min(1.4,rotX+velX));
+      velY*=0.93; velX*=0.93;
+    } else { velY=velX=0; }
+    if(Math.abs(velPx)>0.12||Math.abs(velPy)>0.12){
+      ox+=velPx; oy+=velPy; velPx*=0.9; velPy*=0.9;
+    } else { velPx=velPy=0; }
+    if(SPIN && Date.now()-lastPointer>1600 && !velY && !velPx){ rotY+=0.0016*CAM.spin; }
+  }
   draw(ts||0);
   requestAnimationFrame(loop);
 }
 
-/* ═══ interaction ═══ */
-var lastPointer=0, dragging=false, lx=0, ly=0, moved=0;
-var pinchD=0, activePtrs=0, pinching=false;
+/* ═══ interaction: プロ仕様カメラ ═══
+   1本指/左ドラッグ=軌道回転(慣性つき) ・ 2本指=視点の平行移動+ピンチ位置中心ズーム
+   ホイール=カーソル中心ズーム ・ Shift/中/右ドラッグ=平行移動 ・ ダブルタップ=その場ズーム */
+var lastPointer=0;
+var PTRS=new Map(), gMode=null;
+var lx=0, ly=0, moved=0;
+var pc0=null, pd0=0;
+var velY=0, velX=0, velPx=0, velPy=0;
+var lastTapT=0, lastTapX=0, lastTapY=0;
+function canvasXY(e){
+  var r=cv.getBoundingClientRect();
+  return [e.clientX-r.left, e.clientY-r.top];
+}
+function zoomAt(cx2,cy2,k){
+  var nz=Math.max(0.35,Math.min(8,zoom*k)); k=nz/zoom;
+  ox=k*ox+(1-k)*(cx2-W/2);
+  oy=k*oy+(1-k)*(cy2-H/2);
+  zoom=nz;
+}
+function centroidDist(){
+  var xs=0,ys=0,n=0,arr=[];
+  PTRS.forEach(function(p){xs+=p.x; ys+=p.y; n++; arr.push(p);});
+  var d=(n>=2)?Math.hypot(arr[0].x-arr[1].x,arr[0].y-arr[1].y):0;
+  return {c:[xs/n,ys/n], d:d};
+}
 cv.addEventListener('pointerdown',function(e){
-  activePtrs++;
-  if(activePtrs>1){ pinching=true; dragging=false; }
-  else { dragging=true; moved=0; }
-  lx=e.clientX; ly=e.clientY; cv.classList.add('drag');
-  cv.setPointerCapture(e.pointerId); lastPointer=Date.now();
+  var xy=canvasXY(e);
+  PTRS.set(e.pointerId,{x:xy[0],y:xy[1]});
+  try{ cv.setPointerCapture(e.pointerId); }catch(err){}
+  velY=velX=velPx=velPy=0;
+  if(PTRS.size===1){
+    gMode=(e.shiftKey||e.button===1||e.button===2)?'panBtn':'orbit';
+    lx=xy[0]; ly=xy[1]; moved=0;
+  } else {
+    gMode='pan2'; var cd=centroidDist(); pc0=cd.c; pd0=cd.d; camGoal=null;
+  }
+  cv.classList.add('drag'); lastPointer=Date.now();
 });
 cv.addEventListener('pointermove',function(e){
-  if(pinching||!dragging) return;
-  var dx=e.clientX-lx, dy=e.clientY-ly;
-  moved+=Math.abs(dx)+Math.abs(dy);
-  var dirX=CAM.invX?1:-1, dirY=CAM.invY?1:-1;   /* 既定: 掴んだ空間を指について来させる向き */
-  rotY+=dx*0.0058*CAM.sens*dirX; rotX+=dy*0.0046*CAM.sens*dirY;
-  rotX=Math.max(-1.4,Math.min(1.4,rotX));
-  if(moved>6) camGoal=null;
-  lx=e.clientX; ly=e.clientY; lastPointer=Date.now();
+  if(!PTRS.has(e.pointerId)) return;
+  var xy=canvasXY(e);
+  PTRS.set(e.pointerId,{x:xy[0],y:xy[1]});
+  if(gMode==='orbit'&&PTRS.size===1){
+    var dx=xy[0]-lx, dy=xy[1]-ly;
+    moved+=Math.abs(dx)+Math.abs(dy);
+    if(moved>6) camGoal=null;
+    var dirX=CAM.invX?1:-1, dirY=CAM.invY?1:-1;
+    var ry=dx*0.0058*CAM.sens*dirX, rx=dy*0.0046*CAM.sens*dirY;
+    rotY+=ry; rotX=Math.max(-1.4,Math.min(1.4,rotX+rx));
+    velY=ry*0.85; velX=rx*0.85;
+    lx=xy[0]; ly=xy[1];
+  } else if(gMode==='panBtn'&&PTRS.size===1){
+    var dx2=xy[0]-lx, dy2=xy[1]-ly;
+    moved+=Math.abs(dx2)+Math.abs(dy2); camGoal=null;
+    ox+=dx2; oy+=dy2; velPx=dx2*0.85; velPy=dy2*0.85;
+    lx=xy[0]; ly=xy[1];
+  } else if(PTRS.size>=2){
+    gMode='pan2';
+    var cd=centroidDist();
+    if(pc0){
+      ox+=cd.c[0]-pc0[0]; oy+=cd.c[1]-pc0[1];
+      velPx=(cd.c[0]-pc0[0])*0.85; velPy=(cd.c[1]-pc0[1])*0.85;
+      if(pd0>0&&cd.d>0) zoomAt(cd.c[0],cd.c[1],cd.d/pd0);
+    }
+    pc0=cd.c; pd0=cd.d; camGoal=null;
+  }
+  lastPointer=Date.now();
 });
-function endPointer(e, allowTap){
-  activePtrs=Math.max(0,activePtrs-1);
-  if(activePtrs===0){
-    if(allowTap && !pinching && dragging && moved<7) tapAt(e.clientX,e.clientY);
-    pinching=false; dragging=false; cv.classList.remove('drag');
+function endPointer(e, cancelled){
+  var xy=canvasXY(e);
+  PTRS.delete(e.pointerId);
+  if(PTRS.size===1){
+    /* 2本→1本: 置き直すまで回転させない（ピンチ後の誤回転防止） */
+    gMode='hold'; velPx=velPy=0;
+  }
+  if(PTRS.size===0){
+    if(!cancelled && gMode==='orbit' && moved<7){
+      var now=Date.now();
+      if(now-lastTapT<330 && Math.hypot(xy[0]-lastTapX,xy[1]-lastTapY)<44){
+        zoomAt(xy[0],xy[1],1.8); lastTapT=0;   /* ダブルタップ=その場ズーム */
+      } else {
+        tapAt(e.clientX,e.clientY);
+        lastTapT=now; lastTapX=xy[0]; lastTapY=xy[1];
+      }
+      velY=velX=velPx=velPy=0;
+    }
+    gMode=null; pc0=null; pd0=0;
+    cv.classList.remove('drag');
   }
   lastPointer=Date.now();
 }
-cv.addEventListener('pointerup',function(e){ endPointer(e,true); });
-cv.addEventListener('pointercancel',function(e){ endPointer(e,false); });
+cv.addEventListener('pointerup',function(e){ endPointer(e,false); });
+cv.addEventListener('pointercancel',function(e){ endPointer(e,true); });
+cv.addEventListener('contextmenu',function(e){ e.preventDefault(); });
 cv.addEventListener('wheel',function(e){
   e.preventDefault(); camGoal=null;
-  zoom*=Math.pow(1.0015,-e.deltaY);
-  zoom=Math.max(0.35,Math.min(6,zoom)); lastPointer=Date.now();
+  var xy=canvasXY(e);
+  zoomAt(xy[0],xy[1],Math.pow(1.0015,-e.deltaY));
+  lastPointer=Date.now();
 },{passive:false});
-cv.addEventListener('touchmove',function(e){
-  if(e.touches.length===2){
-    var d=Math.hypot(e.touches[0].clientX-e.touches[1].clientX, e.touches[0].clientY-e.touches[1].clientY);
-    if(pinchD>0){ camGoal=null; zoom*=d/pinchD; zoom=Math.max(0.35,Math.min(6,zoom)); }
-    pinchD=d; dragging=false; lastPointer=Date.now();
-  }
-},{passive:true});
-cv.addEventListener('touchend',function(){ pinchD=0; });
 
 function tapAt(cx2,cyy){
   var rect=cv.getBoundingClientRect();
@@ -2137,13 +2290,16 @@ qEl.addEventListener('input',function(){
   var v=normQ(qEl.value.trim());
   if(!v){ sugg.classList.remove('show'); return; }
   var hits=[];
-  for(var i=0;i<ST.length&&hits.length<8;i++){
+  for(var i=0;i<ST.length;i++){
     if(ST[i].norm.indexOf(v)>=0||ST[i].code.indexOf(v)>=0) hits.push(i);
   }
-  if(!hits.length){ sugg.classList.remove('show'); return; }
-  sugg.innerHTML=hits.map(function(i){
+  if(!hits.length){ sugg.innerHTML='<div class="cnt-it">0件（表記ゆれ・コードでもお試しを）</div>'; sugg.classList.add('show'); return; }
+  var CAP=80;
+  var h2='<div class="cnt-it">'+hits.length+'件ヒット'+(hits.length>CAP?('・先頭'+CAP+'件を表示（さらに絞り込めます）'):'')+'</div>';
+  h2+=hits.slice(0,CAP).map(function(i){
     return '<div class="it" data-i="'+i+'">'+esc(ST[i].name)+'<small>'+ST[i].code+'</small></div>';
   }).join('');
+  sugg.innerHTML=h2;
   sugg.classList.add('show');
   sugg.querySelectorAll('.it').forEach(function(el){
     el.addEventListener('click',function(){
@@ -2173,11 +2329,19 @@ document.getElementById('spin').addEventListener('click',function(){
   SPIN=!SPIN; this.classList.toggle('on',SPIN); saveCam();
 });
 document.getElementById('reset').addEventListener('click',function(){
-  rotY=0.6; rotX=0.32; zoom=1;
+  rotY=0.6; rotX=0.32; zoom=1; ox=0; oy=0;
+  velY=velX=velPx=velPy=0; camGoal=null;
 });
 document.getElementById('showex').addEventListener('click',function(){
   SHOW_EX=!SHOW_EX; this.classList.toggle('on',SHOW_EX);
 });
+
+/* hint: ✕で閉じる・20秒で自動で薄くなる */
+(function(){
+  var hx=document.getElementById('hintx'), hb=document.getElementById('hint');
+  if(hx) hx.addEventListener('click',function(){ hb.style.display='none'; });
+  setTimeout(function(){ if(hb) hb.style.opacity='0.35'; }, 20000);
+})();
 
 /* ═══ camera settings sheet ═══ */
 var sheet=document.getElementById('camsheet');
@@ -2199,6 +2363,10 @@ sheet.querySelectorAll('.seg button').forEach(function(b){
 document.getElementById('camset').addEventListener('click',function(){
   paintCam(); sheet.style.display='flex';
 });
+var howEl=document.getElementById('howsheet');
+document.getElementById('howbtn').addEventListener('click',function(){ howEl.style.display='flex'; });
+document.getElementById('howclose').addEventListener('click',function(){ howEl.style.display='none'; });
+howEl.addEventListener('click',function(e){ if(e.target===howEl) howEl.style.display='none'; });
 document.getElementById('camclose').addEventListener('click',function(){ sheet.style.display='none'; });
 sheet.addEventListener('click',function(e){ if(e.target===sheet) sheet.style.display='none'; });
 
@@ -2223,6 +2391,7 @@ fetch('map.json').then(function(r){
   return r.json();
 }).then(function(j){
   DATA=j; GROUPS=j.groups||[]; WHY=j.why||{}; AXES=j.axes||[];
+  if(j.dims){ var dn=document.getElementById('dimN'); if(dn) dn.textContent=j.dims; }
   document.getElementById('spin').classList.toggle('on',SPIN);
   ST=j.stocks.map(function(a,i){
     var szRaw=a[7]; var size=szRaw==null?0.5:Math.max(0.2,(szRaw-1.2)*0.75);
@@ -2233,6 +2402,29 @@ fetch('map.json').then(function(r){
   });
   byCode={}; ST.forEach(function(s,i){byCode[s.code]=i;});
   order=ST.map(function(_,i){return i;});
+  ST.forEach(function(s){ s.sn=(s.name.length>8)?(s.name.slice(0,8)+'…'):s.name; });
+  prio=ST.map(function(_,i){return i;}).sort(function(a,b){
+    return (ST[b].tri-ST[a].tri) || (ST[b].size-ST[a].size);
+  });
+  /* つながり線: 各銘柄の上位3近傍のうち類似度が高いペアだけ（多すぎる場合は自動で間引き） */
+  (function(){
+    var thr=(ST.length>1500)?60:50;
+    while(true){
+      EDGES=[]; var seen={};
+      for(var i2=0;i2<ST.length;i2++){
+        var nb2=ST[i2].nb, cnt3=0;
+        for(var k2=0;k2<nb2.length&&cnt3<2;k2+=3){
+          var j2=byCode[nb2[k2]];
+          if(j2==null||nb2[k2+1]<thr) continue;
+          var key2=(i2<j2)?(i2+'_'+j2):(j2+'_'+i2);
+          if(seen[key2]) continue;
+          seen[key2]=1; EDGES.push([i2,j2,nb2[k2+1]]); cnt3++;
+        }
+      }
+      if(EDGES.length<=5000||thr>=95) break;
+      thr+=5;
+    }
+  })();
   var gTime='';
   try{ var gd=new Date(j.generated_at); gTime=' ・ '+(gd.getMonth()+1)+'/'+gd.getDate()+' '+('0'+gd.getHours()).slice(-2)+':'+('0'+gd.getMinutes()).slice(-2)+'時点'; }catch(e){}
   document.getElementById('cnt').textContent=ST.length.toLocaleString()+' STOCKS'+gTime;
