@@ -1675,7 +1675,7 @@ canvas.drag{cursor:grabbing;}
     <div class="cnt mono" id="cnt">…</div>
   </div>
   <nav class="dnav">
-    <a href="guide.html">はじめに</a><a href="indicators.html">指標の読み方</a><a href="universe.html">全銘柄台帳</a><a href="index.html">今夜の厳選</a><a class="act">銘柄マップ</a>
+    <a href="guide.html">はじめに</a><a href="indicators.html">指標の読み方</a><a href="universe.html">全銘柄台帳</a><a href="index.html">今夜の厳選</a><a class="act">銘柄マップ</a><a href="caps.html">時価総額マップ</a>
   </nav>
   <div class="toolwrap"><div class="toolrow">
     <div class="srchwrap">
@@ -4836,12 +4836,13 @@ NAV_ITEMS = [
     ("universe.html", "全銘柄台帳", "universe"),
     ("index.html", "今夜の厳選", "index"),
     ("map.html", "銘柄マップ", "map"),
+    ("caps.html", "時価総額マップ", "caps"),
 ]
 
 
 NAV_JS = """<script>
 (function(){
-  const order = ['guide.html', 'indicators.html', 'universe.html', 'index.html', 'map.html'];
+  const order = ['guide.html', 'indicators.html', 'universe.html', 'index.html', 'map.html', 'caps.html'];
   let here = location.pathname.split('/').pop();
   if (!here) here = 'index.html';
   const idx = order.indexOf(here);
@@ -5800,7 +5801,8 @@ def render_guide(dt):
 <div class="tabrow"><span class="tb">今夜の厳選</span>安全×質×タイミングの三層で選んだ厳選{c["TOP_N"]}銘柄＋「まもなく買い場」の待ち銘柄。持ち金・★・根拠</div>
 <div class="tabrow"><span class="tb">全銘柄台帳</span>約4,000銘柄の台帳。安全（減点）・質・タイミングの3スコア、無傷／まもなく絞り込み、並べ替え、タップで全詳細（指標メーター付き）</div>
 <div class="tabrow"><span class="tb">指標の読み方</span>PER・RSIなど全指標の図解。数字の読み方はここ</div>
-<div class="tabrow"><span class="tb">銘柄マップ</span>全銘柄を財務×テクニカル×値動きでベクトル化した3D空間。似ている銘柄が近くに並び、タップで「発想が繋がる銘柄」へ光の糸が伸びる</div></div>
+<div class="tabrow"><span class="tb">銘柄マップ</span>全銘柄を財務×テクニカル×値動きでベクトル化した3D空間。似ている銘柄が近くに並び、タップで「発想が繋がる銘柄」へ光の糸が伸びる</div>
+<div class="tabrow"><span class="tb">時価総額マップ</span>株価×発行株式数の平面に全銘柄を配置。右上ほど時価総額が大きく、100億〜10兆円の等高線で市場の全体像がひと目でわかる</div></div>
 
 <div class="gcard c-yellow"><div class="gh">🟡 選定の仕組み（要約）</div>
 <div class="gt">全銘柄 → 対象外（流動性不足・低位株・上場浅）→ 除外（終わった株・急落直後・荒い値動き・下げ止まり未確認）→
@@ -6021,6 +6023,291 @@ def render_tob(tob_ranked, n_total, dt):
             .replace("__FOOTNOTE__", footnote)
             .replace("__EXTRA_CSS__", extra_css)
             .replace("__SCRIPT__", SHARED_FN_JS))
+
+
+def render_caps(n_stocks, dt):
+    """時価総額マップ: 株価×発行株式数の対数平面に全銘柄を置く（紙テイスト・caps.jsonを読む）"""
+    body = r"""
+<div class="card">
+  <h2>この図の見方</h2>
+  <div class="gt">横軸=<b>株価</b>、縦軸=<b>発行株式数</b>（どちらも対数目盛）。掛け算が時価総額なので、
+  <b>右上に行くほど時価総額が大きい</b>会社です。斜めの点線は「同じ時価総額」のライン（100億〜10兆円）。
+  トヨタのような超大型は右上の隅、新興の小型株は左下に集まります。点をタップすると銘柄名と時価総額・順位が出ます。</div>
+  <div class="tierlg">
+    <span><i style="background:#6b4487"></i>10兆円以上</span>
+    <span><i style="background:#2e4d7b"></i>1兆〜10兆</span>
+    <span><i style="background:#3a5a40"></i>1000億〜1兆</span>
+    <span><i style="background:#b06a00"></i>100億〜1000億</span>
+    <span><i style="background:#8e8e93"></i>100億円未満</span>
+  </div>
+</div>
+
+<div class="card" style="padding:10px 10px 6px;">
+  <div class="csearchrow"><input id="cq" class="csearch" type="search" placeholder="銘柄名・コードで探す（図の中で光ります）"></div>
+  <div id="cwrap" style="position:relative">
+    <canvas id="ccv" style="width:100%; display:block; border-radius:10px; background:#fffdf6; touch-action:pan-y;"></canvas>
+    <div id="csugg" class="csugg"></div>
+  </div>
+  <div id="selcard" class="selcard" style="display:none"></div>
+</div>
+
+<div class="card">
+  <h2>時価総額ランキング（上位30）</h2>
+  <div id="rank30"></div>
+  <div class="note">時価総額 = 株価 × 発行株式数。決算短信（J-Quants）の株式数と最新株価から毎回自動計算しています。</div>
+</div>
+"""
+    extra_css = """
+  .gt{font-size:12.5px; line-height:1.85;}
+  .tierlg{display:flex; gap:8px; flex-wrap:wrap; margin-top:8px;}
+  .tierlg span{display:flex; align-items:center; gap:5px; font-size:10.5px; color:var(--ink2); font-weight:700;}
+  .tierlg i{width:10px; height:10px; border-radius:50%; display:inline-block;}
+  .csearchrow{padding:2px 2px 8px;}
+  .csearch{width:100%; font-size:14px; padding:9px 12px; border:1.5px solid #d9d2bf; border-radius:10px; background:#fff;}
+  .csugg{position:absolute; left:8px; top:8px; z-index:5; background:#fff; border:1.5px solid #d9d2bf;
+    border-radius:10px; max-height:220px; overflow-y:auto; display:none; box-shadow:0 8px 24px rgba(0,0,0,.12); min-width:220px;}
+  .csugg.show{display:block;}
+  .csugg .it{padding:7px 12px; font-size:12px; cursor:pointer; border-top:1px solid #f0ead9;}
+  .csugg .it:first-child{border-top:none;}
+  .csugg .it small{color:var(--ink3); margin-left:6px;}
+  .selcard{margin-top:10px; background:#fffdf6; border:1.5px solid #e0d8c4; border-radius:10px; padding:10px 12px;}
+  .selname{font-size:14px; font-weight:800;}
+  .selname small{font-weight:600; color:var(--ink2); margin-left:6px;}
+  .selfacts{display:flex; gap:6px; flex-wrap:wrap; margin:6px 0;}
+  .self{font-size:10.5px; font-weight:700; color:var(--ink2); background:#f4f1e8; border-radius:6px; padding:3px 8px;}
+  .self b{color:#1c1c1e;}
+  .sellinks{display:flex; gap:8px; margin-top:6px;}
+  .sellinks a{flex:1; text-align:center; text-decoration:none; font-size:11.5px; font-weight:700;
+    color:#2e4d7b; background:#eef2f8; border-radius:8px; padding:8px 4px;}
+  .rrow{display:flex; align-items:center; gap:8px; padding:5px 0; border-bottom:1px dashed #f0ead9;
+    font-size:12px; cursor:pointer;}
+  .rrk{flex:none; width:26px; text-align:right; font-weight:800; color:#7a6a45;}
+  .rnm{flex:none; width:37%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-weight:700;}
+  .rbarw{flex:1; height:10px; background:#f0ead9; border-radius:5px; overflow:hidden;}
+  .rbar{height:100%; background:#a58ec4; border-radius:5px;}
+  .rmc{flex:none; width:74px; text-align:right; font-weight:800; color:#4a3f28; font-size:11px;}
+"""
+    script = r"""<script>
+(function(){
+'use strict';
+var STK=[], sel=-1, W=0, H=0, DPR=1;
+var cv=document.getElementById('ccv'), ctx=cv.getContext('2d');
+var LOGX=[0,0], LOGY=[0,0], PAD={l:46,r:14,t:12,b:34};
+function tierCol(m){
+  if(m>=100000) return '#6b4487';
+  if(m>=10000) return '#2e4d7b';
+  if(m>=1000) return '#3a5a40';
+  if(m>=100) return '#b06a00';
+  return '#8e8e93';
+}
+function fmtM(m){
+  if(m>=10000) return (m/10000).toFixed(2).replace(/\.00$/,'')+'兆円';
+  return Math.round(m).toLocaleString()+'億円';
+}
+function fmtShares(sh){
+  if(sh>=1e8) return (sh/1e8).toFixed(1)+'億株';
+  return Math.round(sh/1e4).toLocaleString()+'万株';
+}
+function X(lx){ return PAD.l+(lx-LOGX[0])/(LOGX[1]-LOGX[0])*(W-PAD.l-PAD.r); }
+function Y(ly){ return H-PAD.b-(ly-LOGY[0])/(LOGY[1]-LOGY[0])*(H-PAD.t-PAD.b); }
+function resize(){
+  DPR=Math.min(2.5,window.devicePixelRatio||1);
+  W=cv.clientWidth; H=Math.max(340,Math.min(520,Math.round(W*0.85)));
+  cv.style.height=H+'px';
+  cv.width=Math.round(W*DPR); cv.height=Math.round(H*DPR);
+  ctx.setTransform(DPR,0,0,DPR,0,0);
+  draw();
+}
+window.addEventListener('resize',resize);
+function draw(){
+  if(!STK.length) return;
+  ctx.clearRect(0,0,W,H);
+  ctx.font='10px ui-monospace,Menlo,monospace';
+  /* 目盛（10倍ごと） */
+  ctx.strokeStyle='#eee7d6'; ctx.fillStyle='#a99a76'; ctx.lineWidth=1;
+  for(var e=Math.ceil(LOGX[0]);e<=Math.floor(LOGX[1]);e++){
+    var gx=X(e);
+    ctx.beginPath(); ctx.moveTo(gx,PAD.t); ctx.lineTo(gx,H-PAD.b); ctx.stroke();
+    var v=Math.pow(10,e);
+    ctx.textAlign='center';
+    ctx.fillText(v>=10000?(v/10000)+'万円':v.toLocaleString()+'円', gx, H-PAD.b+14);
+  }
+  for(var e2=Math.ceil(LOGY[0]);e2<=Math.floor(LOGY[1]);e2++){
+    var gy=Y(e2);
+    ctx.beginPath(); ctx.moveTo(PAD.l,gy); ctx.lineTo(W-PAD.r,gy); ctx.stroke();
+    var v2=Math.pow(10,e2);
+    ctx.textAlign='right';
+    ctx.fillText(v2>=1e8?(v2/1e8)+'億株':(v2/1e4)+'万株', PAD.l-5, gy+3);
+  }
+  ctx.textAlign='left';
+  ctx.fillText('株価 →', W-PAD.r-42, H-6);
+  ctx.save(); ctx.translate(10,PAD.t+64); ctx.rotate(-Math.PI/2);
+  ctx.fillText('発行株式数 →',0,0); ctx.restore();
+  /* 等時価総額線（右下がり点線） */
+  var isos=[[100,'100億円'],[1000,'1000億円'],[10000,'1兆円'],[100000,'10兆円']];
+  ctx.setLineDash([4,4]);
+  for(var i2=0;i2<isos.length;i2++){
+    var mOku=isos[i2][0], logM=Math.log10(mOku*1e8);
+    /* log_shares = logM - log_price */
+    var p1x=LOGX[0], p1y=logM-LOGX[0], p2x=LOGX[1], p2y=logM-LOGX[1];
+    ctx.strokeStyle='rgba(138,90,23,.35)';
+    ctx.beginPath(); ctx.moveTo(X(p1x),Y(p1y)); ctx.lineTo(X(p2x),Y(p2y)); ctx.stroke();
+    var lx=Math.min(LOGX[1]-0.28, Math.max(LOGX[0]+0.12, logM-LOGY[1]+0.22));
+    var ly=logM-lx;
+    if(ly>LOGY[0]&&ly<LOGY[1]){
+      ctx.fillStyle='#8a5a17';
+      ctx.fillText(isos[i2][1], X(lx)+3, Y(ly)-4);
+    }
+  }
+  ctx.setLineDash([]);
+  /* 点 */
+  for(var i=0;i<STK.length;i++){
+    var s=STK[i];
+    var r=s.m>=100000?5:(s.m>=10000?4:(s.m>=1000?3:(s.m>=100?2.2:1.6)));
+    ctx.globalAlpha=s.m>=1000?0.85:0.55;
+    ctx.fillStyle=s.col;
+    ctx.beginPath(); ctx.arc(s.px,s.py,r,0,Math.PI*2); ctx.fill();
+  }
+  ctx.globalAlpha=1;
+  /* 上位のラベル */
+  ctx.font='700 10px "Hiragino Sans",sans-serif';
+  var placed={};
+  for(var j=0;j<Math.min(14,STK.length);j++){
+    var t=STK[j];
+    var key=Math.floor(t.px/70)+'_'+Math.floor(t.py/16);
+    if(placed[key]) continue; placed[key]=1;
+    ctx.fillStyle='#4a3f28';
+    ctx.fillText(t.name.length>7?t.name.slice(0,7)+'…':t.name, t.px+6, t.py-5);
+  }
+  /* 選択 */
+  if(sel>=0){
+    var ss=STK[sel];
+    ctx.strokeStyle='#c62f2f'; ctx.lineWidth=2;
+    ctx.beginPath(); ctx.arc(ss.px,ss.py,7,0,Math.PI*2); ctx.stroke();
+    ctx.font='800 12px "Hiragino Sans",sans-serif';
+    ctx.fillStyle='#c62f2f';
+    ctx.fillText(ss.name, Math.min(ss.px+8,W-90), Math.max(14,ss.py-9));
+  }
+}
+function project(){
+  for(var i=0;i<STK.length;i++){
+    var s=STK[i];
+    s.px=X(Math.log10(s.c)); s.py=Y(Math.log10(s.sh));
+  }
+}
+function select(i,scroll){
+  sel=i; project(); draw();
+  var s=STK[i];
+  var el=document.getElementById('selcard');
+  el.style.display='block';
+  el.innerHTML='<div class="selname">'+esc(s.name)+'<small>'+s.code+' ・ '+esc(s.mkt||'')+'</small></div>'
+    +'<div class="selfacts">'
+    +'<span class="self">時価総額 <b>'+fmtM(s.m)+'</b>（全体 '+(i+1)+'位）</span>'
+    +'<span class="self">株価 <b>'+s.c.toLocaleString()+'円</b></span>'
+    +'<span class="self">発行株式数 <b>'+fmtShares(s.sh)+'</b></span>'
+    +'</div>'
+    +'<div class="sellinks">'
+    +'<a href="universe.html?q='+s.code+'">台帳で判定を見る</a>'
+    +'<a href="map.html?c='+s.code+'">銘柄マップで見る</a>'
+    +'<a href="https://finance.yahoo.co.jp/quote/'+s.code+'.T" target="_blank" rel="noopener">Yahoo! →</a>'
+    +'</div>';
+  if(scroll) el.scrollIntoView({block:'nearest',behavior:'smooth'});
+}
+cv.addEventListener('click',function(ev){
+  var r=cv.getBoundingClientRect();
+  var x=ev.clientX-r.left, y=ev.clientY-r.top;
+  var best=-1, bd=330;
+  for(var i=0;i<STK.length;i++){
+    var d=(STK[i].px-x)*(STK[i].px-x)+(STK[i].py-y)*(STK[i].py-y);
+    if(d<bd){ bd=d; best=i; }
+  }
+  if(best>=0) select(best,true);
+});
+function esc(t){return String(t).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});}
+function normQ(s){
+  var t=(s||'').normalize('NFKC').toLowerCase();
+  t=t.replace(/[ぁ-ゖ]/g,function(ch){return String.fromCharCode(ch.charCodeAt(0)+0x60);});
+  t=t.replace(/[\s\-・.,、。()（）\[\]「」『』&\/]/g,'');
+  ['ホールディングス','ホールディング','グループ','株式会社','hd'].forEach(function(w){t=t.split(w).join('');});
+  return t;
+}
+var cq=document.getElementById('cq'), csugg=document.getElementById('csugg');
+cq.addEventListener('input',function(){
+  var v=normQ(cq.value.trim());
+  if(!v){ csugg.classList.remove('show'); return; }
+  var hits=[];
+  for(var i=0;i<STK.length&&hits.length<30;i++){
+    if(STK[i].norm.indexOf(v)>=0||STK[i].code.indexOf(v)>=0) hits.push(i);
+  }
+  if(!hits.length){ csugg.classList.remove('show'); return; }
+  csugg.innerHTML=hits.map(function(i){
+    return '<div class="it" data-i="'+i+'">'+esc(STK[i].name)+'<small>'+STK[i].code+' ・ '+fmtM(STK[i].m)+'</small></div>';
+  }).join('');
+  csugg.classList.add('show');
+  csugg.querySelectorAll('.it').forEach(function(el){
+    el.addEventListener('click',function(){
+      csugg.classList.remove('show'); cq.value='';
+      select(+el.dataset.i,false);
+    });
+  });
+});
+document.addEventListener('click',function(e){
+  if(!e.target.closest('#cwrap')&&!e.target.closest('.csearchrow')) csugg.classList.remove('show');
+});
+fetch('caps.json').then(function(r){
+  if(!r.ok) throw new Error('caps.jsonがまだ生成されていません（次回の実行で作られます）');
+  return r.json();
+}).then(function(j){
+  STK=j.stocks.map(function(a){
+    var sh=a[5]*1e8/a[4];
+    return {code:a[0], name:a[1], mkt:a[3], c:a[4], m:a[5], sh:sh,
+            col:tierCol(a[5]), norm:normQ(a[1]), px:0, py:0};
+  });
+  STK.sort(function(a,b){return b.m-a.m;});
+  var lxs=STK.map(function(s){return Math.log10(s.c);});
+  var lys=STK.map(function(s){return Math.log10(s.sh);});
+  LOGX=[Math.min.apply(null,lxs)-0.12, Math.max.apply(null,lxs)+0.25];
+  LOGY=[Math.min.apply(null,lys)-0.15, Math.max.apply(null,lys)+0.3];
+  resize(); project(); draw();
+  var rk=document.getElementById('rank30'), maxlm=Math.log10(STK[0].m||1);
+  rk.innerHTML=STK.slice(0,30).map(function(s,i){
+    var w=Math.max(4, (Math.log10(s.m)-1.5)/(maxlm-1.5)*100);
+    return '<div class="rrow" data-i="'+i+'"><span class="rrk">'+(i+1)+'</span>'
+      +'<span class="rnm">'+esc(s.name)+'</span>'
+      +'<span class="rbarw"><span class="rbar" style="display:block;width:'+w.toFixed(0)+'%"></span></span>'
+      +'<span class="rmc">'+fmtM(s.m)+'</span></div>';
+  }).join('');
+  rk.querySelectorAll('.rrow').forEach(function(el){
+    el.addEventListener('click',function(){
+      select(+el.dataset.i,false);
+      document.getElementById('ccv').scrollIntoView({block:'center',behavior:'smooth'});
+    });
+  });
+  var qp=new URLSearchParams(location.search).get('c');
+  if(qp){ for(var i=0;i<STK.length;i++) if(STK[i].code===qp){ select(i,false); break; } }
+}).catch(function(e){
+  document.getElementById('selcard').style.display='block';
+  document.getElementById('selcard').textContent='⚠ '+e.message;
+});
+setTimeout(resize,50);
+})();
+</script>"""
+    weekdays = "月火水木金土日"
+    subtitle = (f"{dt.month}/{dt.day}（{weekdays[dt.weekday()]}）{dt.hour:02d}:{dt.minute:02d} 時点 ・ "
+                f"時価総額を計算できた{n_stocks:,}銘柄 ・ 株価×発行株式数＝時価総額の全体地図")
+    footnote = ("株価・株式数は毎回の実行時点の値です。点の色は時価総額の階級、斜めの点線は同じ時価総額のライン。"
+                "個別の判定・指標は全銘柄台帳へ、似ている銘柄の探索は銘柄マップへ。")
+    return (SUBPAGE_TEMPLATE
+            .replace("__NAVCSS__", NAV_CSS)
+            .replace("__HEADBTN__", "")
+            .replace("__NAVJS__", NAV_JS)
+            .replace("__NAV__", nav_html("caps"))
+            .replace("__TITLE__", "時価総額マップ — 株価×株式数の全体地図")
+            .replace("__SUBTITLE__", subtitle)
+            .replace("__BODY__", body)
+            .replace("__FOOTNOTE__", footnote)
+            .replace("__EXTRA_CSS__", extra_css)
+            .replace("__SCRIPT__", script))
 
 
 STATUS_LABEL = {"picked": "厳選候補", "ok": "候補", "bench": "圏外",
@@ -7110,6 +7397,23 @@ def main():
     (DOCS / "tob.html").write_text(
         render_tob(tob_ranked, len(detail_map_all), dt_now), encoding="utf-8")
     (DOCS / "map.html").write_text(render_map(map_n, dt_now), encoding="utf-8")
+    # 時価総額マップ用データ（株価と時価総額から株式数を復元して描画）
+    caps_rows = []
+    for e in detail_map_all.values():
+        fu_c = e.get("fund") or {}
+        if fu_c.get("mcap_oku") and e.get("close"):
+            try:
+                caps_rows.append([e["code"], e["name"],
+                                  SECTOR_GROUPS.get(e.get("sector", ""), DEFAULT_GROUP),
+                                  e.get("market") or "",
+                                  round(float(e["close"]), 1), round(float(fu_c["mcap_oku"]), 1)])
+            except (TypeError, ValueError):
+                continue
+    caps_rows.sort(key=lambda r: -r[5])
+    (DOCS / "caps.json").write_text(json.dumps(
+        {"generated_at": datetime.now(JST).isoformat(), "stocks": caps_rows},
+        ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
+    (DOCS / "caps.html").write_text(render_caps(len(caps_rows), dt_now), encoding="utf-8")
     # 無傷ランキングは全銘柄一覧（絞り込み「無傷」・ソート「安全順」）に統合したため単独ページは廃止
     write_details(extras.get("detail_map") or {})
 
