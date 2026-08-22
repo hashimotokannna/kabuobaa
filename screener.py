@@ -2785,7 +2785,12 @@ def fetch_fundamentals(session, codes, closes=None):
     today = datetime.now(JST).date().isoformat()
 
     # J-Quants（あれば）: 決算開示ベースの素材を取り込み、保存分より新しければ上書き
-    jq = jquants_fetch_materials(session) if session is not None else {}
+    # 無料プランは12週遅延のため、直近だけの走査では「早い時期に決算発表した銘柄」（トヨタ等）が
+    # 永久に拾えない。素材キャッシュが薄いうちは約1年分をさかのぼって全銘柄を取り込む
+    deep = len(persisted) < 3000
+    if deep and session is not None:
+        print("  J-Quants: 素材キャッシュが少ないため約1年分の決算開示を取り込みます（初回のみ・数分）")
+    jq = jquants_fetch_materials(session, days_back=(430 if deep else 110)) if session is not None else {}
     for code, mat in jq.items():
         prev = persisted.get(code) or {}
         if not prev or (mat.get("asof", "") >= prev.get("asof", "")):
@@ -2823,8 +2828,20 @@ def fetch_fundamentals(session, codes, closes=None):
             entry["per"] = round(price / eps, 1)
         if price and bvps and bvps > 0:
             entry["pbr"] = round(price / bvps, 2)
-        if price and shares:
-            entry["mcap_oku"] = round(price * shares / 100_000_000)
+        # 発行株数のクロスチェック: 純利益÷EPS・純資産÷BPS（同じ決算内の整合）と突き合わせ、
+        # 株式数フィールドの取り違え・分割ずれによる時価総額の桁違いを防ぐ
+        np_v, eq_v = mat.get("np"), mat.get("equity")
+        est = []
+        if np_v and eps and abs(eps) > 1e-9 and np_v / eps > 0:
+            est.append(np_v / eps)
+        if eq_v and bvps and bvps > 0:
+            est.append(eq_v / bvps)
+        est_med = sorted(est)[len(est) // 2] if est else None
+        shares_eff = shares if (shares and shares > 0) else est_med
+        if shares and est_med and (max(shares, est_med) / max(1e-9, min(shares, est_med)) > 1.6):
+            shares_eff = est_med
+        if price and shares_eff:
+            entry["mcap_oku"] = round(price * shares_eff / 100_000_000)
         if eps is not None and bvps and bvps > 0:
             entry["roe"] = round(eps / bvps * 100, 1)
         if mat.get("dy") is not None:
@@ -6032,7 +6049,10 @@ def render_caps(n_stocks, dt):
   <h2>この図の見方</h2>
   <div class="gt">横軸=<b>株価</b>、縦軸=<b>発行株式数</b>（どちらも対数目盛）。掛け算が時価総額なので、
   <b>右上に行くほど時価総額が大きい</b>会社です。斜めの点線は「同じ時価総額」のライン（100億〜10兆円）。
-  トヨタのような超大型は右上の隅、新興の小型株は左下に集まります。点をタップすると銘柄名と時価総額・順位が出ます。</div>
+  点をタップすると銘柄名と時価総額・順位が出ます。</div>
+  <div class="dirrow"><b>→ 右へ行くほど</b> 1株の値段が高い「値がさ株」。100株の必要資金も大きい（例: 右下の株価数万円ゾーンは株数が少なく品薄になりやすい）</div>
+  <div class="dirrow"><b>↑ 上へ行くほど</b> 発行株式数が多い。株主が広く、売買はしやすい一方、利益は多くの株に薄く分配される（1株あたりの重みが軽い）</div>
+  <div class="dirrow"><b>↗ 右上の隅</b> 時価総額の最大級（トヨタ・メガバンク級）。<b>↙ 左下</b> は小型・新興。同じ時価総額でも「高い株価×少ない株数」か「安い株価×大量の株数」かで性格が違います</div>
   <div class="tierlg">
     <span><i style="background:#6b4487"></i>10兆円以上</span>
     <span><i style="background:#2e4d7b"></i>1兆〜10兆</span>
@@ -6059,6 +6079,8 @@ def render_caps(n_stocks, dt):
 """
     extra_css = """
   .gt{font-size:12.5px; line-height:1.85;}
+  .dirrow{font-size:11.5px; line-height:1.8; color:var(--ink2); padding:5px 0; border-top:1px dashed #f0ead9;}
+  .dirrow b{color:#4a3f28;}
   .tierlg{display:flex; gap:8px; flex-wrap:wrap; margin-top:8px;}
   .tierlg span{display:flex; align-items:center; gap:5px; font-size:10.5px; color:var(--ink2); font-weight:700;}
   .tierlg i{width:10px; height:10px; border-radius:50%; display:inline-block;}
@@ -6141,6 +6163,16 @@ function draw(){
   }
   ctx.textAlign='left';
   ctx.fillText('株価 →', W-PAD.r-42, H-6);
+  /* 四隅の意味づけ注釈 */
+  ctx.font='700 10px "Hiragino Sans",sans-serif';
+  ctx.fillStyle='rgba(122,106,69,.55)';
+  ctx.fillText('↖ 低位・大量発行', PAD.l+6, PAD.t+14);
+  ctx.textAlign='right';
+  ctx.fillText('超大型（トヨタ級）↗', W-PAD.r-4, PAD.t+14);
+  ctx.fillText('値がさ株（株数少なめ）↘', W-PAD.r-4, H-PAD.b-8);
+  ctx.textAlign='left';
+  ctx.fillText('↙ 小型・新興', PAD.l+6, H-PAD.b-8);
+  ctx.font='10px ui-monospace,Menlo,monospace';
   ctx.save(); ctx.translate(10,PAD.t+64); ctx.rotate(-Math.PI/2);
   ctx.fillText('発行株式数 →',0,0); ctx.restore();
   /* 等時価総額線（右下がり点線） */
