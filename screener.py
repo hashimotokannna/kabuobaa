@@ -1136,6 +1136,111 @@ def demerit_stock(s):
 
 
 # ------------------------------------------------------------
+# TOB素地スコア: M&Aアドバイザー・中小企業診断士が「買収候補」を
+# 見るときの定石を、公開データで計算できる範囲だけ固定基準化したもの。
+# ※確率の予測ではない。親子上場・創業家持分・アクティビスト保有など
+#   決定的な要因は無料データでは取れないため「素地」の順位付けに留まる。
+# ------------------------------------------------------------
+def tob_score(s):
+    """(score, hits) を返す。判定素材が無ければ (None, [])。
+    hits = [(観点ラベル, 加点)] で内訳をそのまま画面に出せる形にする"""
+    fu = s.get("fund") or {}
+    pbr = fu.get("pbr")
+    mcap = fu.get("mcap_oku")
+    if pbr is None or not mcap:
+        return None, []
+    hits = []
+
+    def add(label, pts):
+        hits.append((label, pts))
+
+    # 1. 解散価値との比較（買収側から見た「値札の安さ」の核心）
+    if pbr < 0.6:
+        add(f"PBR {pbr:.2f}倍 ＝ 解散価値の6割未満（最重要の割安シグナル）", 22)
+    elif pbr < 0.8:
+        add(f"PBR {pbr:.2f}倍 ＝ 解散価値を大きく下回る", 16)
+    elif pbr < 1.0:
+        add(f"PBR {pbr:.2f}倍 ＝ 1倍割れ（東証の改善要請対象圏）", 10)
+    elif pbr < 1.3:
+        add(f"PBR {pbr:.2f}倍 ＝ 1倍をわずかに超える程度", 4)
+    elif pbr >= 3.0:
+        add(f"PBR {pbr:.1f}倍 ＝ 資産面の買収妙味は薄い", -8)
+
+    # 2. 買収資金の現実性（TOBの主戦場は数百億円クラス）
+    if 100 <= mcap < 1000:
+        add(f"時価総額 {mcap:,}億円 ＝ TOB・MBOの主戦場サイズ", 15)
+    elif 50 <= mcap < 100 or 1000 <= mcap < 2000:
+        add(f"時価総額 {mcap:,}億円 ＝ 買収資金が十分現実的", 8)
+    elif 20 <= mcap < 50:
+        add(f"時価総額 {mcap:,}億円 ＝ 小粒だが買収可能圏", 4)
+    elif mcap >= 5000:
+        add(f"時価総額 {mcap:,}億円 ＝ 大型で買収資金のハードル高", -12)
+
+    # 3. ため込み体質（現金・資産を抱えて活かせていない＝ファンドの好物）
+    er = fu.get("equity_ratio")
+    roe = fu.get("roe")
+    if er is not None:
+        if er >= 70:
+            add(f"自己資本比率 {er:.0f}% ＝ ほぼ無借金のため込み体質", 12)
+        elif er >= 60:
+            add(f"自己資本比率 {er:.0f}% ＝ 財務が厚く買収後の余力大", 8)
+        elif er >= 50:
+            add(f"自己資本比率 {er:.0f}% ＝ 財務健全", 4)
+        if er >= 60 and roe is not None and roe < 8:
+            add(f"厚い資本にROE {roe:.1f}% ＝ 資本を活かせていない（アクティビスト誘因）", 6)
+
+    # 4. 稼ぐ力（壊れた会社は買われない。「安いが健全」が核心）
+    om = fu.get("op_margin")
+    if om is not None:
+        if om >= 8:
+            add(f"営業利益率 {om:.1f}% ＝ 本業の稼ぐ力あり", 8)
+        elif om >= 3:
+            add(f"営業利益率 {om:.1f}% ＝ 本業は黒字", 5)
+        elif om < 0:
+            add("営業赤字 ＝ 事業目的の買収対象になりにくい", -12)
+
+    # 5. 還元の渋さ（黒字なのに配当性向が低い＝ため込みの傍証）
+    po = fu.get("payout")
+    if po is not None and om is not None and om > 0 and 0 <= po < 30:
+        add(f"配当性向 {po:.0f}% ＝ 黒字なのに還元が渋い", 5)
+
+    # 6. 株価の放置（市場に評価されていないほどプレミアムを乗せやすい）
+    p1 = s.get("pos1y")
+    if p1 is not None:
+        if p1 < 0.25:
+            add("株価は1年レンジの下位25%に放置", 6)
+        elif p1 < 0.40:
+            add("株価は1年レンジの下位40%", 3)
+
+    # 7. 出来高の薄さ（アナリストも機関も見ていない銘柄は歪みが残る）
+    tv = s.get("turnover")
+    if tv is not None and tv < 300_000_000:
+        add("売買代金が薄く市場の目が届きにくい", 4)
+
+    # 8. 市場区分（非公開化のしやすさ・東証圧力）
+    mkt = s.get("market", "")
+    if mkt in ("スタンダード", "グロース", "札幌", "福岡"):
+        add(f"{mkt}市場 ＝ 上場維持メリットが薄く非公開化しやすい", 4)
+    elif mkt == "プライム" and pbr < 1.0:
+        add("プライムでPBR1倍割れ ＝ 東証の改善要請が直撃", 4)
+
+    # 9. 利益面の割安（おまけ）
+    per = fu.get("per")
+    if per is not None and 0 < per < 10:
+        add(f"PER {per:.1f}倍 ＝ 利益面でも割安", 4)
+
+    score = max(0, sum(h[1] for h in hits))
+    return score, hits
+
+
+# 画面に出す「取れていない決定的要因」の注記（正直な限界の明示）
+TOB_MISSING_NOTE = ("このスコアに入っていない決定的な要因: 親子上場・支配株主の存在、"
+                    "創業家の持株比率と経営者の年齢（MBOの最大要因）、アクティビストの大量保有、"
+                    "政策保有株の解消動向、不動産などの含み益。これらは無料の公開データでは"
+                    "機械判定できないため、上位に入った銘柄はこの観点を人間が確認してください。")
+
+
+# ------------------------------------------------------------
 # 仮想実行: 「◎になったら翌日の始値で100株買い、+5000円の指値で売る」
 # を過去1年の日足でなぞる（検証レポート用）
 # ------------------------------------------------------------
@@ -3509,7 +3614,7 @@ NAV_JS = """<script>
 
 def nav_html(active):
     parts = []
-    sub = active in ("holdings", "backtest")
+    sub = active in ("holdings", "backtest", "tob")
     for href, label, key in NAV_ITEMS:
         cls = ' class="act"' if (key == active or (sub and key == "guide")) else ""
         parts.append(f'<a href="{href}"{cls}>{label}</a>')
@@ -3844,6 +3949,7 @@ def render_universe(all_results, stats, dt):
                  '<option value="fav">★お気に入り・持ち株を先頭に</option>'
                  '<option value="exec">社長交代の開示ありを先頭に</option>'
                  '<option value="tp">注目開示（上方修正等）を先頭に</option>'
+                 '<option value="tob">TOBされやすい順（素地スコア）</option>'
                  '<option value="ag">オールグリーンを先頭に</option>'
                  '<option value="drop">高値からの下落率が大きい順</option>'
                  '<option value="close">株価が高い順</option>'
@@ -3894,6 +4000,7 @@ def render_universe(all_results, stats, dt):
             f'data-tri="{1 if r.get("tri") else 0}" data-soon="{1 if r.get("soon") else 0}" '
             f'data-exec="{1 if r.get("exec_change") else 0}" '
             f'data-tp="{len(r.get("topics") or [])}" '
+            f'data-tob="{_n(r.get("tob"), -1)}" '
             f'data-ag="{1 if r.get("all_green") else 0}" data-rf="{1 if r.get("red_free") else 0}" data-nev="{r.get("n_eval", 0)}" '
             f'data-close="{_n(r.get("close"), -1)}" data-drop="{_n(r.get("drop_pct"), -1)}" '
             f'data-mkt="{html.escape(r.get("market", ""))}" data-sec="{html.escape(r.get("sector", ""))}">'
@@ -4119,6 +4226,7 @@ const cmp = {
   fav:       (a, b) => (+b.dataset.fav - +a.dataset.fav) || (+b.dataset.hold - +a.dataset.hold) || (+b.dataset.sc - +a.dataset.sc),
   exec:      (a, b) => (+b.dataset.exec - +a.dataset.exec) || (+b.dataset.sc - +a.dataset.sc),
   tp:        (a, b) => (+b.dataset.tp - +a.dataset.tp) || (+b.dataset.sc - +a.dataset.sc),
+  tob:       (a, b) => (+b.dataset.tob - +a.dataset.tob) || (+b.dataset.sc - +a.dataset.sc),
   ag:        (a, b) => (+b.dataset.ag - +a.dataset.ag) || (+b.dataset.rf - +a.dataset.rf) || (+b.dataset.nev - +a.dataset.nev) || (+b.dataset.sc - +a.dataset.sc),
   drop:      (a, b) => +b.dataset.drop - +a.dataset.drop,
   close:     (a, b) => +b.dataset.close - +a.dataset.close,
@@ -4186,6 +4294,7 @@ if (savedSort && cmp[savedSort]){ document.getElementById('sort').value = savedS
 <div class="ugrow"><span class="ugk2">総合スコア順</span><span>質＋タイミングの合計。帳簿の並びとほぼ同じ基準（帳簿はさらに安全合格が条件）</span></div>
 <div class="ugrow"><span class="ugk2">三層合格を先頭に</span><span>安全×質×タイミングすべて合格＝<b>帳簿入りの銘柄</b>が先頭。次に「まもなく」</span></div>
 <div class="ugrow"><span class="ugk2">★・社長交代・注目開示・オールグリーン</span><span>それぞれの該当銘柄を先頭に集めます（★は持ち株印も一緒に・同順位は総合スコア順）</span></div>
+<div class="ugrow"><span class="ugk2">TOBされやすい順</span><span>買収・非公開化されやすい「体質」の素地スコア順（PBR・時価総額・ため込み度など9観点）。詳しくは「TOB素地ランキング」ページへ</span></div>
 <div class="ugrow"><span class="ugk2">下落率・株価・市場別</span><span>単純な数値・区分の並べ替え。「高値からの下落率が大きい順」は安い順ですが、下げには理由があることも多いので減点・除外理由も必ず確認</span></div>
 
 <div class="ugh">操作のコツ</div>
@@ -4441,6 +4550,7 @@ def render_guide(dt):
 <div class="gcard c-sub"><div class="gh">🧩 その他の機能（サブシステム）</div>
 <div class="gt">メインの4タブとは別に、使いたい人向けの補助機能です。</div>
 <a class="subbtn" href="holdings.html"><b>持ち株の管理</b><span>保有銘柄の登録 → 毎時の監視（利確／損切りライン到達を色で通知）→ 売却記録 → 通算成績（勝率・損益率）。「今夜の厳選」の「買った」ボタンからも登録できます</span></a>
+<a class="subbtn" href="tob.html"><b>TOB素地ランキング</b><span>買収・非公開化されやすい「体質」を診断士の定石（PBR・時価総額・ため込み度など9観点）で全銘柄採点した順位表。確率の予測ではなく、最後の確認は人間の役割</span></a>
 <a class="subbtn" href="backtest.html"><b>手法の検証レポート</b><span>採点ルールと売りルール自身の成績表。損切り%の最適比較（★）、持ち金別シミュレーション、どの根拠が実際に効いているかの実測</span></a></div>
 
 <div class="gcard c-gray"><div class="gh">⚙️ 操作のコツ・初期設定</div>
@@ -4482,6 +4592,172 @@ def render_guide(dt):
             .replace("__SCRIPT__", ""))
 
 
+def render_tob(tob_ranked, n_total, dt):
+    """TOB素地ランキングページ: 買収・非公開化されやすい「体質」の順位表"""
+    judged = len(tob_ranked)
+    announced = [e for e in tob_ranked if e.get("tob_announced")]
+    candidates = [e for e in tob_ranked if not e.get("tob_announced")][:50]
+    max_score = max((e["tob"] for e in candidates), default=1) or 1
+    chip_class = {"プライム": "prime", "スタンダード": "std", "グロース": "growth"}
+
+    rows = []
+    for e in candidates:
+        fu = e.get("fund") or {}
+        mchip = chip_class.get(e.get("market", ""), "local")
+        barw = e["tob"] / max_score * 100
+        facts = []
+        if fu.get("pbr") is not None:
+            facts.append(f'PBR {fu["pbr"]:.2f}倍')
+        if fu.get("mcap_oku"):
+            facts.append(f'時価総額 {fu["mcap_oku"]:,}億円')
+        if fu.get("equity_ratio") is not None:
+            facts.append(f'自己資本 {fu["equity_ratio"]:.0f}%')
+        if fu.get("roe") is not None:
+            facts.append(f'ROE {fu["roe"]:.1f}%')
+        hits_html = "".join(
+            f'<div class="thit"><span>{html.escape(label)}</span>'
+            f'<span class="num tp{"p" if pts >= 0 else "m"}">{pts:+d}</span></div>'
+            for label, pts in (e.get("tob_hits") or []))
+        yahoo_url = f'https://finance.yahoo.co.jp/quote/{e["code"]}{e.get("suffix", ".T")}'
+        rows.append(f"""
+<details class="trow">
+<summary class="tsum">
+  <span class="trk num">{e["tob_rank"]}</span>
+  <span class="tnm"><b>{html.escape(e["name"])}</b> <span class="chip {mchip}">{html.escape(e.get("market", "") or "−")}</span>
+    <span class="num tuc">{e["code"]}</span>
+    <span class="tfact num">{" ・ ".join(facts)}</span></span>
+  <span class="tsc num">{e["tob"]}<small>点</small></span>
+  <span class="tchev">›</span>
+</summary>
+<div class="tbody">
+  <div class="tbar"><div class="tbarfill" style="width:{barw:.0f}%"></div></div>
+  {hits_html}
+  <div class="linkrow">
+    <a class="ylink" href="{yahoo_url}" target="_blank" rel="noopener">Yahoo!ファイナンス →</a>
+    <button type="button" class="ylink sbi" onclick="openSBI('{e["code"]}', event)">SBI証券アプリで見る</button>
+  </div>
+</div>
+</details>""")
+
+    if announced:
+        ann_rows = "".join(
+            f'<div class="fact"><span><b>{html.escape(e["name"])}</b> <span class="num">{e["code"]}</span>'
+            f'<span class="tpbadge twarn">TOB・MBO発表済み</span></span>'
+            f'<span class="v num">素地 {e["tob"]}点・全体{e["tob_rank"]:,}位</span></div>'
+            for e in announced[:15])
+        ann_card = (f'<div class="card"><h2>📌 答え合わせ: 実際にTOB・MBOが発表された銘柄（直近14日）</h2>'
+                    f'{ann_rows}'
+                    f'<div class="note">発表当日は株価が跳ねてPBR等が上がるため、上の点数は発表の影響を受けた後の値です。'
+                    f'このランキングの実力は「発表<b>前</b>に何位だったか」で測るのが正しく、'
+                    f'毎晩の実行を重ねるほど答え合わせの精度が上がっていきます。</div></div>')
+    else:
+        ann_card = ('<div class="card"><h2>📌 答え合わせ（実績照合）</h2>'
+                    '<div class="note">直近14日にTOB・MBOの開示があった銘柄が現れると、ここに'
+                    '「その銘柄が本ランキングで何位だったか」を表示します。実績が貯まるほど、'
+                    'この物差し自体の当たり外れを検証できます。</div></div>')
+
+    body = f"""
+<div class="card" style="border-left:5px solid #6b4487;">
+  <h2>これは何？（確率の予測ではありません）</h2>
+  <div class="gt">M&Aアドバイザーや中小企業診断士が「この会社は買収・非公開化の対象になりやすい」と見るときの
+  <b>定石を固定基準にして、全銘柄を機械的に採点した順位表</b>です。
+  「TOBが起きる」という予告ではなく、<b>買収側から見て魅力的な体質かどうか</b>の素地スコアです。
+  役割分担: 体質での絞り込みは機械が毎晩やる → 最後の確認と判断は人間がやる。</div>
+</div>
+
+<details class="crit2">
+<summary>採点の物差し（9つの観点・タップで開閉）<span class="tchev">›</span></summary>
+<div class="critbody2">
+  <div class="cr"><b>① 解散価値との比較（最大22点）</b> PBR1倍割れ、特に0.6倍未満は「会社を丸ごと買って資産を得た方が安い」状態。買収の最重要シグナル</div>
+  <div class="cr"><b>② 買える大きさか（最大15点）</b> TOB・MBOの主戦場は時価総額100〜1000億円。大型すぎると資金面で非現実的（減点）</div>
+  <div class="cr"><b>③ ため込み体質（最大18点）</b> 自己資本比率が高いのにROEが低い＝現金と資産を抱えて活かせていない。ファンド・アクティビストが最も好む型</div>
+  <div class="cr"><b>④ 稼ぐ力はあるか（最大8点）</b> 営業黒字が前提。壊れた会社は買われない——「安いのに健全」の組み合わせが核心</div>
+  <div class="cr"><b>⑤ 還元の渋さ（5点）</b> 黒字なのに配当性向が低い＝ため込みの傍証</div>
+  <div class="cr"><b>⑥ 株価の放置（最大6点）</b> 1年レンジ下位に放置されているほど、プレミアムを乗せた買付けがしやすい</div>
+  <div class="cr"><b>⑦ 出来高の薄さ（4点）</b> 市場の目が届かない銘柄ほど割安の歪みが残る</div>
+  <div class="cr"><b>⑧ 市場区分（4点）</b> スタンダード・グロースは非公開化しやすい。プライムのPBR1倍割れは東証の改善要請が直撃</div>
+  <div class="cr"><b>⑨ 利益面の割安（4点）</b> PER10倍未満はおまけの加点</div>
+</div>
+</details>
+
+<div class="card warncard2">
+  <h2>⚠ このスコアの限界（正直な注意書き）</h2>
+  <div class="gt">{TOB_MISSING_NOTE}</div>
+  <div class="gt" style="margin-top:6px">また「TOB狙い」の投資は、<b>発表がなければ延々と塩漬け</b>になりやすい戦法です。
+  上位銘柄はどれも「安くて健全」ではあるので、TOBが来なくても持てる銘柄かを通常の三層判定（安全・質・タイミング）でも確認してください。</div>
+</div>
+
+{ann_card}
+
+<div class="card" style="padding:4px 0 8px;">
+  <h2 style="padding:10px 14px 2px;">素地スコア上位50銘柄（判定 {judged:,}銘柄中）</h2>
+  {"".join(rows)}
+</div>
+"""
+    extra_css = """
+  .gt{font-size:12.5px; line-height:1.85;}
+  details.crit2{background:#faf6ec; border-radius:14px; margin-bottom:12px; box-shadow:0 1px 3px rgba(0,0,0,.06);}
+  details.crit2 summary{list-style:none; cursor:pointer; font-size:13px; font-weight:800; color:#7a6a45;
+    padding:12px 14px; display:flex; justify-content:space-between; align-items:center;}
+  details.crit2 summary::-webkit-details-marker{display:none;}
+  .critbody2{padding:0 14px 12px;}
+  .cr{font-size:12px; line-height:1.8; padding:6px 0; border-top:1px dashed #e7e0cf; color:var(--ink2);}
+  .cr b{color:#4a3f28;}
+  .tchev{color:#c9bd9d; font-weight:700; transition:transform .15s;}
+  details[open] > summary .tchev{transform:rotate(90deg);}
+  .warncard2{background:#fdf6e6 !important; border-left:5px solid #b06a00;}
+  .warncard2 h2{color:#8a5a17;}
+  details.trow{border-top:1px solid var(--paper-line);}
+  .tsum{list-style:none; cursor:pointer; display:flex; align-items:center; gap:8px; padding:8px 14px;}
+  .tsum::-webkit-details-marker{display:none;}
+  details.trow[open] .tsum{background:#f4eedd;}
+  .trk{flex:none; width:26px; text-align:center; font-size:13px; font-weight:800; color:#6b4487;}
+  .tnm{flex:1; min-width:0; font-size:12.5px; line-height:1.5;}
+  .tuc{color:var(--ink2); font-size:11px; margin-left:2px;}
+  .tfact{display:block; font-size:10px; color:var(--ink2);}
+  .tsc{flex:none; font-size:15px; font-weight:800; color:#6b4487;}
+  .tsc small{font-size:9px; font-weight:600; color:var(--ink3);}
+  .tbody{background:#fffdf6; border-top:1px dashed var(--paper-line); padding:10px 14px 14px;}
+  .tbar{height:10px; background:#f0ead9; border-radius:5px; overflow:hidden; margin-bottom:8px;}
+  .tbarfill{height:100%; background:#9a7ab5; border-radius:5px;}
+  .thit{display:flex; justify-content:space-between; gap:10px; font-size:11.5px; line-height:1.7;
+    padding:4px 0; border-bottom:1px dashed #f0ead9;}
+  .thit .tpp{font-weight:800; color:#6b4487; flex:none;}
+  .thit .tpm{font-weight:800; color:#b06a00; flex:none;}
+  .tpbadge{display:inline-block; font-size:9.5px; font-weight:800; color:#fff; border-radius:4px;
+    padding:1px 6px; margin-left:5px; vertical-align:1px;}
+  .tpbadge.twarn{background:#8a6d1a;}
+  .chip{display:inline-block; font-size:9px; font-weight:600; border-radius:5px; padding:1.5px 5px; vertical-align:1px;}
+  .chip.prime{background:#e8eef8; color:#2e4d7b;}
+  .chip.std{background:#e9f3ea; color:#3a5a40;}
+  .chip.growth{background:#f4ecf9; color:#6b4487;}
+  .chip.local{background:#f7efe4; color:#8a5a17;}
+  .linkrow{display:flex; gap:8px; margin-top:12px; flex-wrap:wrap;}
+  .linkrow .ylink{flex:1; min-width:45%;}
+  .ylink{display:block; font-size:12px; font-weight:700; color:#2e4d7b; font-family:inherit;
+    text-decoration:none; text-align:center; background:#eef2f8; border-radius:9px; padding:9px;
+    border:none; cursor:pointer;}
+  .ylink.sbi{color:#1a5c37; background:#e9f3ea;}
+"""
+    weekdays = "月火水木金土日"
+    subtitle = (f"{dt.month}/{dt.day}（{weekdays[dt.weekday()]}）{dt.hour:02d}:{dt.minute:02d} 判定 ・ "
+                f"素材の揃った{judged:,}銘柄（全{n_total:,}銘柄中）を採点 ・ 確率の予測ではなく「体質」の順位")
+    footnote = ("採点はJPX公式（J-Quants）の決算数字と株価から毎回自動計算され、基準はこのページの「採点の物差し」の通りです。"
+                "TOB・MBOの発生を保証するものではありません。全銘柄台帳の並べ替え「TOBされやすい順」でも全銘柄ぶんを確認できます。"
+                "投資判断はご自身で。")
+    return (SUBPAGE_TEMPLATE
+            .replace("__NAVCSS__", NAV_CSS)
+            .replace("__HEADBTN__", "")
+            .replace("__NAVJS__", NAV_JS)
+            .replace("__NAV__", nav_html("tob"))
+            .replace("__TITLE__", "TOB素地ランキング — 買収されやすい体質の順位")
+            .replace("__SUBTITLE__", subtitle)
+            .replace("__BODY__", body)
+            .replace("__FOOTNOTE__", footnote)
+            .replace("__EXTRA_CSS__", extra_css)
+            .replace("__SCRIPT__", SHARED_FN_JS))
+
+
 STATUS_LABEL = {"picked": "厳選候補", "ok": "候補", "bench": "圏外",
                 "dead": "除外", "skip": "対象外", "fail": "取得失敗"}
 
@@ -4518,6 +4794,14 @@ def render_stock_detail(e):
                              f'{html.escape(h[1])}<span class="num hp">−{h[2]}</span></div>')
         else:
             parts.append('<div class="hit ok">買ってはいけない条件に一つも該当なし</div>')
+
+    if e.get("tob") is not None:
+        ann = ('<span class="tpbadge twarn">TOB・MBO発表済み</span>' if e.get("tob_announced") else "")
+        parts.append(f'<div class="nhead">TOB素地スコア: {e["tob"]}点（全体{e.get("tob_rank", 0):,}位）{ann}</div>')
+        for label, pts in (e.get("tob_hits") or []):
+            parts.append(f'<div class="reason">・{html.escape(label)}（{pts:+d}）</div>')
+        parts.append('<div class="discnote">買収・非公開化されやすい「体質」の順位で、発生の予測ではありません。'
+                     '全体像と注意点は「TOB素地ランキング」ページ（使い方 › その他の機能）へ。</div>')
 
     fu = e.get("fund")
     if fu:
@@ -5489,6 +5773,21 @@ def main():
                 tp_all.append({**it, "code": code, "company": it.get("company") or e.get("name", "")})
     tp_all.sort(key=lambda x: x["date"], reverse=True)
     data["topics_all"] = tp_all
+
+    # TOB素地スコア（全銘柄に計算 → 全体順位付け）
+    detail_map_all = extras.get("detail_map") or {}
+    for code, e in detail_map_all.items():
+        e["tob"], e["tob_hits"] = tob_score(e)
+        e["tob_announced"] = any(t.get("cat") == "tob" for t in (e.get("topics") or []))
+    tob_ranked = sorted([e for e in detail_map_all.values() if e.get("tob") is not None],
+                        key=lambda x: -x["tob"])
+    for i, e in enumerate(tob_ranked, 1):
+        e["tob_rank"] = i
+    for r in all_results:
+        e = detail_map_all.get(r["code"])
+        if e is not None and e.get("tob") is not None:
+            r["tob"] = e["tob"]
+            r["tob_announced"] = e.get("tob_announced", False)
     data["soon"] = [{
         "code": s["code"], "name": s["name"], "market": s.get("market", ""),
         "close": round(s["close"], 1), "cost": round(s["close"] * 100),
@@ -5521,6 +5820,8 @@ def main():
     (DOCS / "holdings.html").write_text(render_holdings(dt_now), encoding="utf-8")
     (DOCS / "guide.html").write_text(render_guide(dt_now), encoding="utf-8")
     (DOCS / "indicators.html").write_text(render_indicators(dt_now), encoding="utf-8")
+    (DOCS / "tob.html").write_text(
+        render_tob(tob_ranked, len(detail_map_all), dt_now), encoding="utf-8")
     # 無傷ランキングは全銘柄一覧（絞り込み「無傷」・ソート「安全順」）に統合したため単独ページは廃止
     write_details(extras.get("detail_map") or {})
 
