@@ -1424,6 +1424,39 @@ def build_stock_map(detail_map, series=None, k_neighbors=8):
     pos = pos - pos.mean(0)
     pos = pos / (np.abs(pos).max() + 1e-9) * 2.6
 
+    # ---------- 軸の意味付け: 最終座標と解釈可能な特徴の相関から各軸に名前を付ける ----------
+    # X列: 0=規模 1=PBR 3=ROE 4=自己資本比率 6=配当利回り 8=値動きの荒さ 9=1年レンジ位置
+    axis_cands = [("企業規模", 0, "大きい", "小さい"),
+                  ("割安・割高", 1, "割高", "割安"),
+                  ("収益力(ROE)", 3, "高い", "低い"),
+                  ("財務の厚さ", 4, "厚い", "薄い"),
+                  ("配当利回り", 6, "高い", "低い"),
+                  ("値動きの荒さ", 8, "荒い", "穏やか"),
+                  ("1年レンジ位置", 9, "高値圏", "安値圏")]
+    axes_meta = []
+    used_ax = set()
+    for a in range(3):
+        best = None
+        for name, j, plab, mlab in axis_cands:
+            if name in used_ax:
+                continue
+            v = X[:, j]
+            if v.std() < 1e-9:
+                continue
+            r = float(np.corrcoef(pos[:, a], v)[0, 1])
+            if not math.isfinite(r):
+                continue
+            if best is None or abs(r) > abs(best[0]):
+                best = (r, name, plab, mlab)
+        if best is not None and abs(best[0]) >= 0.25:
+            r, name, plab, mlab = best
+            used_ax.add(name)
+            if r < 0:
+                plab, mlab = mlab, plab
+            axes_meta.append({"label": name, "plus": plab, "minus": mlab, "r": round(abs(r), 2)})
+        else:
+            axes_meta.append({"label": f"合成軸{a + 1}", "plus": "", "minus": "", "r": 0})
+
     # ---------- 出力 ----------
     groups = sorted({SECTOR_GROUPS.get(s, DEFAULT_GROUP) for s in secs})
     g_idx = {g: i for i, g in enumerate(groups)}
@@ -1471,6 +1504,7 @@ def build_stock_map(detail_map, series=None, k_neighbors=8):
         "groups": groups,
         "markets": markets,
         "why": {str(bit): lab for bit, lab in SIM_WHY},
+        "axes": axes_meta,
         "stocks": stocks_out,
     }
     DOCS.mkdir(exist_ok=True)
@@ -1510,6 +1544,12 @@ body{color:var(--tx); font-family:"Hiragino Sans","Yu Gothic",system-ui,sans-ser
   letter-spacing:.2em; color:var(--cy); text-shadow:0 0 16px rgba(77,215,255,.4); flex:none;}
 .hdr .cnt{font-family:ui-monospace,Menlo,monospace; font-size:10px; color:var(--dim); letter-spacing:.08em;
   margin-left:auto; flex:none;}
+.dnav{flex:none; display:flex; gap:6px; padding:7px 10px 0; background:var(--panel2);
+  overflow-x:auto; scrollbar-width:none; -webkit-overflow-scrolling:touch;}
+.dnav::-webkit-scrollbar{display:none;}
+.dnav a{flex:none; font-size:11.5px; font-weight:700; color:var(--tx2); text-decoration:none;
+  background:#0a0f18; border:1px solid var(--line); border-radius:14px; padding:5px 12px;}
+.dnav a.act{background:var(--cy); color:#06131a; border-color:var(--cy);}
 
 .toolrow{flex:none; display:flex; gap:6px; align-items:center; padding:7px 10px;
   background:var(--panel2); border-bottom:1px solid var(--line); overflow-x:auto;
@@ -1544,12 +1584,18 @@ body{color:var(--tx); font-family:"Hiragino Sans","Yu Gothic",system-ui,sans-ser
 canvas{display:block; width:100%; height:100%; cursor:grab; touch-action:none;}
 canvas.drag{cursor:grabbing;}
 
-.legend{position:absolute; left:10px; bottom:10px; pointer-events:none;
+.legend{position:absolute; left:10px; bottom:10px; pointer-events:auto; cursor:default;
   background:rgba(9,13,19,.78); backdrop-filter:blur(6px); border:1px solid var(--line);
   border-radius:6px; padding:7px 10px; max-width:230px; z-index:5;}
 .legend .t{font-size:9.5px; font-weight:700; color:var(--dim); letter-spacing:.14em; margin-bottom:3px;}
 .legend .row{display:flex; align-items:center; gap:6px; font-size:10.5px; color:var(--tx2); padding:1px 0;}
 .legend .sw{width:9px; height:9px; border-radius:50%; flex:none;}
+.legend .gtog{cursor:pointer;}
+.legend .gtog.off{opacity:.32; text-decoration:line-through;}
+.legend .gclear{cursor:pointer; color:var(--cy); font-weight:700;}
+.legend .mean{margin-top:5px; padding-top:5px; border-top:1px solid var(--line);
+  font-size:9.5px; color:var(--dim); line-height:1.6;}
+.legend .mean b{color:var(--tx2);}
 .hint{position:absolute; right:10px; top:10px; pointer-events:none; font-size:10px; color:var(--dim);
   background:rgba(9,13,19,.7); border:1px solid var(--line); border-radius:6px; padding:5px 9px; z-index:5;}
 
@@ -1602,6 +1648,13 @@ canvas.drag{cursor:grabbing;}
   font-size:14px; font-weight:800; padding:11px; cursor:pointer;}
 .nointro{display:block; margin-top:8px; text-align:center; font-size:10.5px; color:var(--dim);
   background:none; border:none; cursor:pointer; width:100%;}
+.setrow{display:flex; justify-content:space-between; align-items:center; gap:10px;
+  font-size:12px; color:var(--tx2); padding:8px 0; border-bottom:1px solid var(--line);}
+.seg{display:flex; border:1px solid var(--line2); border-radius:6px; overflow:hidden;}
+.seg button{border:0; padding:5px 11px; font-size:11px; font-weight:700; background:transparent;
+  color:var(--dim); cursor:pointer;}
+.seg button.on{background:var(--cy); color:#06131a;}
+.setnote{font-size:10.5px; color:var(--dim); line-height:1.7; padding:8px 0 2px;}
 #loading{position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
   color:var(--dim); font-family:ui-monospace,Menlo,monospace; font-size:12px; letter-spacing:.2em; z-index:20;}
 </style>
@@ -1609,10 +1662,12 @@ canvas.drag{cursor:grabbing;}
 <body>
 <div id="app">
   <div class="hdr">
-    <a class="back" href="index.html">‹ 株ノート</a>
-    <div class="logo">関連銘柄マップ</div>
+    <div class="logo">銘柄マップ</div>
     <div class="cnt mono" id="cnt">…</div>
   </div>
+  <nav class="dnav">
+    <a href="guide.html">はじめに</a><a href="indicators.html">指標の読み方</a><a href="universe.html">全銘柄台帳</a><a href="index.html">今夜の厳選</a><a class="act">銘柄マップ</a>
+  </nav>
   <div class="toolwrap"><div class="toolrow">
     <div class="srchwrap">
       <input id="q" class="srch" type="search" placeholder="銘柄名・コード検索" autocomplete="off">
@@ -1627,6 +1682,7 @@ canvas.drag{cursor:grabbing;}
     <button class="tbtn on" id="spin">自動回転</button>
     <button class="tbtn" id="reset">視点リセット</button>
     <button class="tbtn on" id="showex">除外も表示</button>
+    <button class="tbtn" id="camset">⚙ カメラ設定</button>
   </div></div>
   <div class="main">
     <div id="stage">
@@ -1641,6 +1697,25 @@ canvas.drag{cursor:grabbing;}
         <div id="pcontent"></div>
       </div>
     </div>
+  </div>
+</div>
+<div class="intro" id="camsheet" style="display:none">
+  <div class="introcard">
+    <h1>⚙ カメラ設定（この端末に保存）</h1>
+    <div class="setrow"><span>横回転の向き</span><span class="seg" data-k="invX">
+      <button data-v="false">標準</button><button data-v="true">反転</button></span></div>
+    <div class="setrow"><span>縦回転の向き</span><span class="seg" data-k="invY">
+      <button data-v="false">標準</button><button data-v="true">反転</button></span></div>
+    <div class="setrow"><span>回転の感度</span><span class="seg" data-k="sens">
+      <button data-v="0.6">低</button><button data-v="1">標準</button><button data-v="1.6">高</button></span></div>
+    <div class="setrow"><span>自動回転の速さ</span><span class="seg" data-k="spin">
+      <button data-v="0.5">遅い</button><button data-v="1">標準</button><button data-v="2">速い</button></span></div>
+    <div class="setrow"><span>奥行きの霧</span><span class="seg" data-k="fog">
+      <button data-v="0">なし</button><button data-v="0.5">弱い</button><button data-v="1">標準</button></span></div>
+    <div class="setrow"><span>座標軸の表示</span><span class="seg" data-k="axes">
+      <button data-v="true">表示</button><button data-v="false">非表示</button></span></div>
+    <div class="setnote">霧は「奥にある点ほど薄く」の3D表現です。軸の名前は毎晩、実データとの相関から自動で付き直します。</div>
+    <button class="gostart" id="camclose">閉じる</button>
   </div>
 </div>
 <div class="intro" id="intro" style="display:none">
@@ -1664,21 +1739,36 @@ function rgbaOf(hex,a){
   return 'rgba('+c[0]+','+c[1]+','+c[2]+','+a+')';
 }
 /* ═══ state ═══ */
-var DATA=null, ST=[], byCode={}, GROUPS=[], WHY={};
+var DATA=null, ST=[], byCode={}, GROUPS=[], WHY={}, AXES=[];
 var MODE='sec', SHOW_EX=true, SPIN=true;
 var rotY=0.6, rotX=0.32, zoom=1, autoT=0;
-var focusI=-1, fEdges=[];
+var focusI=-1, fEdges=[], hiddenG={}, camGoal=null;
+/* カメラ設定（この端末に保存） */
+var CAM_KEY='kabuobaa_map_cam';
+var CAM={invX:false, invY:false, sens:1, spin:1, fog:1, axes:true, spinOn:true};
+try{ var cs=JSON.parse(localStorage.getItem(CAM_KEY)||'{}');
+  for(var ck in CAM){ if(cs[ck]!==undefined) CAM[ck]=cs[ck]; } }catch(e){}
+SPIN=CAM.spinOn!==false;
+function saveCam(){ CAM.spinOn=SPIN; try{ localStorage.setItem(CAM_KEY,JSON.stringify(CAM)); }catch(e){} }
 var W=0,H=0,DPR=1;
 var cv=document.getElementById('cv'), ctx=cv.getContext('2d');
 
 function resize(){
   var st=document.getElementById('stage');
-  DPR=Math.min(2,window.devicePixelRatio||1);
+  var vv=window.visualViewport;
+  var pageZoom=vv?Math.max(1,vv.scale):1;   // ページごとピンチ拡大された時も高精細で描き直す
+  DPR=Math.min(3.5,(window.devicePixelRatio||1)*pageZoom);
   W=st.clientWidth; H=st.clientHeight;
-  cv.width=W*DPR; cv.height=H*DPR;
+  cv.width=Math.round(W*DPR); cv.height=Math.round(H*DPR);
   ctx.setTransform(DPR,0,0,DPR,0,0);
 }
 window.addEventListener('resize',resize);
+if(window.visualViewport){
+  var vvT=null;
+  window.visualViewport.addEventListener('resize',function(){
+    clearTimeout(vvT); vvT=setTimeout(resize,120);
+  });
+}
 
 /* ═══ projection ═══ */
 function projAll(){
@@ -1692,7 +1782,18 @@ function projAll(){
     s.px=W/2+x*f*sc; s.py=H/2-y2*f*sc; s.pz=z2; s.pf=f;
   }
 }
-function fogA(s){ return Math.max(0.18, Math.min(1, 0.62-0.3*s.pz+0.38)); }
+function fogA(s){
+  if(!CAM.fog) return 1;                       /* 霧なし */
+  /* 奥(pzがマイナス)ほど薄く＝3Dの遠近感。手前は常にくっきり */
+  return Math.max(0.16, Math.min(1, 1 + 0.3*s.pz*CAM.fog));
+}
+function projPt(x,y,z){
+  var cy=Math.cos(rotY), sy=Math.sin(rotY), cx=Math.cos(rotX), sx=Math.sin(rotX);
+  var sc=Math.min(W,H)*0.19*zoom;
+  var x2=x*cy+z*sy, z1=-x*sy+z*cy, y2=y*cx-z1*sx, z2=y*sx+z1*cx;
+  var f=4.6/(4.6-z2*0.85);
+  return {x:W/2+x2*f*sc, y:H/2-y2*f*sc, pz:z2, f:f};
+}
 
 /* ═══ colors ═══ */
 function colPBR(p){
@@ -1711,6 +1812,7 @@ function colTOB(t){
   if(t>=12) return '#4a5a8a';
   return '#33405c';
 }
+function isHidden(s){ return hiddenG[s.g]===true; }
 function colorOf(s){
   if(MODE==='sec') return PAL[s.g%PAL.length];
   if(MODE==='pbr') return colPBR(s.pbr);
@@ -1722,10 +1824,12 @@ function refreshColors(){ for(var i=0;i<ST.length;i++) ST[i].col=colorOf(ST[i]);
 
 function legend(){
   var el=document.getElementById('legend'), h='';
+  var nHid=Object.keys(hiddenG).filter(function(k){return hiddenG[k];}).length;
   if(MODE==='sec'){
-    h='<div class="t">業種カテゴリ</div>';
+    h='<div class="t">業種カテゴリ（タップで表示/非表示）</div>';
     for(var i=0;i<GROUPS.length;i++)
-      h+='<div class="row"><span class="sw" style="background:'+PAL[i%PAL.length]+'"></span>'+esc(GROUPS[i])+'</div>';
+      h+='<div class="row gtog'+(hiddenG[i]?' off':'')+'" data-g="'+i+'"><span class="sw" style="background:'+PAL[i%PAL.length]+'"></span>'+esc(GROUPS[i])+'</div>';
+    if(nHid) h+='<div class="row gclear">▶ 非表示 '+nHid+'件をすべて戻す</div>';
   }else if(MODE==='pbr'){
     h='<div class="t">割安度（PBR）</div>'
      +'<div class="row"><span class="sw" style="background:#4dd7ff"></span>0.7倍未満（超割安圏）</div>'
@@ -1745,7 +1849,16 @@ function legend(){
      +'<div class="row"><span class="sw" style="background:#4dd7ff"></span>高スコア候補</div>'
      +'<div class="row"><span class="sw" style="background:#33405c"></span>その他</div>';
   }
+  if(MODE!=='sec'&&nHid) h+='<div class="row gclear">▶ 業種フィルタ中（'+nHid+'件非表示）・タップで解除</div>';
+  h+='<div class="mean">この空間の見方: <b>近く＝体質と値動きが似ている</b> ・ 中心ほど平均的な銘柄、外側ほど個性が強い ・ 奥にある点は霧で薄く見えます（3D）</div>';
   el.innerHTML=h;
+  el.querySelectorAll('.gtog').forEach(function(r){
+    r.addEventListener('click',function(){
+      var g=+r.dataset.g; hiddenG[g]=!hiddenG[g]; legend();
+    });
+  });
+  var gc=el.querySelector('.gclear');
+  if(gc) gc.addEventListener('click',function(){ hiddenG={}; legend(); });
 }
 
 /* ═══ stars ═══ */
@@ -1774,6 +1887,7 @@ function draw(ts){
   ctx.globalAlpha=1;
   if(!ST.length) return;
   projAll();
+  if(CAM.axes) drawAxes();
   if(ts-lastSort>120){ order.sort(function(a,b){return ST[b].pz-ST[a].pz;}); lastSort=ts; }
 
   var focused=focusI>=0, fset=null;
@@ -1787,6 +1901,7 @@ function draw(ts){
     for(var e2=0;e2<fEdges.length;e2++){
       var ed=fEdges[e2], T=ST[ed.j];
       if(!SHOW_EX && T.ex) continue;
+      if(isHidden(T)) continue;
       var g=ctx.createLinearGradient(F.px,F.py,T.px,T.py);
       g.addColorStop(0,rgbaOf('#4dd7ff',0.55));
       g.addColorStop(1,rgbaOf(T.col,0.75));
@@ -1804,6 +1919,7 @@ function draw(ts){
   for(var oi=0;oi<order.length;oi++){
     var idx=order[oi], s=ST[idx];
     if(!SHOW_EX && s.ex) continue;
+    if(isHidden(s)) continue;
     if(s.px<-20||s.px>W+20||s.py<-20||s.py>H+20) continue;
     var r=(1.1+s.size)*s.pf*zf;
     var a=fogA(s)*(s.ex?0.45:1);
@@ -1834,8 +1950,29 @@ function draw(ts){
     for(var e3=0;e3<fEdges.length;e3++){
       var TT=ST[fEdges[e3].j];
       if(!SHOW_EX && TT.ex) continue;
+      if(isHidden(TT)) continue;
       labelFor(TT,TT.name,11.5,'#cfe0f5');
     }
+  }
+}
+var AXCOL=['#5b8cff','#3ddc97','#ffc14d'];
+function drawAxes(){
+  var basis=[[1,0,0],[0,1,0],[0,0,1]];
+  for(var a=0;a<3;a++){
+    var b=basis[a], L=2.75;
+    var P1=projPt(-b[0]*L,-b[1]*L,-b[2]*L), P2=projPt(b[0]*L,b[1]*L,b[2]*L);
+    ctx.strokeStyle=rgbaOf(AXCOL[a],0.34); ctx.lineWidth=1;
+    ctx.setLineDash([5,5]);
+    ctx.beginPath(); ctx.moveTo(P1.x,P1.y); ctx.lineTo(P2.x,P2.y); ctx.stroke();
+    ctx.setLineDash([]);
+    var ax=AXES[a]||{};
+    var lab=ax.label||('軸'+(a+1));
+    var plus=ax.plus?('→'+ax.plus):'';
+    var minus=ax.minus?('→'+ax.minus):'';
+    ctx.font='700 10px ui-monospace,Menlo,monospace';
+    ctx.fillStyle=rgbaOf(AXCOL[a],0.85);
+    ctx.fillText(lab+plus, P2.x+5, P2.y+3);
+    if(minus){ ctx.fillStyle=rgbaOf(AXCOL[a],0.5); ctx.fillText(minus, P1.x+5, P1.y+3); }
   }
 }
 function labelFor(s,txt,fs,colr){
@@ -1847,7 +1984,12 @@ function labelFor(s,txt,fs,colr){
   ctx.fillText(txt, s.px+13, s.py+3);
 }
 function loop(ts){
-  if(SPIN && Date.now()-lastPointer>1400){ rotY+=0.0016; }
+  if(camGoal){
+    var TW=Math.PI*2;
+    var dyw=(((camGoal.y-rotY)%TW)+TW)%TW; if(dyw>Math.PI) dyw-=TW;
+    rotY+=dyw*0.11; rotX+=(camGoal.x-rotX)*0.11; zoom+=(camGoal.z-zoom)*0.11;
+    if(Math.abs(dyw)<0.01&&Math.abs(camGoal.x-rotX)<0.01&&Math.abs(camGoal.z-zoom)<0.02) camGoal=null;
+  } else if(SPIN && Date.now()-lastPointer>1400){ rotY+=0.0016*CAM.spin; }
   draw(ts||0);
   requestAnimationFrame(loop);
 }
@@ -1866,8 +2008,10 @@ cv.addEventListener('pointermove',function(e){
   if(pinching||!dragging) return;
   var dx=e.clientX-lx, dy=e.clientY-ly;
   moved+=Math.abs(dx)+Math.abs(dy);
-  rotY+=dx*0.0058; rotX+=dy*0.0046;
+  var dirX=CAM.invX?1:-1, dirY=CAM.invY?1:-1;   /* 既定: 掴んだ空間を指について来させる向き */
+  rotY+=dx*0.0058*CAM.sens*dirX; rotX+=dy*0.0046*CAM.sens*dirY;
   rotX=Math.max(-1.4,Math.min(1.4,rotX));
+  if(moved>6) camGoal=null;
   lx=e.clientX; ly=e.clientY; lastPointer=Date.now();
 });
 function endPointer(e, allowTap){
@@ -1881,14 +2025,14 @@ function endPointer(e, allowTap){
 cv.addEventListener('pointerup',function(e){ endPointer(e,true); });
 cv.addEventListener('pointercancel',function(e){ endPointer(e,false); });
 cv.addEventListener('wheel',function(e){
-  e.preventDefault();
+  e.preventDefault(); camGoal=null;
   zoom*=Math.pow(1.0015,-e.deltaY);
   zoom=Math.max(0.35,Math.min(6,zoom)); lastPointer=Date.now();
 },{passive:false});
 cv.addEventListener('touchmove',function(e){
   if(e.touches.length===2){
     var d=Math.hypot(e.touches[0].clientX-e.touches[1].clientX, e.touches[0].clientY-e.touches[1].clientY);
-    if(pinchD>0){ zoom*=d/pinchD; zoom=Math.max(0.35,Math.min(6,zoom)); }
+    if(pinchD>0){ camGoal=null; zoom*=d/pinchD; zoom=Math.max(0.35,Math.min(6,zoom)); }
     pinchD=d; dragging=false; lastPointer=Date.now();
   }
 },{passive:true});
@@ -1901,6 +2045,7 @@ function tapAt(cx2,cyy){
   for(var i=0;i<ST.length;i++){
     var s=ST[i];
     if(!SHOW_EX&&s.ex) continue;
+    if(isHidden(s)) continue;
     var d=(s.px-x)*(s.px-x)+(s.py-y)*(s.py-y);
     if(d<bd){ bd=d; best=i; }
   }
@@ -1922,6 +2067,11 @@ function whyTags(flags){
 function focusOn(i){
   focusI=i; fEdges=[];
   var s=ST[i];
+  /* カメラをその銘柄が手前中央に来る向きへ寄せる */
+  var hxz=Math.hypot(s.x,s.z)||1e-6;
+  camGoal={y:Math.atan2(-s.x,s.z),
+           x:Math.max(-1.3,Math.min(1.3,Math.atan2(s.y,hxz))),
+           z:(zoom<1.5?1.5:Math.min(zoom,2.4))};  /* 近すぎると糸の先が画面外に出るため控えめに寄る */
   for(var k=0;k<s.nb.length;k+=3){
     var j=byCode[s.nb[k]];
     if(j!=null) fEdges.push({j:j, sim:s.nb[k+1], flags:s.nb[k+2]});
@@ -2002,6 +2152,12 @@ qEl.addEventListener('input',function(){
     });
   });
 });
+qEl.addEventListener('keydown',function(e){
+  if(e.key==='Enter'){
+    var it=sugg.querySelector('.it');
+    if(it){ sugg.classList.remove('show'); qEl.value=''; qEl.blur(); focusOn(+it.dataset.i); }
+  }
+});
 document.addEventListener('click',function(e){
   if(!e.target.closest('.srchwrap')) sugg.classList.remove('show');
 });
@@ -2014,7 +2170,7 @@ document.querySelectorAll('#modes button').forEach(function(b){
   });
 });
 document.getElementById('spin').addEventListener('click',function(){
-  SPIN=!SPIN; this.classList.toggle('on',SPIN);
+  SPIN=!SPIN; this.classList.toggle('on',SPIN); saveCam();
 });
 document.getElementById('reset').addEventListener('click',function(){
   rotY=0.6; rotX=0.32; zoom=1;
@@ -2022,6 +2178,29 @@ document.getElementById('reset').addEventListener('click',function(){
 document.getElementById('showex').addEventListener('click',function(){
   SHOW_EX=!SHOW_EX; this.classList.toggle('on',SHOW_EX);
 });
+
+/* ═══ camera settings sheet ═══ */
+var sheet=document.getElementById('camsheet');
+function paintCam(){
+  sheet.querySelectorAll('.seg').forEach(function(sg){
+    var k=sg.dataset.k, cur=String(CAM[k]);
+    sg.querySelectorAll('button').forEach(function(b){
+      b.classList.toggle('on', b.dataset.v===cur);
+    });
+  });
+}
+sheet.querySelectorAll('.seg button').forEach(function(b){
+  b.addEventListener('click',function(){
+    var k=b.closest('.seg').dataset.k, v=b.dataset.v;
+    CAM[k]=(v==='true')?true:(v==='false')?false:parseFloat(v);
+    saveCam(); paintCam();
+  });
+});
+document.getElementById('camset').addEventListener('click',function(){
+  paintCam(); sheet.style.display='flex';
+});
+document.getElementById('camclose').addEventListener('click',function(){ sheet.style.display='none'; });
+sheet.addEventListener('click',function(e){ if(e.target===sheet) sheet.style.display='none'; });
 
 /* ═══ intro ═══ */
 var INTRO_KEY='kabuobaa_map_intro';
@@ -2043,7 +2222,8 @@ fetch('map.json').then(function(r){
   if(!r.ok) throw new Error('map.jsonがまだ生成されていません');
   return r.json();
 }).then(function(j){
-  DATA=j; GROUPS=j.groups||[]; WHY=j.why||{};
+  DATA=j; GROUPS=j.groups||[]; WHY=j.why||{}; AXES=j.axes||[];
+  document.getElementById('spin').classList.toggle('on',SPIN);
   ST=j.stocks.map(function(a,i){
     var szRaw=a[7]; var size=szRaw==null?0.5:Math.max(0.2,(szRaw-1.2)*0.75);
     return {code:a[0], name:a[1], g:a[2], m:a[3], x:a[4], y:a[5], z:a[6],
@@ -4453,12 +4633,13 @@ NAV_ITEMS = [
     ("indicators.html", "指標の読み方", "indicators"),
     ("universe.html", "全銘柄台帳", "universe"),
     ("index.html", "今夜の厳選", "index"),
+    ("map.html", "銘柄マップ", "map"),
 ]
 
 
 NAV_JS = """<script>
 (function(){
-  const order = ['guide.html', 'indicators.html', 'universe.html', 'index.html'];
+  const order = ['guide.html', 'indicators.html', 'universe.html', 'index.html', 'map.html'];
   let here = location.pathname.split('/').pop();
   if (!here) here = 'index.html';
   const idx = order.indexOf(here);
@@ -4482,7 +4663,7 @@ NAV_JS = """<script>
 
 def nav_html(active):
     parts = []
-    sub = active in ("holdings", "backtest", "tob")
+    sub = active in ("holdings", "backtest", "tob")  # 銘柄マップはメインタブ
     for href, label, key in NAV_ITEMS:
         cls = ' class="act"' if (key == active or (sub and key == "guide")) else ""
         parts.append(f'<a href="{href}"{cls}>{label}</a>')
@@ -5416,7 +5597,8 @@ def render_guide(dt):
 <div class="gcard c-paper"><div class="gh">📒 タブの役割</div>
 <div class="tabrow"><span class="tb">今夜の厳選</span>安全×質×タイミングの三層で選んだ厳選{c["TOP_N"]}銘柄＋「まもなく買い場」の待ち銘柄。持ち金・★・根拠</div>
 <div class="tabrow"><span class="tb">全銘柄台帳</span>約4,000銘柄の台帳。安全（減点）・質・タイミングの3スコア、無傷／まもなく絞り込み、並べ替え、タップで全詳細（指標メーター付き）</div>
-<div class="tabrow"><span class="tb">指標の読み方</span>PER・RSIなど全指標の図解。数字の読み方はここ</div></div>
+<div class="tabrow"><span class="tb">指標の読み方</span>PER・RSIなど全指標の図解。数字の読み方はここ</div>
+<div class="tabrow"><span class="tb">銘柄マップ</span>全銘柄を財務×テクニカル×値動きでベクトル化した3D空間。似ている銘柄が近くに並び、タップで「発想が繋がる銘柄」へ光の糸が伸びる</div></div>
 
 <div class="gcard c-yellow"><div class="gh">🟡 選定の仕組み（要約）</div>
 <div class="gt">全銘柄 → 対象外（流動性不足・低位株・上場浅）→ 除外（終わった株・急落直後・荒い値動き・下げ止まり未確認）→
@@ -5431,7 +5613,6 @@ def render_guide(dt):
 <div class="gcard c-sub"><div class="gh">🧩 その他の機能（サブシステム）</div>
 <div class="gt">メインの4タブとは別に、使いたい人向けの補助機能です。</div>
 <a class="subbtn" href="holdings.html"><b>持ち株の管理</b><span>保有銘柄の登録 → 毎時の監視（利確／損切りライン到達を色で通知）→ 売却記録 → 通算成績（勝率・損益率）。「今夜の厳選」の「買った」ボタンからも登録できます</span></a>
-<a class="subbtn" href="map.html"><b>関連銘柄マップ（3D空間）</b><span>全銘柄を財務×テクニカル×値動きの高次元ベクトルで埋め込み、似ている銘柄が近くに並ぶ宇宙空間。銘柄をタップすると「発想が繋がる銘柄」へ光の糸が伸び、なぜ似ているかも表示</span></a>
 <a class="subbtn" href="tob.html"><b>TOB素地ランキング</b><span>買収・非公開化されやすい「体質」を診断士の定石（PBR・時価総額・ため込み度など9観点）で全銘柄採点した順位表。確率の予測ではなく、最後の確認は人間の役割</span></a>
 <a class="subbtn" href="backtest.html"><b>手法の検証レポート</b><span>採点ルールと売りルール自身の成績表。損切り%の最適比較（★）、持ち金別シミュレーション、どの根拠が実際に効いているかの実測</span></a></div>
 
