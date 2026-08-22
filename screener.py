@@ -2033,7 +2033,7 @@ function draw(ts){
   ctx.globalAlpha=1;
   /* 常時銘柄名: 大型・厳選銘柄から優先し、重なる場所には出さない */
   if(CAM.labels && !focused && prio.length){
-    var cells={}, placed=0, maxL=(W<520)?30:60;
+    var cells={}, placed=0, maxL=((W<520)?30:60)+(zoom>3?30:0);
     ctx.font='600 9.5px "Hiragino Sans",sans-serif';
     for(var pi2=0;pi2<prio.length && placed<maxL;pi2++){
       var ls=ST[prio[pi2]];
@@ -2137,7 +2137,7 @@ function canvasXY(e){
   return [e.clientX-r.left, e.clientY-r.top];
 }
 function zoomAt(cx2,cy2,k){
-  var nz=Math.max(0.35,Math.min(8,zoom*k)); k=nz/zoom;
+  var nz=Math.max(0.3,Math.min(48,zoom*k)); k=nz/zoom;   /* かなり奥まで拡大できるように */
   ox=k*ox+(1-k)*(cx2-W/2);
   oy=k*oy+(1-k)*(cy2-H/2);
   zoom=nz;
@@ -2187,7 +2187,8 @@ cv.addEventListener('pointermove',function(e){
     moved+=Math.abs(dx)+Math.abs(dy);
     if(moved>6) camGoal=null;
     var dirX=CAM.invX?1:-1, dirY=CAM.invY?1:-1;
-    var ry=dx*0.0058*CAM.sens*dirX, rx=dy*0.0046*CAM.sens*dirY;
+    var fine=1/Math.max(1,Math.pow(zoom,0.35));   /* 拡大中は回転を細かく */
+    var ry=dx*0.0058*CAM.sens*dirX*fine, rx=dy*0.0046*CAM.sens*dirY*fine;
     rotY+=ry; rotX=Math.max(-1.4,Math.min(1.4,rotX+rx));
     velY=ry*0.85; velX=rx*0.85;
     lx=xy[0]; ly=xy[1];
