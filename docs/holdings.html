@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="robots" content="noindex, nofollow">
+<link rel="apple-touch-icon" href="icon.png">
+<link rel="icon" type="image/png" href="icon.png">
+<title>持ち株の管理 — 売り時の監視と成績 ｜ 株ノート</title>
+<style>
+  :root{--ink:#1c1c1e; --ink2:#6e6e73; --ink3:#aeaeb2; --paper:#faf6ec;
+    --paper-line:#e7e0cf; --bg:#f2f2f7; --line:#e5e5ea; --cheap:#c62f2f; --cheap-bg:#fdeeee;
+    --mild:#b06a00; --mild-bg:#fdf3e3;}
+  *{box-sizing:border-box; margin:0; padding:0;}
+  body{font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Noto Sans JP",sans-serif;
+    background:var(--bg); color:var(--ink); max-width:640px; margin:0 auto;
+    padding:14px 12px 40px;}
+  .num{font-family:ui-monospace,"SF Mono",Menlo,monospace; font-variant-numeric:tabular-nums;}
+  header{padding:6px 4px 12px;}
+  header .t{font-size:20px; font-weight:800;}
+  header .s{font-size:12px; color:var(--ink2); margin-top:3px; line-height:1.6;}
+  .back{display:inline-block; font-size:12px; font-weight:700; color:#2e4d7b;
+    text-decoration:none; margin-bottom:8px;}
+
+  .topnav{display:flex; gap:6px; overflow-x:auto; padding:2px 0 12px;
+    -webkit-overflow-scrolling:touch;}
+  .topnav a{flex:none; font-size:12.5px; font-weight:700; color:#4a3f28;
+    text-decoration:none; background:#f4eedd; border-radius:10px; padding:8px 14px;}
+  .topnav a.act{background:#1c1c1e; color:#fff;}
+  .topnav a.subtag{background:none; color:#8a5a17; font-weight:800; padding-left:2px;}
+
+  html, body{overflow-x:hidden; max-width:100%;}
+  body{overscroll-behavior-x:none;}
+  *{min-width:0;}
+  img, svg{max-width:100%;}
+  .topnav, .chips, .filters{overflow-x:auto; overscroll-behavior-x:contain; -webkit-overflow-scrolling:touch;}
+  .card, .hcard, .ledger, .list, .flatlist, .soonbox, .capcard, details, .notebox, .ubody{max-width:100%; overflow-wrap:anywhere;}
+  input, select{max-width:100%;}
+
+  .card{background:var(--paper); border-radius:14px; padding:12px 14px;
+    margin-bottom:12px; box-shadow:0 1px 3px rgba(0,0,0,.06);}
+  .card h2{font-size:13px; font-weight:800; color:#7a6a45; letter-spacing:.05em;
+    margin-bottom:8px;}
+  .fact{display:flex; justify-content:space-between; font-size:12.5px; padding:6px 0;
+    border-bottom:1px solid #f0ead9;}
+  .fact span:first-child{color:var(--ink2);}
+  .fact .v{font-weight:700;}
+  .plus{color:#2e7d32;} .minus{color:var(--cheap);}
+  .note{font-size:11px; color:var(--ink3); line-height:1.7; padding:8px 4px;}
+  
+  .rin{width:90px; font-size:14px; font-weight:700; padding:6px 8px;
+    border:1.5px solid #d9d2bf; border-radius:8px; background:#fff; text-align:right;}
+  #acode{text-align:left;}
+  .rulenote{font-size:11px; color:#8a5a17; line-height:1.7; padding-top:8px;}
+  .addrow{display:flex; gap:6px; flex-wrap:wrap; align-items:center;}
+  .addrow .rin{flex:1; min-width:90px;}
+  .abtn{font-size:13px; font-weight:800; color:#fff; background:#1c1c1e; border:none;
+    border-radius:9px; padding:9px 18px;}
+  .aerr{color:var(--cheap); font-size:11.5px; font-weight:700; padding-top:6px; min-height:14px;}
+  .statgrid{display:grid; grid-template-columns:repeat(3,1fr); gap:8px;}
+  .statgrid .note{grid-column:1/-1;}
+  .stat{background:#fff; border-radius:10px; padding:10px 8px; text-align:center;}
+  .stat .sv{font-size:18px; font-weight:800;} .stat .sl{font-size:10px; color:var(--ink2); margin-top:2px;}
+  .hcard{background:#fff; border-radius:14px; padding:12px 14px; margin-bottom:10px;
+    box-shadow:0 1px 3px rgba(0,0,0,.06);}
+  .hcard.selltp{outline:2.5px solid var(--cheap); background:var(--cheap-bg);}
+  .hcard.sellsl{outline:2.5px solid #b06a00; background:var(--mild-bg);}
+  .htop{display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;}
+  .hname{font-size:14px; font-weight:800;} .hname small{font-weight:600; color:var(--ink2); font-size:11px;}
+  .hbtns{display:flex; gap:6px;}
+  .hbtn{font-size:11px; font-weight:700; border-radius:7px; padding:5px 10px; border:1px solid var(--line); background:#fff;}
+  .hbtn.sell{color:#fff; background:#1c1c1e; border-color:#1c1c1e;}
+  .hstatus{font-size:13px; font-weight:800; border-radius:9px; padding:7px 10px; text-align:center; margin:8px 0 6px;}
+  .hstatus.tp{color:#fff; background:var(--cheap);} .hstatus.sl{color:#fff; background:#b06a00;}
+  .hstatus.hold{color:var(--ink2); background:#f0f0f4;}
+  .pbar{position:relative; height:14px; border-radius:7px; margin:8px 0 4px;
+    background:linear-gradient(90deg,#f2c4a8 0%,#f2c4a8 var(--slp),#eeeae0 var(--slp),#eeeae0 var(--tpp),#b9dcc0 var(--tpp),#b9dcc0 100%);}
+  .pbar .pin{position:absolute; top:-4px; width:4px; height:22px; background:#1c1c1e; border-radius:2px; left:var(--pos); transform:translateX(-50%);}
+  .pbar .buytick{position:absolute; top:-1px; width:2px; height:16px; background:#8e8e93; left:var(--slp); transform:translateX(-50%);}
+  .plabels{position:relative; display:flex; justify-content:space-between; font-size:9.5px; color:var(--ink2); min-height:14px;}
+  .plabels .pbuy{position:absolute; transform:translateX(-50%); white-space:nowrap;}
+  .sellform{display:none; gap:6px; align-items:center; flex-wrap:wrap; margin-top:8px; padding-top:8px; border-top:1px dashed #e7e0cf;}
+  .sellform.on{display:flex;}
+  .hrow{display:flex; justify-content:space-between; font-size:11.5px; padding:6px 0; border-bottom:1px dashed #f0ead9;}
+  .hrow .num{font-weight:700;}
+
+</style>
+</head>
+<body>
+<div class="topnav"><a href="guide.html" class="act">はじめに</a><a href="indicators.html">指標の読み方</a><a href="universe.html">全銘柄台帳</a><a href="index.html">今夜の厳選</a><a href="map.html">銘柄マップ</a><a href="caps.html">時価総額マップ</a><a class="subtag">› その他の機能</a></div>
+<header><div class="t">持ち株の管理 — 売り時の監視と成績</div><div class="s">買った銘柄を登録すると毎時の記帳価格と突き合わせ、売り判断・損切りまでの距離を表示。売ったら記録して通算成績に。データはこの端末にだけ保存</div></header>
+
+<div class="card" id="statcard">
+  <h2>通算成績（売却済みの実績）</h2>
+  <div class="statgrid" id="stats"><div class="note">まだ売却記録がありません</div></div>
+</div>
+
+<div class="card">
+  <h2>売りルール（あなたの決めごと）</h2>
+  <div class="fact"><span>利確: 買値から何%上がったら売るか</span>
+    <span class="v"><input id="tp" class="rin num" type="number" inputmode="decimal" step="0.5" placeholder="5"> %</span></div>
+  <div class="fact"><span>損切り: 買値から何%下がったら売るか</span>
+    <span class="v"><input id="sl" class="rin num" type="number" inputmode="decimal" step="0.5" placeholder="8"> %</span></div>
+  <div class="rulenote">未入力なら推奨値（利確+5%・損切り−8%）。「手法の検証レポート」の損切りルールの効果比較で★最適と見比べて決めてください。</div>
+</div>
+
+<div class="card">
+  <h2>持ち株を登録</h2>
+  <div class="addrow">
+    <input id="acode" class="rin num" type="text" placeholder="コード 7203" maxlength="6">
+    <input id="abuy" class="rin num" type="number" inputmode="decimal" placeholder="買値 3,050">
+    <input id="ashares" class="rin num" type="number" inputmode="numeric" placeholder="株数 100">
+    <button id="aadd" class="abtn">追加</button>
+  </div>
+  <div id="aerr" class="aerr"></div>
+  <div class="rulenote">「今夜の厳選」の銘柄ノートにある「買った」ボタンからも登録できます（コードが自動入力）。</div>
+</div>
+
+<div id="hlist"></div>
+<div class="card" id="histcard"><h2>売却履歴</h2><div id="hist"><div class="note">まだありません</div></div></div>
+<div id="hupdated" class="note"></div>
+
+<div class="note">売りルール・持ち株・売却履歴はこの端末のブラウザにだけ保存され、外部には送信されません。価格は取引時間中は毎時、夜に確定値で記帳されたものです。実際の注文は証券会社アプリで行ってください。</div>
+<script>
+const TP_DEF=5, SL_DEF=8;
+const TP_KEY='kabuobaa_tp_pct', SL_KEY='kabuobaa_sl', H_KEY='kabuobaa_holdings', T_KEY='kabuobaa_trades';
+const tpIn=document.getElementById('tp'), slIn=document.getElementById('sl');
+let prices=null, gen='';
+const yen=v=>Math.round(v).toLocaleString();
+const load=(k)=>{ try{return JSON.parse(localStorage.getItem(k)||'[]');}catch(e){return [];} };
+const save=(k,v)=>localStorage.setItem(k, JSON.stringify(v));
+
+function renderStats(){
+  const t = load(T_KEY);
+  const el = document.getElementById('stats');
+  if (!t.length){ el.innerHTML='<div class="note">まだ売却記録がありません</div>'; return; }
+  const pnls = t.map(x=>x.pnl);
+  const wins = pnls.filter(p=>p>0).length;
+  const total = pnls.reduce((a,b)=>a+b,0);
+  const avgW = wins? pnls.filter(p=>p>0).reduce((a,b)=>a+b,0)/wins : 0;
+  const lossN = pnls.length-wins;
+  const avgL = lossN? pnls.filter(p=>p<=0).reduce((a,b)=>a+b,0)/lossN : 0;
+  const avgHeld = t.reduce((a,x)=>a+(x.held||0),0)/t.length;
+  const pf = avgL<0 ? (avgW*wins)/Math.abs(avgL*lossN) : Infinity;
+  const cls = total>=0?'plus':'minus';
+  el.innerHTML =
+    '<div class="stat"><div class="sv '+cls+'">'+(total>=0?'+':'−')+yen(Math.abs(total))+'</div><div class="sl">通算損益（円）</div></div>'+
+    '<div class="stat"><div class="sv">'+Math.round(wins/pnls.length*100)+'%</div><div class="sl">勝率（'+wins+'勝'+lossN+'敗）</div></div>'+
+    '<div class="stat"><div class="sv">'+(isFinite(pf)?pf.toFixed(2):'∞')+'</div><div class="sl">損益率（総利益÷総損失）</div></div>'+
+    '<div class="stat"><div class="sv plus">+'+yen(avgW)+'</div><div class="sl">平均利益</div></div>'+
+    '<div class="stat"><div class="sv minus">'+yen(avgL)+'</div><div class="sl">平均損失</div></div>'+
+    '<div class="stat"><div class="sv">'+avgHeld.toFixed(0)+'日</div><div class="sl">平均保有日数</div></div>';
+}
+
+function renderHist(){
+  const t = load(T_KEY).slice().reverse();
+  const el = document.getElementById('hist');
+  if (!t.length){ el.innerHTML='<div class="note">まだありません</div>'; return; }
+  el.innerHTML = t.map((x,i)=>'<div class="hrow"><span>'+x.name+' <small class="num">'+x.code+'</small> '+x.buyDate.slice(5).replace('-','/')+'→'+x.sellDate.slice(5).replace('-','/')+
+    '（'+x.held+'日・'+x.reason+'）</span><span class="num '+(x.pnl>=0?'plus':'minus')+'">'+(x.pnl>=0?'+':'−')+yen(Math.abs(x.pnl))+'円</span></div>').join('');
+}
+
+function render(){
+  const tp=parseFloat(tpIn.value)||TP_DEF, sl=parseFloat(slIn.value)||SL_DEF;
+  localStorage.setItem(TP_KEY,tpIn.value||''); localStorage.setItem(SL_KEY,slIn.value||'');
+  const list=document.getElementById('hlist'); const holds=load(H_KEY);
+  if(!holds.length){ list.innerHTML='<div class="card"><h2>持ち株一覧</h2><div class="note">まだ登録がありません</div></div>'; renderStats(); renderHist(); return; }
+  let out='';
+  holds.forEach((h,idx)=>{
+    const p=prices?prices[h.code]:null;
+    const tpL=h.buy*(1+tp/100), slL=h.buy*(1-sl/100);
+    const nm=(p&&p.n)?p.n:'銘柄 '+h.code;
+    const days = h.date ? Math.max(0, Math.round((Date.now()-new Date(h.date))/86400000)) : null;
+    let inner='', cls='';
+    if(!p){ inner='<div class="hstatus hold">'+(prices?'価格データなし（コードを確認）':'価格データ読み込み中…')+'</div>'; }
+    else{
+      const cur=p.c, pnl=(cur-h.buy)*h.shares, pnlPct=(cur/h.buy-1)*100;
+      const pt=(pnl>=0?'+':'−')+yen(Math.abs(pnl))+'円（'+(pnlPct>=0?'+':'')+pnlPct.toFixed(1)+'%）';
+      let st;
+      if(cur>=tpL){st='売り判断 ｜ 利確ライン到達 '+pt; cls='selltp';}
+      else if(cur<=slL){st='売り判断 ｜ 損切りライン到達 '+pt; cls='sellsl';}
+      else{st='持続 ｜ '+pt+' ・ 利確まであと'+yen((tpL-cur)*h.shares)+'円 ・ 損切りまで'+yen((cur-slL)*h.shares)+'円の余裕';}
+      const range=tpL-slL, pos=Math.max(0,Math.min(100,(cur-slL)/range*100));
+      const buyPos=Math.max(0,Math.min(100,(h.buy-slL)/range*100));
+      inner='<div class="hstatus '+(cls==='selltp'?'tp':cls==='sellsl'?'sl':'hold')+'">'+st+'</div>'+
+        '<div class="pbar" style="--slp:'+buyPos.toFixed(1)+'%;--tpp:'+buyPos.toFixed(1)+'%;--pos:'+pos.toFixed(1)+'%"><div class="buytick"></div><div class="pin"></div></div>'+
+        '<div class="plabels"><span>損切り '+yen(slL)+'円</span><span class="pbuy" style="left:'+buyPos.toFixed(1)+'%">買値 '+yen(h.buy)+'円</span><span>利確 '+yen(tpL)+'円</span></div>'+
+        '<div class="fact num"><span>いまの値段（'+(p.d?p.d.slice(5).replace('-','/'):'')+'記帳）</span><span class="v">'+yen(cur)+'円 × '+h.shares+'株'+(days!==null?' ・ '+days+'日目':'')+'</span></div>';
+    }
+    out+='<div class="hcard '+cls+'"><div class="htop"><div class="hname">'+nm+' <small class="num">'+h.code+'</small></div>'+
+      '<div class="hbtns"><button class="hbtn sell" data-i="'+idx+'">売った</button><button class="hbtn del" data-i="'+idx+'">削除</button></div></div>'+inner+
+      '<div class="sellform" id="sf'+idx+'"><input class="rin num" id="sp'+idx+'" type="number" inputmode="decimal" placeholder="売値 '+(p?yen(p.c):'')+'">'+
+      '<select class="rin" id="sr'+idx+'"><option>利確</option><option>損切り</option><option>その他</option></select>'+
+      '<button class="abtn" data-i="'+idx+'" id="sc'+idx+'">記録して外す</button></div></div>';
+  });
+  list.innerHTML=out;
+  list.querySelectorAll('.hbtn.del').forEach(b=>b.addEventListener('click',()=>{const h=load(H_KEY);h.splice(+b.dataset.i,1);save(H_KEY,h);render();}));
+  list.querySelectorAll('.hbtn.sell').forEach(b=>b.addEventListener('click',()=>{document.getElementById('sf'+b.dataset.i).classList.toggle('on');}));
+  holds.forEach((h,idx)=>{
+    const btn=document.getElementById('sc'+idx); if(!btn) return;
+    btn.addEventListener('click',()=>{
+      const sp=parseFloat(document.getElementById('sp'+idx).value); if(!(sp>0)){alert('売値を入力してください');return;}
+      const p=prices?prices[h.code]:null; const nm=(p&&p.n)?p.n:'銘柄 '+h.code;
+      const today=new Date().toISOString().slice(0,10);
+      const held=h.date?Math.max(1,Math.round((Date.now()-new Date(h.date))/86400000)):0;
+      const t=load(T_KEY); t.push({code:h.code,name:nm,buy:h.buy,sell:sp,shares:h.shares,pnl:(sp-h.buy)*h.shares,buyDate:h.date||today,sellDate:today,held:held,reason:document.getElementById('sr'+idx).value}); save(T_KEY,t);
+      const hs=load(H_KEY); hs.splice(idx,1); save(H_KEY,hs); render();
+    });
+  });
+  renderStats(); renderHist();
+}
+document.getElementById('aadd').addEventListener('click',()=>{
+  const code=document.getElementById('acode').value.trim().toUpperCase(), buy=parseFloat(document.getElementById('abuy').value), shares=parseInt(document.getElementById('ashares').value)||100;
+  const err=document.getElementById('aerr'); if(!code||!(buy>0)){err.textContent='コードと買値を入力してください';return;} err.textContent='';
+  const h=load(H_KEY); h.push({code,buy,shares,date:new Date().toISOString().slice(0,10)}); save(H_KEY,h);
+  document.getElementById('acode').value=''; document.getElementById('abuy').value=''; render();
+});
+// 帳簿の「買った」ボタンからの遷移: ?add=コード
+const qs=new URLSearchParams(location.search); if(qs.get('add')){ document.getElementById('acode').value=qs.get('add'); document.getElementById('abuy').focus(); }
+tpIn.value=localStorage.getItem(TP_KEY)||''; slIn.value=localStorage.getItem(SL_KEY)||'';
+tpIn.addEventListener('input',render); slIn.addEventListener('input',render);
+fetch('prices.json').then(r=>r.json()).then(j=>{prices=j.prices;gen=j.generated_at;const u=document.getElementById('hupdated');if(u)u.textContent='価格の記帳: '+gen.replace('T',' ').slice(0,16);render();}).catch(()=>{prices={};render();});
+render();
+</script>
+<script>
+(function(){
+  const order = ['guide.html', 'indicators.html', 'universe.html', 'index.html', 'map.html', 'caps.html'];
+  let here = location.pathname.split('/').pop();
+  if (!here) here = 'index.html';
+  const idx = order.indexOf(here);
+  if (idx < 0) return;
+  let sx = 0, sy = 0, st = 0;
+  document.addEventListener('touchstart', e => {
+    const t = e.touches[0]; sx = t.clientX; sy = t.clientY; st = Date.now();
+  }, {passive: true});
+  document.addEventListener('touchend', e => {
+    const t = e.changedTouches[0];
+    const dx = t.clientX - sx, dy = t.clientY - sy;
+    if (Date.now() - st > 600) return;
+    if (Math.abs(dx) < 80 || Math.abs(dy) > 50 || Math.abs(dx) < Math.abs(dy) * 2) return;
+    if (e.target.closest('.topnav, .chips, .filters, input, textarea, .spark')) return;
+    const j = dx < 0 ? idx + 1 : idx - 1;
+    if (j >= 0 && j < order.length) location.href = order[j];
+  }, {passive: true});
+})();
+</script>
+</body>
+</html>

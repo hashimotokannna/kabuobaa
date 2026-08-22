@@ -1,0 +1,437 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="robots" content="noindex, nofollow">
+<link rel="apple-touch-icon" href="icon.png">
+<link rel="icon" type="image/png" href="icon.png">
+<title>指標の読み方 — 数字を判断に変える図解 ｜ 株ノート</title>
+<style>
+  :root{--ink:#1c1c1e; --ink2:#6e6e73; --ink3:#aeaeb2; --paper:#faf6ec;
+    --paper-line:#e7e0cf; --bg:#f2f2f7; --line:#e5e5ea; --cheap:#c62f2f; --cheap-bg:#fdeeee;
+    --mild:#b06a00; --mild-bg:#fdf3e3;}
+  *{box-sizing:border-box; margin:0; padding:0;}
+  body{font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Noto Sans JP",sans-serif;
+    background:var(--bg); color:var(--ink); max-width:640px; margin:0 auto;
+    padding:14px 12px 40px;}
+  .num{font-family:ui-monospace,"SF Mono",Menlo,monospace; font-variant-numeric:tabular-nums;}
+  header{padding:6px 4px 12px;}
+  header .t{font-size:20px; font-weight:800;}
+  header .s{font-size:12px; color:var(--ink2); margin-top:3px; line-height:1.6;}
+  .back{display:inline-block; font-size:12px; font-weight:700; color:#2e4d7b;
+    text-decoration:none; margin-bottom:8px;}
+
+  .topnav{display:flex; gap:6px; overflow-x:auto; padding:2px 0 12px;
+    -webkit-overflow-scrolling:touch;}
+  .topnav a{flex:none; font-size:12.5px; font-weight:700; color:#4a3f28;
+    text-decoration:none; background:#f4eedd; border-radius:10px; padding:8px 14px;}
+  .topnav a.act{background:#1c1c1e; color:#fff;}
+  .topnav a.subtag{background:none; color:#8a5a17; font-weight:800; padding-left:2px;}
+
+  html, body{overflow-x:hidden; max-width:100%;}
+  body{overscroll-behavior-x:none;}
+  *{min-width:0;}
+  img, svg{max-width:100%;}
+  .topnav, .chips, .filters{overflow-x:auto; overscroll-behavior-x:contain; -webkit-overflow-scrolling:touch;}
+  .card, .hcard, .ledger, .list, .flatlist, .soonbox, .capcard, details, .notebox, .ubody{max-width:100%; overflow-wrap:anywhere;}
+  input, select{max-width:100%;}
+
+  .card{background:var(--paper); border-radius:14px; padding:12px 14px;
+    margin-bottom:12px; box-shadow:0 1px 3px rgba(0,0,0,.06);}
+  .card h2{font-size:13px; font-weight:800; color:#7a6a45; letter-spacing:.05em;
+    margin-bottom:8px;}
+  .fact{display:flex; justify-content:space-between; font-size:12.5px; padding:6px 0;
+    border-bottom:1px solid #f0ead9;}
+  .fact span:first-child{color:var(--ink2);}
+  .fact .v{font-weight:700;}
+  .plus{color:#2e7d32;} .minus{color:var(--cheap);}
+  .note{font-size:11px; color:var(--ink3); line-height:1.7; padding:8px 4px;}
+  
+  .lg{display:flex; gap:6px; flex-wrap:wrap; margin-bottom:8px;}
+  .lg span{font-size:11px; font-weight:700; border-radius:6px; padding:4px 9px;}
+  details.ind{background:#fff; border-radius:14px; margin-bottom:10px; box-shadow:0 1px 3px rgba(0,0,0,.05);}
+  details.ind summary{list-style:none; cursor:pointer; display:flex; align-items:center; gap:8px;
+    padding:13px 14px; font-size:14px;}
+  details.ind summary::-webkit-details-marker{display:none;}
+  .itag{flex:none; font-size:9.5px; font-weight:800; color:#4a3f28; background:#f4eedd; border-radius:5px; padding:2px 6px;}
+  .chev{margin-left:auto; color:#c9bd9d; font-size:16px; font-weight:700; transition:transform .15s;}
+  details[open] .chev{transform:rotate(90deg);}
+  .ibody{padding:0 14px 14px; border-top:1px solid #f0ead9;}
+  .one{font-size:13px; line-height:1.8; padding:10px 0 4px; font-weight:700;}
+  .kid{font-size:12.5px; line-height:1.8; color:#3a5a40; background:#eef6ef; border-radius:10px; padding:9px 12px; margin:6px 0 10px;}
+  .meter{margin:6px 0 4px;}
+  .ihead{font-size:10.5px; font-weight:800; color:#7a6a45; letter-spacing:.06em; margin:12px 0 6px;}
+  .case{display:flex; gap:8px; align-items:flex-start; font-size:12px; line-height:1.7; padding:5px 0; border-bottom:1px dashed #f0ead9;}
+  .cv{flex:none; min-width:64px; text-align:center; font-weight:800; border-radius:6px; padding:2px 6px; font-size:11.5px;}
+  .trap{font-size:12px; line-height:1.8; color:#8a5a17; background:#fdf6e6; border-radius:10px; padding:8px 12px;}
+  .sc{font-size:12px; line-height:1.7; color:var(--ink2);}
+  .tierh{font-size:12px; font-weight:800; color:#4a3f28; letter-spacing:.06em; margin:16px 0 8px; padding-left:4px;
+    border-left:4px solid #3a5a40;}
+  .tierh.sec{border-left-color:#a99a76; color:#7a6a45;}
+  details.ind.sec summary{font-size:13px;} details.ind.sec .itag{background:#f0f0f4; color:#6e6e73;}
+  details.tier3{background:#fff; border-radius:14px; margin-top:16px; box-shadow:0 1px 3px rgba(0,0,0,.05);}
+  details.tier3 > summary{list-style:none; cursor:pointer; display:flex; align-items:center; padding:13px 14px; font-size:13px; color:#4a3f28;}
+  details.tier3 > summary::-webkit-details-marker{display:none;}
+  .tier3body{padding:0 10px 10px;}
+  details.gcat{background:#faf6ec; border-radius:10px; margin:6px 0;}
+  details.gcat summary{list-style:none; cursor:pointer; display:flex; align-items:center; padding:9px 12px; font-size:12.5px; font-weight:800; color:#7a6a45;}
+  details.gcat summary::-webkit-details-marker{display:none;}
+  .gbody{padding:0 12px 8px;}
+  .gterm{padding:6px 0; border-top:1px dashed #e7e0cf; font-size:11.5px; line-height:1.7;}
+  .gterm b{display:block; color:#1c1c1e; font-size:12px;} .gterm span{color:var(--ink2);}
+
+</style>
+</head>
+<body>
+<div class="topnav"><a href="guide.html">はじめに</a><a href="indicators.html" class="act">指標の読み方</a><a href="universe.html">全銘柄台帳</a><a href="index.html">今夜の厳選</a><a href="map.html">銘柄マップ</a><a href="caps.html">時価総額マップ</a></div>
+<header><div class="t">指標の読み方 — 数字を判断に変える図解</div><div class="s">数字を「読める」ようになるための図解 ・ タップで開閉 ・ 8/23（日）時点の採点基準</div></header>
+<div class="card"><h2>色の意味（全指標共通）</h2><div class="lg"><span style="background:#b9dcc0">安心・標準（迷わず見られる）</span><span style="background:#c9dcf3">魅力あり・要確認（割安の罠などを確認）</span><span style="background:#f5e6b3">注意・様子見</span><span style="background:#f2c4a8">警戒</span><span style="background:#eeeae0">中立</span></div><div class="note">価値系（PER・PBR・ROE）は「標準」が最も安心な位置で、「割安」は魅力だが理由の確認が要る位置。行きすぎ系（RSI・ボリンジャー等）は売られすぎ側が押し目買いに有利。▲は具体例の位置。各指標をタップすると、子供向けのたとえ・メーター・数値別の見方・落とし穴・採点での扱いが開きます。</div></div><div class="tierh">主要指標（採点の中心・13）</div>
+<details class="ind" id="eps">
+  <summary><span class="itag">PERの材料</span><b>EPS（1株あたり利益）</b><span class="chev">›</span></summary>
+  <div class="ibody">
+    <div class="one">会社の1年の利益を発行株数で割った「1株が稼いだ金額」。株価 ÷ EPS ＝ PER。</div>
+    <div class="kid">🧒 クラス全員でお店をやって100万円もうかったら、40人で割ってひとり2.5万円。これが「1株あたりの取り分」＝EPS。</div>
+    
+    <div class="ihead">具体例：この数字ならこう見る</div>
+    <div class="case"><span class="cv" style="background:#b9dcc0">EPS 150円</span><span>株価1,500円ならPER10倍。EPSが毎年伸びている会社は、株価が同じなら年々割安になっていく。</span></div><div class="case"><span class="cv" style="background:#eeeae0">EPS 横ばい</span><span>金額の大小そのものに良し悪しはない（株数で変わるため）。大事なのは「伸びているか」と株価との比率（PER）。</span></div><div class="case"><span class="cv" style="background:#f2c4a8">EPS マイナス</span><span>赤字。PERは計算不能（マイナス）になり、このシステムでは大きく減点。</span></div>
+    <div class="ihead">落とし穴</div>
+    <div class="trap">EPSの金額そのものを会社同士で比べても意味がない（株の分割で何倍にも変わる）。比べるのは「同じ会社の去年と今年」か、株価と割ったPER。自社株買いで株数が減るとEPSは利益が同じでも上がる。</div>
+    <div class="ihead">このシステムでの扱い</div>
+    <div class="sc">単独では採点せず、株価÷EPSでPERを算出して採点。決算短信（J-Quants）の実績値を使用。予想EPSがあればPEG（成長性）にも使用。</div>
+  </div>
+</details>
+<details class="ind" id="bps">
+  <summary><span class="itag">PBRの材料</span><b>BPS（1株あたり純資産）</b><span class="chev">›</span></summary>
+  <div class="ibody">
+    <div class="one">会社の純資産（資産−借金）を発行株数で割った「1株の持ち分の中身」。株価 ÷ BPS ＝ PBR。</div>
+    <div class="kid">🧒 会社をいま解散してぜんぶ売り払い、借金を返して残ったお金を株数で山分けしたら1株いくらか、という金額。</div>
+    
+    <div class="ihead">具体例：この数字ならこう見る</div>
+    <div class="case"><span class="cv" style="background:#c9dcf3">BPS 2,000円 ／ 株価 1,600円</span><span>PBR0.8倍。持ち分の中身より安く買える状態。中身（資産の質・稼ぐ力）の確認が前提で加点。</span></div><div class="case"><span class="cv" style="background:#eeeae0">BPS 500円 ／ 株価 1,500円</span><span>PBR3倍。成長企業なら普通。BPS単独では判断しない。</span></div><div class="case"><span class="cv" style="background:#f2c4a8">BPSが毎年減っている</span><span>赤字の垂れ流しや大きな損失で持ち分が痩せている合図。要警戒。</span></div>
+    <div class="ihead">落とし穴</div>
+    <div class="trap">帳簿上の資産が実際に売れるとは限らない（古い工場・在庫など）。BPSが高くても「中身」の質はわからないため、ROE（その資産で稼げているか）とセットで見る。</div>
+    <div class="ihead">このシステムでの扱い</div>
+    <div class="sc">単独では採点せず、株価÷BPSでPBRを算出して採点。決算短信（J-Quants）の実績値を使用。ROE＝EPS÷BPSの算出にも使用。</div>
+  </div>
+</details>
+<details class="ind" id="per">
+  <summary><span class="itag">割安・割高</span><b>PER（株価収益率）</b><span class="chev">›</span></summary>
+  <div class="ibody">
+    <div class="one">株価が「1年分の利益の何年分」か。低いほど利益に対して安い。</div>
+    <div class="kid">🧒 たとえば1年で100円もうかるお店を1,000円で買ったらPER10倍。10年で元が取れる、ということ。</div>
+    <div class="meter"><svg viewBox="0 0 640 92" xmlns="http://www.w3.org/2000/svg" style="width:100%; height:auto;"><rect x="20.0" y="30" width="100.0" height="22" rx="4" fill="#c9dcf3"/><text x="70.0" y="45" font-size="12" font-weight="700" fill="#1c1c1e" text-anchor="middle">割安圏（要確認）</text><rect x="120.0" y="30" width="100.0" height="22" rx="4" fill="#b9dcc0"/><text x="170.0" y="45" font-size="12" font-weight="700" fill="#1c1c1e" text-anchor="middle">標準（安心）</text><rect x="220.0" y="30" width="200.0" height="22" rx="4" fill="#f5e6b3"/><text x="320.0" y="45" font-size="12" font-weight="700" fill="#1c1c1e" text-anchor="middle">割高圏</text><rect x="420.0" y="30" width="200.0" height="22" rx="4" fill="#f2c4a8"/><text x="520.0" y="45" font-size="12" font-weight="700" fill="#1c1c1e" text-anchor="middle">異常</text><line x1="20.0" y1="52" x2="20.0" y2="60" stroke="#6e6e73" stroke-width="1.5"/><text x="20.0" y="74" font-size="11" fill="#6e6e73" text-anchor="middle">0倍</text><line x1="120.0" y1="52" x2="120.0" y2="60" stroke="#6e6e73" stroke-width="1.5"/><text x="120.0" y="74" font-size="11" fill="#6e6e73" text-anchor="middle">10倍</text><line x1="220.0" y1="52" x2="220.0" y2="60" stroke="#6e6e73" stroke-width="1.5"/><text x="220.0" y="74" font-size="11" fill="#6e6e73" text-anchor="middle">20倍</text><line x1="420.0" y1="52" x2="420.0" y2="60" stroke="#6e6e73" stroke-width="1.5"/><text x="420.0" y="74" font-size="11" fill="#6e6e73" text-anchor="middle">40倍</text><line x1="620.0" y1="52" x2="620.0" y2="60" stroke="#6e6e73" stroke-width="1.5"/><text x="620.0" y="74" font-size="11" fill="#6e6e73" text-anchor="middle">60倍</text><path d="M 170.0 28 l -7 -12 l 14 0 z" fill="#1c1c1e"/><text x="170.0" y="12" font-size="11" font-weight="800" fill="#1c1c1e" text-anchor="middle">例: 15倍</text></svg></div>
+    <div class="ihead">具体例：この数字ならこう見る</div>
+    <div class="case"><span class="cv" style="background:#b9dcc0">8倍</span><span>利益に対して株価が安い。同業比較で確認し、業績が落ちていなければ「割安」で加点。</span></div><div class="case"><span class="cv" style="background:#eeeae0">15倍</span><span>日本株の平均的な水準（標準＝安心圏）。これ単独では判断材料にならず、他の指標を見る。</span></div><div class="case"><span class="cv" style="background:#f2c4a8">70倍</span><span>利益の70年分。成長期待が先行しており、期待が剥げると下げが深い。減点。</span></div>
+    <div class="ihead">落とし穴</div>
+    <div class="trap">業績が悪化して利益が減ると見かけのPERは「上がる」。逆に一時的な特別利益で「下がる」。マイナス＝赤字。業種で水準がまったく違うので同業比較が基本。</div>
+    <div class="ihead">このシステムでの扱い</div>
+    <div class="sc">20倍以下 +8点 ／ 60倍超 −10点 ／ 赤字（マイナス）−20点。減点方式では60倍超−15、赤字−30。</div>
+  </div>
+</details>
+<details class="ind" id="pbr">
+  <summary><span class="itag">資産に対する値段</span><b>PBR（株価純資産倍率）</b><span class="chev">›</span></summary>
+  <div class="ibody">
+    <div class="one">株価が「会社の純資産の何倍」か。1倍未満は理論上、会社を解散した方が高い水準。</div>
+    <div class="kid">🧒 1,000円の貯金が入った貯金箱を800円で売っている状態がPBR0.8倍。お得に見えるけど、貯金箱に穴が開いていないか（稼ぐ力）は要確認。</div>
+    <div class="meter"><svg viewBox="0 0 640 92" xmlns="http://www.w3.org/2000/svg" style="width:100%; height:auto;"><rect x="20.0" y="30" width="37.5" height="22" rx="4" fill="#f5e6b3"/><text x="38.8" y="45" font-size="12" font-weight="700" fill="#1c1c1e" text-anchor="middle">注意</text><rect x="57.5" y="30" width="75.0" height="22" rx="4" fill="#c9dcf3"/><text x="95.0" y="45" font-size="12" font-weight="700" fill="#1c1c1e" text-anchor="middle">割安圏（要確認）</text><rect x="132.5" y="30" width="112.5" height="22" rx="4" fill="#b9dcc0"/><text x="188.8" y="45" font-size="12" font-weight="700" fill="#1c1c1e" text-anchor="middle">標準（安心）</text><rect x="245.0" y="30" width="225.0" height="22" rx="4" fill="#f5e6b3"/><text x="357.5" y="45" font-size="12" font-weight="700" fill="#1c1c1e" text-anchor="middle">割高</text><rect x="470.0" y="30" width="150.0" height="22" rx="4" fill="#f2c4a8"/><text x="545.0" y="45" font-size="12" font-weight="700" fill="#1c1c1e" text-anchor="middle">過熱</text><line x1="57.5" y1="52" x2="57.5" y2="60" stroke="#6e6e73" stroke-width="1.5"/><text x="57.5" y="74" font-size="11" fill="#6e6e73" text-anchor="middle">0.5倍</text><line x1="95.0" y1="52" x2="95.0" y2="60" stroke="#6e6e73" stroke-width="1.5"/><text x="95.0" y="74" font-size="11" fill="#6e6e73" text-anchor="middle">1.0倍</text><line x1="132.5" y1="52" x2="132.5" y2="60" stroke="#6e6e73" stroke-width="1.5"/><text x="132.5" y="74" font-size="11" fill="#6e6e73" text-anchor="middle">1.5倍</text><line x1="245.0" y1="52" x2="245.0" y2="60" stroke="#6e6e73" stroke-width="1.5"/><text x="245.0" y="74" font-size="11" fill="#6e6e73" text-anchor="middle">3倍</text><line x1="470.0" y1="52" x2="470.0" y2="60" stroke="#6e6e73" stroke-width="1.5"/><text x="470.0" y="74" font-size="11" fill="#6e6e73" text-anchor="middle">6倍</text><line x1="620.0" y1="52" x2="620.0" y2="60" stroke="#6e6e73" stroke-width="1.5"/><text x="620.0" y="74" font-size="11" fill="#6e6e73" text-anchor="middle">8+倍</text><path d="M 110.0 28 l -7 -12 l 14 0 z" fill="#1c1c1e"/><text x="110.0" y="12" font-size="11" font-weight="800" fill="#1c1c1e" text-anchor="middle">例: 1.2倍</text></svg></div>
+    <div class="ihead">具体例：この数字ならこう見る</div>
+    <div class="case"><span class="cv" style="background:#c9dcf3">0.7倍</span><span>純資産より安く売られている。ROEが低くなければ「割安の罠」ではなく本物の割安。要確認のうえ加点。</span></div><div class="case"><span class="cv" style="background:#b9dcc0">2.0倍</span><span>標準的。成長企業ならこのくらいは普通。</span></div><div class="case"><span class="cv" style="background:#f2c4a8">9倍</span><span>資産の9倍の値段。IT・バイオ系に多いが、資産面の下値支えがなく減点。</span></div>
+    <div class="ihead">落とし穴</div>
+    <div class="trap">低PBRが何年も放置される「割安の罠」がある。理由は「稼ぐ力がない」か「資産の中身が悪い」。必ずROEとセットで見る。</div>
+    <div class="ihead">このシステムでの扱い</div>
+    <div class="sc">0.5〜1.5倍 +6点 ／ 8倍超 −8点。</div>
+  </div>
+</details>
+<details class="ind" id="roe">
+  <summary><span class="itag">稼ぐ力</span><b>ROE（自己資本利益率）</b><span class="chev">›</span></summary>
+  <div class="ibody">
+    <div class="one">株主のお金（純資産）で、1年にどれだけ利益を出したか。会社の「稼ぐ力」そのもの。</div>
+    <div class="kid">🧒 100万円のお小遣い元手で1年に10万円もうけたらROE10%。同じ元手で3万円しかもうからない会社より優秀。</div>
+    <div class="meter"><svg viewBox="0 0 640 92" xmlns="http://www.w3.org/2000/svg" style="width:100%; height:auto;"><rect x="20.0" y="30" width="60.0" height="22" rx="4" fill="#f2c4a8"/><text x="50.0" y="45" font-size="12" font-weight="700" fill="#1c1c1e" text-anchor="middle">弱い</text><rect x="80.0" y="30" width="40.0" height="22" rx="4" fill="#f5e6b3"/><text x="100.0" y="45" font-size="12" font-weight="700" fill="#1c1c1e" text-anchor="middle">注意</text><rect x="120.0" y="30" width="100.0" height="22" rx="4" fill="#b9dcc0"/><text x="170.0" y="45" font-size="12" font-weight="700" fill="#1c1c1e" text-anchor="middle">標準（安心）</text><rect x="220.0" y="30" width="200.0" height="22" rx="4" fill="#c9dcf3"/><text x="320.0" y="45" font-size="12" font-weight="700" fill="#1c1c1e" text-anchor="middle">優良</text><rect x="420.0" y="30" width="200.0" height="22" rx="4" fill="#c9dcf3"/><text x="520.0" y="45" font-size="12" font-weight="700" fill="#1c1c1e" text-anchor="middle">非常に高い</text><line x1="20.0" y1="52" x2="20.0" y2="60" stroke="#6e6e73" stroke-width="1.5"/><text x="20.0" y="74" font-size="11" fill="#6e6e73" text-anchor="middle">0%</text><line x1="80.0" y1="52" x2="80.0" y2="60" stroke="#6e6e73" stroke-width="1.5"/><text x="80.0" y="74" font-size="11" fill="#6e6e73" text-anchor="middle">3%</text><line x1="120.0" y1="52" x2="120.0" y2="60" stroke="#6e6e73" stroke-width="1.5"/><text x="120.0" y="74" font-size="11" fill="#6e6e73" text-anchor="middle">5%</text><line x1="220.0" y1="52" x2="220.0" y2="60" stroke="#6e6e73" stroke-width="1.5"/><text x="220.0" y="74" font-size="11" fill="#6e6e73" text-anchor="middle">10%</text><line x1="420.0" y1="52" x2="420.0" y2="60" stroke="#6e6e73" stroke-width="1.5"/><text x="420.0" y="74" font-size="11" fill="#6e6e73" text-anchor="middle">20%</text><path d="M 190.0 28 l -7 -12 l 14 0 z" fill="#1c1c1e"/><text x="190.0" y="12" font-size="11" font-weight="800" fill="#1c1c1e" text-anchor="middle">日本平均 約8.5%</text></svg></div>
+    <div class="ihead">具体例：この数字ならこう見る</div>
+    <div class="case"><span class="cv" style="background:#b9dcc0">15%</span><span>資本効率が高い。低PBRと組み合わさっていれば「安くて稼ぐ」理想形。加点。</span></div><div class="case"><span class="cv" style="background:#eeeae0">6%</span><span>標準的。可もなく不可もなし。</span></div><div class="case"><span class="cv" style="background:#f2c4a8">1.5%</span><span>元手のわりに稼げていない。低PBRの理由がこれなら「割安の罠」。減点。</span></div>
+    <div class="ihead">落とし穴</div>
+    <div class="trap">借金を増やすとROEは見かけ上がる（レバレッジ）。極端に高いROE（40%超など）は自己資本が薄いだけの可能性もある。</div>
+    <div class="ihead">このシステムでの扱い</div>
+    <div class="sc">10%以上 +8点 ／ 3%未満 −5点。減点方式では3%未満−12。</div>
+  </div>
+</details>
+<details class="ind" id="div">
+  <summary><span class="itag">持っているだけの収入</span><b>配当利回り</b><span class="chev">›</span></summary>
+  <div class="ibody">
+    <div class="one">株価に対する年間配当の割合。3〜4%は高配当の部類。</div>
+    <div class="kid">🧒 1,000円の株で年30円もらえたら利回り3%。銀行預金よりずっと高いが、株価は上下する。</div>
+    <div class="meter"><svg viewBox="0 0 640 92" xmlns="http://www.w3.org/2000/svg" style="width:100%; height:auto;"><rect x="20.0" y="30" width="75.0" height="22" rx="4" fill="#eeeae0"/><text x="57.5" y="45" font-size="12" font-weight="700" fill="#1c1c1e" text-anchor="middle">低い</text><rect x="95.0" y="30" width="150.0" height="22" rx="4" fill="#b9dcc0"/><text x="170.0" y="45" font-size="12" font-weight="700" fill="#1c1c1e" text-anchor="middle">標準</text><rect x="245.0" y="30" width="150.0" height="22" rx="4" fill="#c9dcf3"/><text x="320.0" y="45" font-size="12" font-weight="700" fill="#1c1c1e" text-anchor="middle">高配当</text><rect x="395.0" y="30" width="225.0" height="22" rx="4" fill="#f5e6b3"/><text x="507.5" y="45" font-size="12" font-weight="700" fill="#1c1c1e" text-anchor="middle">高すぎ注意</text><line x1="20.0" y1="52" x2="20.0" y2="60" stroke="#6e6e73" stroke-width="1.5"/><text x="20.0" y="74" font-size="11" fill="#6e6e73" text-anchor="middle">0%</text><line x1="95.0" y1="52" x2="95.0" y2="60" stroke="#6e6e73" stroke-width="1.5"/><text x="95.0" y="74" font-size="11" fill="#6e6e73" text-anchor="middle">1%</text><line x1="245.0" y1="52" x2="245.0" y2="60" stroke="#6e6e73" stroke-width="1.5"/><text x="245.0" y="74" font-size="11" fill="#6e6e73" text-anchor="middle">3%</text><line x1="395.0" y1="52" x2="395.0" y2="60" stroke="#6e6e73" stroke-width="1.5"/><text x="395.0" y="74" font-size="11" fill="#6e6e73" text-anchor="middle">5%</text><line x1="620.0" y1="52" x2="620.0" y2="60" stroke="#6e6e73" stroke-width="1.5"/><text x="620.0" y="74" font-size="11" fill="#6e6e73" text-anchor="middle">8%</text><path d="M 260.0 28 l -7 -12 l 14 0 z" fill="#1c1c1e"/><text x="260.0" y="12" font-size="11" font-weight="800" fill="#1c1c1e" text-anchor="middle">例: 3.2%</text></svg></div>
+    <div class="ihead">具体例：この数字ならこう見る</div>
+    <div class="case"><span class="cv" style="background:#b9dcc0">3.5%</span><span>配当が下値を支えやすい。押し目買いの安心材料。加点。</span></div><div class="case"><span class="cv" style="background:#f5e6b3">1.2%</span><span>成長投資に回す会社に多い。配当は判断材料にならない。</span></div><div class="case"><span class="cv" style="background:#f2c4a8">7%</span><span>株価急落で見かけの利回りが跳ねているか、減配前の可能性。要警戒。</span></div>
+    <div class="ihead">落とし穴</div>
+    <div class="trap">利回り＝配当÷株価なので、株価が下がるほど利回りは上がる。高利回りが「安さの結果」なのか「業績悪化の前兆」なのか見極めが必要。</div>
+    <div class="ihead">このシステムでの扱い</div>
+    <div class="sc">3%以上 +5点。</div>
+  </div>
+</details>
+<details class="ind" id="rsi">
+  <summary><span class="itag">過熱感</span><b>RSI（14日）</b><span class="chev">›</span></summary>
+  <div class="ibody">
+    <div class="one">直近14日の値動きから「買われすぎ・売られすぎ」を0〜100で示す。</div>
+    <div class="kid">🧒 ボールを地面に強く叩きつけるほど跳ね返る、の「叩きつけ度」。30以下は強く叩きつけられた状態。</div>
+    <div class="meter"><svg viewBox="0 0 640 92" xmlns="http://www.w3.org/2000/svg" style="width:100%; height:auto;"><rect x="20.0" y="30" width="180.0" height="22" rx="4" fill="#b9dcc0"/><text x="110.0" y="45" font-size="12" font-weight="700" fill="#1c1c1e" text-anchor="middle">売られすぎ</text><rect x="200.0" y="30" width="60.0" height="22" rx="4" fill="#f5e6b3"/><text x="230.0" y="45" font-size="12" font-weight="700" fill="#1c1c1e" text-anchor="middle">やや売られすぎ</text><rect x="260.0" y="30" width="120.0" height="22" rx="4" fill="#eeeae0"/><text x="320.0" y="45" font-size="12" font-weight="700" fill="#1c1c1e" text-anchor="middle">中立</text><rect x="380.0" y="30" width="60.0" height="22" rx="4" fill="#f5e6b3"/><text x="410.0" y="45" font-size="12" font-weight="700" fill="#1c1c1e" text-anchor="middle">やや買われすぎ</text><rect x="440.0" y="30" width="180.0" height="22" rx="4" fill="#f2c4a8"/><text x="530.0" y="45" font-size="12" font-weight="700" fill="#1c1c1e" text-anchor="middle">買われすぎ</text><line x1="20.0" y1="52" x2="20.0" y2="60" stroke="#6e6e73" stroke-width="1.5"/><text x="20.0" y="74" font-size="11" fill="#6e6e73" text-anchor="middle">0</text><line x1="200.0" y1="52" x2="200.0" y2="60" stroke="#6e6e73" stroke-width="1.5"/><text x="200.0" y="74" font-size="11" fill="#6e6e73" text-anchor="middle">30</text><line x1="320.0" y1="52" x2="320.0" y2="60" stroke="#6e6e73" stroke-width="1.5"/><text x="320.0" y="74" font-size="11" fill="#6e6e73" text-anchor="middle">50</text><line x1="440.0" y1="52" x2="440.0" y2="60" stroke="#6e6e73" stroke-width="1.5"/><text x="440.0" y="74" font-size="11" fill="#6e6e73" text-anchor="middle">70</text><line x1="620.0" y1="52" x2="620.0" y2="60" stroke="#6e6e73" stroke-width="1.5"/><text x="620.0" y="74" font-size="11" fill="#6e6e73" text-anchor="middle">100</text><path d="M 188.0 28 l -7 -12 l 14 0 z" fill="#1c1c1e"/><text x="188.0" y="12" font-size="11" font-weight="800" fill="#1c1c1e" text-anchor="middle">例: 28</text></svg></div>
+    <div class="ihead">具体例：この数字ならこう見る</div>
+    <div class="case"><span class="cv" style="background:#b9dcc0">25</span><span>売られすぎ。押し目買い手法との相性が最も良い状態。加点。</span></div><div class="case"><span class="cv" style="background:#eeeae0">50</span><span>中立。判断材料にならない。</span></div><div class="case"><span class="cv" style="background:#f2c4a8">78</span><span>買われすぎ。ここから買うのは高値掴みになりやすい。減点方式で減点。</span></div>
+    <div class="ihead">落とし穴</div>
+    <div class="trap">強い下落トレンド中はRSI30以下が「続く」ことがある（張り付き）。だからこそこのシステムは「下げ止まり確認」とセットで使う。</div>
+    <div class="ihead">このシステムでの扱い</div>
+    <div class="sc">30以下 +10点 ／ 40以下 +5点。減点方式では70超−6。</div>
+  </div>
+</details>
+<details class="ind" id="macd">
+  <summary><span class="itag">勢いの転換</span><b>MACD</b><span class="chev">›</span></summary>
+  <div class="ibody">
+    <div class="one">短期と中期の平均線の差で「勢いの向き」を見る。マイナス圏からの買い転換が最も広く使われるサイン。</div>
+    <div class="kid">🧒 坂道を下っていた自転車が、ペダルを漕ぎ始めた瞬間を捉える指標。「まだ下り坂だけど勢いは上向き」がわかる。</div>
+    <div class="meter"><svg viewBox="0 0 640 92" xmlns="http://www.w3.org/2000/svg" style="width:100%; height:auto;"><rect x="20.0" y="30" width="200.0" height="22" rx="4" fill="#f2c4a8"/><text x="120.0" y="45" font-size="12" font-weight="700" fill="#1c1c1e" text-anchor="middle">下向き</text><rect x="220.0" y="30" width="200.0" height="22" rx="4" fill="#f5e6b3"/><text x="320.0" y="45" font-size="12" font-weight="700" fill="#1c1c1e" text-anchor="middle">転換直後</text><rect x="420.0" y="30" width="200.0" height="22" rx="4" fill="#b9dcc0"/><text x="520.0" y="45" font-size="12" font-weight="700" fill="#1c1c1e" text-anchor="middle">上向き継続</text><line x1="120.0" y1="52" x2="120.0" y2="60" stroke="#6e6e73" stroke-width="1.5"/><text x="120.0" y="74" font-size="11" fill="#6e6e73" text-anchor="middle">シグナル線の下</text><line x1="320.0" y1="52" x2="320.0" y2="60" stroke="#6e6e73" stroke-width="1.5"/><text x="320.0" y="74" font-size="11" fill="#6e6e73" text-anchor="middle">買い転換</text><line x1="520.0" y1="52" x2="520.0" y2="60" stroke="#6e6e73" stroke-width="1.5"/><text x="520.0" y="74" font-size="11" fill="#6e6e73" text-anchor="middle">上</text><path d="M 320.0 28 l -7 -12 l 14 0 z" fill="#1c1c1e"/><text x="320.0" y="12" font-size="11" font-weight="800" fill="#1c1c1e" text-anchor="middle">例: 買い転換</text></svg></div>
+    <div class="ihead">具体例：この数字ならこう見る</div>
+    <div class="case"><span class="cv" style="background:#b9dcc0">買い転換（直近5日）</span><span>下げの勢いが尽きて反転し始めた。押し目買いのタイミングとして最良。+8点。</span></div><div class="case"><span class="cv" style="background:#b9dcc0">上向き継続</span><span>勢いは上。追随買いは可だが押し目としては遅い。+4点。</span></div><div class="case"><span class="cv" style="background:#f2c4a8">下向き</span><span>まだ下げの勢いが残る。ナイフの落下中。加点なし。</span></div>
+    <div class="ihead">落とし穴</div>
+    <div class="trap">横ばい相場ではダマシ（転換→すぐ戻る）が多い。単独では使わず、支持帯やRSIと重ねる。</div>
+    <div class="ihead">このシステムでの扱い</div>
+    <div class="sc">直近5日以内の買い転換 +8点 ／ 上向き継続 +4点。</div>
+  </div>
+</details>
+<details class="ind" id="boll">
+  <summary><span class="itag">統計的な行きすぎ</span><b>ボリンジャーバンド</b><span class="chev">›</span></summary>
+  <div class="ibody">
+    <div class="one">過去20日の値動きの「ばらつき（σ）」で普通の範囲を測る。−2σ以下は統計上約2%しか起きない売られすぎ。</div>
+    <div class="kid">🧒 身長の平均から極端に外れた人が珍しいのと同じ。−2σは「クラスで一番背が低い」レベルの珍しさ。珍しい状態は長続きしにくい。</div>
+    <div class="meter"><svg viewBox="0 0 640 92" xmlns="http://www.w3.org/2000/svg" style="width:100%; height:auto;"><rect x="20.0" y="30" width="100.0" height="22" rx="4" fill="#b9dcc0"/><text x="70.0" y="45" font-size="12" font-weight="700" fill="#1c1c1e" text-anchor="middle">売られすぎ</text><rect x="120.0" y="30" width="100.0" height="22" rx="4" fill="#f5e6b3"/><text x="170.0" y="45" font-size="12" font-weight="700" fill="#1c1c1e" text-anchor="middle">下限付近</text><rect x="220.0" y="30" width="200.0" height="22" rx="4" fill="#eeeae0"/><text x="320.0" y="45" font-size="12" font-weight="700" fill="#1c1c1e" text-anchor="middle">普通の範囲</text><rect x="420.0" y="30" width="100.0" height="22" rx="4" fill="#f5e6b3"/><text x="470.0" y="45" font-size="12" font-weight="700" fill="#1c1c1e" text-anchor="middle">上限付近</text><rect x="520.0" y="30" width="100.0" height="22" rx="4" fill="#f2c4a8"/><text x="570.0" y="45" font-size="12" font-weight="700" fill="#1c1c1e" text-anchor="middle">買われすぎ</text><line x1="120.0" y1="52" x2="120.0" y2="60" stroke="#6e6e73" stroke-width="1.5"/><text x="120.0" y="74" font-size="11" fill="#6e6e73" text-anchor="middle">−2σ</text><line x1="220.0" y1="52" x2="220.0" y2="60" stroke="#6e6e73" stroke-width="1.5"/><text x="220.0" y="74" font-size="11" fill="#6e6e73" text-anchor="middle">−1σ</text><line x1="320.0" y1="52" x2="320.0" y2="60" stroke="#6e6e73" stroke-width="1.5"/><text x="320.0" y="74" font-size="11" fill="#6e6e73" text-anchor="middle">中心</text><line x1="420.0" y1="52" x2="420.0" y2="60" stroke="#6e6e73" stroke-width="1.5"/><text x="420.0" y="74" font-size="11" fill="#6e6e73" text-anchor="middle">+1σ</text><line x1="520.0" y1="52" x2="520.0" y2="60" stroke="#6e6e73" stroke-width="1.5"/><text x="520.0" y="74" font-size="11" fill="#6e6e73" text-anchor="middle">+2σ</text><path d="M 110.0 28 l -7 -12 l 14 0 z" fill="#1c1c1e"/><text x="110.0" y="12" font-size="11" font-weight="800" fill="#1c1c1e" text-anchor="middle">例: −2.1σ</text></svg></div>
+    <div class="ihead">具体例：この数字ならこう見る</div>
+    <div class="case"><span class="cv" style="background:#b9dcc0">−2.3σ</span><span>統計的な売られすぎ。平均への回帰（戻り）が期待できる。+8点。</span></div><div class="case"><span class="cv" style="background:#eeeae0">−0.5σ</span><span>普通の範囲。特に材料なし。</span></div><div class="case"><span class="cv" style="background:#f2c4a8">+2.2σ</span><span>買われすぎ。過熱。減点方式で減点。</span></div>
+    <div class="ihead">落とし穴</div>
+    <div class="trap">急落局面ではバンド自体が広がって「−2σに触れたまま下げ続ける」（バンドウォーク）ことがある。下げ止まり確認とセットで。</div>
+    <div class="ihead">このシステムでの扱い</div>
+    <div class="sc">−2σ以下 +8点 ／ −1.5σ以下 +4点。減点方式では+2σ超−6。</div>
+  </div>
+</details>
+<details class="ind" id="dev">
+  <summary><span class="itag">逆張りの定番</span><b>25日移動平均乖離率</b><span class="chev">›</span></summary>
+  <div class="ibody">
+    <div class="one">25日平均線から何%離れているか。−8%を超える下方乖離は逆張りの定番圏。</div>
+    <div class="kid">🧒 ゴムひもを引っ張るほど戻る力が強くなる。ただし引っ張りすぎるとゴムが切れる（−20%超は異常事態）。</div>
+    <div class="meter"><svg viewBox="0 0 640 92" xmlns="http://www.w3.org/2000/svg" style="width:100%; height:auto;"><rect x="20.0" y="30" width="150.0" height="22" rx="4" fill="#f2c4a8"/><text x="95.0" y="45" font-size="12" font-weight="700" fill="#1c1c1e" text-anchor="middle">異常乖離</text><rect x="170.0" y="30" width="180.0" height="22" rx="4" fill="#b9dcc0"/><text x="260.0" y="45" font-size="12" font-weight="700" fill="#1c1c1e" text-anchor="middle">逆張り圏</text><rect x="350.0" y="30" width="120.0" height="22" rx="4" fill="#eeeae0"/><text x="410.0" y="45" font-size="12" font-weight="700" fill="#1c1c1e" text-anchor="middle">通常</text><rect x="470.0" y="30" width="150.0" height="22" rx="4" fill="#eeeae0"/><text x="545.0" y="45" font-size="12" font-weight="700" fill="#1c1c1e" text-anchor="middle">通常（上）</text><line x1="20.0" y1="52" x2="20.0" y2="60" stroke="#6e6e73" stroke-width="1.5"/><text x="20.0" y="74" font-size="11" fill="#6e6e73" text-anchor="middle">−30%</text><line x1="170.0" y1="52" x2="170.0" y2="60" stroke="#6e6e73" stroke-width="1.5"/><text x="170.0" y="74" font-size="11" fill="#6e6e73" text-anchor="middle">−20%</text><line x1="350.0" y1="52" x2="350.0" y2="60" stroke="#6e6e73" stroke-width="1.5"/><text x="350.0" y="74" font-size="11" fill="#6e6e73" text-anchor="middle">−8%</text><line x1="470.0" y1="52" x2="470.0" y2="60" stroke="#6e6e73" stroke-width="1.5"/><text x="470.0" y="74" font-size="11" fill="#6e6e73" text-anchor="middle">0%</text><line x1="620.0" y1="52" x2="620.0" y2="60" stroke="#6e6e73" stroke-width="1.5"/><text x="620.0" y="74" font-size="11" fill="#6e6e73" text-anchor="middle">+10%</text><path d="M 305.0 28 l -7 -12 l 14 0 z" fill="#1c1c1e"/><text x="305.0" y="12" font-size="11" font-weight="800" fill="#1c1c1e" text-anchor="middle">例: −11%</text></svg></div>
+    <div class="ihead">具体例：この数字ならこう見る</div>
+    <div class="case"><span class="cv" style="background:#b9dcc0">−12%</span><span>平均線から大きく下に離れ、戻りやすい位置。+6点。</span></div><div class="case"><span class="cv" style="background:#eeeae0">−3%</span><span>通常範囲。押し目としては浅い。</span></div><div class="case"><span class="cv" style="background:#f2c4a8">−25%</span><span>乖離しすぎ。決算ミス等の「何か」が起きている可能性。−5点。</span></div>
+    <div class="ihead">落とし穴</div>
+    <div class="trap">乖離率の「戻りやすい」は平均への回帰であって、上昇トレンド復帰の保証ではない。</div>
+    <div class="ihead">このシステムでの扱い</div>
+    <div class="sc">−8〜−20% +6点 ／ −20%超 −5点。減点方式でも−20%超は−10。</div>
+  </div>
+</details>
+<details class="ind" id="gc">
+  <summary><span class="itag">長期の地合い</span><b>ゴールデンクロス（50日/200日線）</b><span class="chev">›</span></summary>
+  <div class="ibody">
+    <div class="one">50日平均線が200日平均線の上にある＝長期の上昇形。押し目買い手法との相性が最も良い環境。</div>
+    <div class="kid">🧒 最近1ヶ月の平均点が、1年の平均点より高い生徒。「調子が上向きの子」の悪い日を狙うのが押し目買い。</div>
+    <div class="meter"><svg viewBox="0 0 640 92" xmlns="http://www.w3.org/2000/svg" style="width:100%; height:auto;"><rect x="20.0" y="30" width="300.0" height="22" rx="4" fill="#f2c4a8"/><text x="170.0" y="45" font-size="12" font-weight="700" fill="#1c1c1e" text-anchor="middle">デッドクロス（50日線が下）</text><rect x="320.0" y="30" width="300.0" height="22" rx="4" fill="#b9dcc0"/><text x="470.0" y="45" font-size="12" font-weight="700" fill="#1c1c1e" text-anchor="middle">ゴールデンクロス（50日線が上）</text><line x1="170.0" y1="52" x2="170.0" y2="60" stroke="#6e6e73" stroke-width="1.5"/><text x="170.0" y="74" font-size="11" fill="#6e6e73" text-anchor="middle">長期は調整形</text><line x1="470.0" y1="52" x2="470.0" y2="60" stroke="#6e6e73" stroke-width="1.5"/><text x="470.0" y="74" font-size="11" fill="#6e6e73" text-anchor="middle">長期は上昇形</text><path d="M 470.0 28 l -7 -12 l 14 0 z" fill="#1c1c1e"/><text x="470.0" y="12" font-size="11" font-weight="800" fill="#1c1c1e" text-anchor="middle">例: GC中</text></svg></div>
+    <div class="ihead">具体例：この数字ならこう見る</div>
+    <div class="case"><span class="cv" style="background:#b9dcc0">GC継続中の押し目</span><span>上昇トレンド中の一時的な下げ。この手法の理想形。+20点（200日線の上での下げ）+10点。</span></div><div class="case"><span class="cv" style="background:#f2c4a8">DC中の反発</span><span>下落トレンド中の一時的な戻り。上値が重く、利確に届きにくい。減点方式で−10。</span></div>
+    <div class="ihead">落とし穴</div>
+    <div class="trap">クロスの瞬間は「遅行」する（トレンドがだいぶ進んでから点灯）。タイミングではなく環境判断に使う。</div>
+    <div class="ihead">このシステムでの扱い</div>
+    <div class="sc">200日線の上での下げ +20点 ／ GC中 +10点。減点方式ではDC中−10。</div>
+  </div>
+</details>
+<details class="ind" id="zone">
+  <summary><span class="itag">過去に買いが入った価格帯</span><b>長期支持帯とタッチ回数</b><span class="chev">›</span></summary>
+  <div class="ibody">
+    <div class="one">3年の谷を集めた「何度も反発した価格帯」。定石は「〜3回目までは支持されやすく、4回目以降は割れやすい」。</div>
+    <div class="kid">🧒 同じ場所で3回転んだら、4回目はそこが崩れているかもしれない。逆に2回しか転んでいない場所はまだ丈夫。</div>
+    <div class="meter"><svg viewBox="0 0 640 92" xmlns="http://www.w3.org/2000/svg" style="width:100%; height:auto;"><rect x="20.0" y="30" width="360.0" height="22" rx="4" fill="#b9dcc0"/><text x="200.0" y="45" font-size="12" font-weight="700" fill="#1c1c1e" text-anchor="middle">1〜3回目の試し（信頼圏）</text><rect x="380.0" y="30" width="240.0" height="22" rx="4" fill="#f2c4a8"/><text x="500.0" y="45" font-size="12" font-weight="700" fill="#1c1c1e" text-anchor="middle">4回目以降（割れやすい）</text><line x1="140.0" y1="52" x2="140.0" y2="60" stroke="#6e6e73" stroke-width="1.5"/><text x="140.0" y="74" font-size="11" fill="#6e6e73" text-anchor="middle">1回目</text><line x1="260.0" y1="52" x2="260.0" y2="60" stroke="#6e6e73" stroke-width="1.5"/><text x="260.0" y="74" font-size="11" fill="#6e6e73" text-anchor="middle">2回目</text><line x1="380.0" y1="52" x2="380.0" y2="60" stroke="#6e6e73" stroke-width="1.5"/><text x="380.0" y="74" font-size="11" fill="#6e6e73" text-anchor="middle">3回目</text><line x1="500.0" y1="52" x2="500.0" y2="60" stroke="#6e6e73" stroke-width="1.5"/><text x="500.0" y="74" font-size="11" fill="#6e6e73" text-anchor="middle">4回目</text><line x1="620.0" y1="52" x2="620.0" y2="60" stroke="#6e6e73" stroke-width="1.5"/><text x="620.0" y="74" font-size="11" fill="#6e6e73" text-anchor="middle">5回目</text><path d="M 380.0 28 l -7 -12 l 14 0 z" fill="#1c1c1e"/><text x="380.0" y="12" font-size="11" font-weight="800" fill="#1c1c1e" text-anchor="middle">例: 3回目</text></svg></div>
+    <div class="ihead">具体例：この数字ならこう見る</div>
+    <div class="case"><span class="cv" style="background:#b9dcc0">過去2回反発・今3回目</span><span>支持帯の直上での押し目。定石の信頼圏内。+12点。</span></div><div class="case"><span class="cv" style="background:#f2c4a8">過去4回反発・今5回目</span><span>試されすぎ。次は割れる可能性が高まる。−5点・減点方式−8。</span></div><div class="case"><span class="cv" style="background:#f2c4a8">帯を明確に割った後</span><span>支持帯は無効。このシステムは自動で候補から外す。</span></div>
+    <div class="ihead">落とし穴</div>
+    <div class="trap">支持帯は「絶対の壁」ではなく「買い手が多かった記憶」。出来高を伴って割れたら素直に諦める。</div>
+    <div class="ihead">このシステムでの扱い</div>
+    <div class="sc">〜3回目 +12点 ／ 4回目以降 −5点。</div>
+  </div>
+</details>
+<details class="ind" id="mkt">
+  <summary><span class="itag">市場全体の風向き</span><b>地合い（日経平均の200日線）</b><span class="chev">›</span></summary>
+  <div class="ibody">
+    <div class="one">日経平均が200日線の上か下か。下にある間は市場全体が下落基調で、個別の押し目買いの成功率も落ちる。</div>
+    <div class="kid">🧒 みんなが下り坂を歩いているときに、一人だけ上り坂を歩くのは大変。風向きを見てから歩き出す。</div>
+    <div class="meter"><svg viewBox="0 0 640 92" xmlns="http://www.w3.org/2000/svg" style="width:100%; height:auto;"><rect x="20.0" y="30" width="300.0" height="22" rx="4" fill="#f2c4a8"/><text x="170.0" y="45" font-size="12" font-weight="700" fill="#1c1c1e" text-anchor="middle">200日線の下（警戒）</text><rect x="320.0" y="30" width="300.0" height="22" rx="4" fill="#b9dcc0"/><text x="470.0" y="45" font-size="12" font-weight="700" fill="#1c1c1e" text-anchor="middle">200日線の上（順風）</text><line x1="170.0" y1="52" x2="170.0" y2="60" stroke="#6e6e73" stroke-width="1.5"/><text x="170.0" y="74" font-size="11" fill="#6e6e73" text-anchor="middle">全体が下落基調</text><line x1="470.0" y1="52" x2="470.0" y2="60" stroke="#6e6e73" stroke-width="1.5"/><text x="470.0" y="74" font-size="11" fill="#6e6e73" text-anchor="middle">全体が上昇基調</text><path d="M 470.0 28 l -7 -12 l 14 0 z" fill="#1c1c1e"/><text x="470.0" y="12" font-size="11" font-weight="800" fill="#1c1c1e" text-anchor="middle">例: 順風</text></svg></div>
+    <div class="ihead">具体例：この数字ならこう見る</div>
+    <div class="case"><span class="cv" style="background:#b9dcc0">上昇基調</span><span>帳簿上部に緑のバナー。普段通りに押し目を拾ってよい。</span></div><div class="case"><span class="cv" style="background:#f2c4a8">下落基調</span><span>オレンジの警戒バナー。買いは普段より慎重に、株数を減らす・見送るなどの判断を。</span></div>
+    <div class="ihead">落とし穴</div>
+    <div class="trap">地合いは「傾向」であって個別銘柄の保証にはならない。逆に、悪い地合いで下げ止まっている銘柄は強い銘柄。</div>
+    <div class="ihead">このシステムでの扱い</div>
+    <div class="sc">スコアには入れず、帳簿上部のバナーで注意喚起。</div>
+  </div>
+</details><div class="tierh sec">準主要指標（補助的に加点・10）</div>
+<details class="ind sec" id="stoch">
+  <summary><span class="itag">過熱感（RSIの相棒）</span><b>ストキャスティクス（スロー）</b><span class="chev">›</span></summary>
+  <div class="ibody">
+    <div class="one">直近14日の値幅の中で、いまの終値がどの位置か（0〜100）。20以下=売られすぎ、80以上=買われすぎ。</div>
+    <div class="kid">🧒 教室の身長順で、今日の自分が「一番低い側」にいるかを見る指標。RSIより反応が早い。</div>
+    <div class="meter"><svg viewBox="0 0 640 92" xmlns="http://www.w3.org/2000/svg" style="width:100%; height:auto;"><rect x="20.0" y="30" width="120.0" height="22" rx="4" fill="#b9dcc0"/><text x="80.0" y="45" font-size="12" font-weight="700" fill="#1c1c1e" text-anchor="middle">売られすぎ</text><rect x="140.0" y="30" width="60.0" height="22" rx="4" fill="#f5e6b3"/><text x="170.0" y="45" font-size="12" font-weight="700" fill="#1c1c1e" text-anchor="middle">やや</text><rect x="200.0" y="30" width="240.0" height="22" rx="4" fill="#eeeae0"/><text x="320.0" y="45" font-size="12" font-weight="700" fill="#1c1c1e" text-anchor="middle">中立</text><rect x="440.0" y="30" width="60.0" height="22" rx="4" fill="#f5e6b3"/><text x="470.0" y="45" font-size="12" font-weight="700" fill="#1c1c1e" text-anchor="middle">やや</text><rect x="500.0" y="30" width="120.0" height="22" rx="4" fill="#f2c4a8"/><text x="560.0" y="45" font-size="12" font-weight="700" fill="#1c1c1e" text-anchor="middle">買われすぎ</text><line x1="20.0" y1="52" x2="20.0" y2="60" stroke="#6e6e73" stroke-width="1.5"/><text x="20.0" y="74" font-size="11" fill="#6e6e73" text-anchor="middle">0</text><line x1="140.0" y1="52" x2="140.0" y2="60" stroke="#6e6e73" stroke-width="1.5"/><text x="140.0" y="74" font-size="11" fill="#6e6e73" text-anchor="middle">20</text><line x1="320.0" y1="52" x2="320.0" y2="60" stroke="#6e6e73" stroke-width="1.5"/><text x="320.0" y="74" font-size="11" fill="#6e6e73" text-anchor="middle">50</text><line x1="500.0" y1="52" x2="500.0" y2="60" stroke="#6e6e73" stroke-width="1.5"/><text x="500.0" y="74" font-size="11" fill="#6e6e73" text-anchor="middle">80</text><line x1="620.0" y1="52" x2="620.0" y2="60" stroke="#6e6e73" stroke-width="1.5"/><text x="620.0" y="74" font-size="11" fill="#6e6e73" text-anchor="middle">100</text><path d="M 110.0 28 l -7 -12 l 14 0 z" fill="#1c1c1e"/><text x="110.0" y="12" font-size="11" font-weight="800" fill="#1c1c1e" text-anchor="middle">例: 15</text></svg></div>
+    <div class="ihead">具体例：この数字ならこう見る</div>
+    <div class="case"><span class="cv" style="background:#b9dcc0">12</span><span>売られすぎ。RSIとセットで低ければ押し目の信頼度が上がる。+4点。</span></div><div class="case"><span class="cv" style="background:#eeeae0">50</span><span>中立。材料にならない。</span></div><div class="case"><span class="cv" style="background:#f2c4a8">88</span><span>買われすぎ。追いかけ買いは危険。</span></div>
+    <div class="ihead">落とし穴</div>
+    <div class="trap">強いトレンド中は80以上・20以下に「張り付く」。単独では使わず、下げ止まり確認と併用。</div>
+    <div class="ihead">このシステムでの扱い</div>
+    <div class="sc">20以下 +4点。</div>
+  </div>
+</details>
+<details class="ind sec" id="adx">
+  <summary><span class="itag">トレンドの強さと向き</span><b>DMI / ADX</b><span class="chev">›</span></summary>
+  <div class="ibody">
+    <div class="one">ADXは「トレンドの強さ」（向きは示さない）。+DIと−DIのどちらが上かで向きが分かる。ADX25以上で「トレンドあり」。</div>
+    <div class="kid">🧒 風の強さ（ADX）と風向き（+DI/−DI）。強い追い風の中の一休み（押し目）が理想、強い向かい風なら見送り。</div>
+    <div class="meter"><svg viewBox="0 0 640 92" xmlns="http://www.w3.org/2000/svg" style="width:100%; height:auto;"><rect x="20.0" y="30" width="200.0" height="22" rx="4" fill="#eeeae0"/><text x="120.0" y="45" font-size="12" font-weight="700" fill="#1c1c1e" text-anchor="middle">トレンドなし</text><rect x="220.0" y="30" width="50.0" height="22" rx="4" fill="#f5e6b3"/><text x="245.0" y="45" font-size="12" font-weight="700" fill="#1c1c1e" text-anchor="middle">弱い</text><rect x="270.0" y="30" width="350.0" height="22" rx="4" fill="#b9dcc0"/><text x="445.0" y="45" font-size="12" font-weight="700" fill="#1c1c1e" text-anchor="middle">トレンドあり（向きは±DIで）</text><line x1="20.0" y1="52" x2="20.0" y2="60" stroke="#6e6e73" stroke-width="1.5"/><text x="20.0" y="74" font-size="11" fill="#6e6e73" text-anchor="middle">0</text><line x1="220.0" y1="52" x2="220.0" y2="60" stroke="#6e6e73" stroke-width="1.5"/><text x="220.0" y="74" font-size="11" fill="#6e6e73" text-anchor="middle">20</text><line x1="270.0" y1="52" x2="270.0" y2="60" stroke="#6e6e73" stroke-width="1.5"/><text x="270.0" y="74" font-size="11" fill="#6e6e73" text-anchor="middle">25</text><line x1="420.0" y1="52" x2="420.0" y2="60" stroke="#6e6e73" stroke-width="1.5"/><text x="420.0" y="74" font-size="11" fill="#6e6e73" text-anchor="middle">40</text><line x1="620.0" y1="52" x2="620.0" y2="60" stroke="#6e6e73" stroke-width="1.5"/><text x="620.0" y="74" font-size="11" fill="#6e6e73" text-anchor="middle">60</text><path d="M 300.0 28 l -7 -12 l 14 0 z" fill="#1c1c1e"/><text x="300.0" y="12" font-size="11" font-weight="800" fill="#1c1c1e" text-anchor="middle">例: 28</text></svg></div>
+    <div class="ihead">具体例：この数字ならこう見る</div>
+    <div class="case"><span class="cv" style="background:#b9dcc0">ADX30・+DI優勢</span><span>上昇トレンドに勢いがある中の押し目。+4点。</span></div><div class="case"><span class="cv" style="background:#eeeae0">ADX15</span><span>方向感なし。レンジ相場。</span></div><div class="case"><span class="cv" style="background:#f2c4a8">ADX30・−DI優勢</span><span>下降トレンドに勢い。ナイフの落下中。−4点。</span></div>
+    <div class="ihead">落とし穴</div>
+    <div class="trap">ADXは遅行する。上がり始めた時点でトレンドはかなり進んでいる。環境認識用。</div>
+    <div class="ihead">このシステムでの扱い</div>
+    <div class="sc">ADX25以上かつ+DI優勢 +4点／−DI優勢 −4点。</div>
+  </div>
+</details>
+<details class="ind sec" id="ichimoku">
+  <summary><span class="itag">中期の地合い</span><b>一目均衡表（雲）</b><span class="chev">›</span></summary>
+  <div class="ibody">
+    <div class="one">先行スパンで作る「雲」に対して株価が上か中か下か。雲の上=中期強気、雲の下=中期弱気、雲の中=方向感なし。</div>
+    <div class="kid">🧒 雲の上を飛んでいる飛行機は安定、雲の中は視界不良、雲の下は雨。</div>
+    <div class="meter"><svg viewBox="0 0 640 92" xmlns="http://www.w3.org/2000/svg" style="width:100%; height:auto;"><rect x="20.0" y="30" width="200.0" height="22" rx="4" fill="#f2c4a8"/><text x="120.0" y="45" font-size="12" font-weight="700" fill="#1c1c1e" text-anchor="middle">雲の下</text><rect x="220.0" y="30" width="200.0" height="22" rx="4" fill="#f5e6b3"/><text x="320.0" y="45" font-size="12" font-weight="700" fill="#1c1c1e" text-anchor="middle">雲の中</text><rect x="420.0" y="30" width="200.0" height="22" rx="4" fill="#b9dcc0"/><text x="520.0" y="45" font-size="12" font-weight="700" fill="#1c1c1e" text-anchor="middle">雲の上</text><line x1="120.0" y1="52" x2="120.0" y2="60" stroke="#6e6e73" stroke-width="1.5"/><text x="120.0" y="74" font-size="11" fill="#6e6e73" text-anchor="middle">弱気</text><line x1="320.0" y1="52" x2="320.0" y2="60" stroke="#6e6e73" stroke-width="1.5"/><text x="320.0" y="74" font-size="11" fill="#6e6e73" text-anchor="middle">もみ合い</text><line x1="520.0" y1="52" x2="520.0" y2="60" stroke="#6e6e73" stroke-width="1.5"/><text x="520.0" y="74" font-size="11" fill="#6e6e73" text-anchor="middle">強気</text><path d="M 520.0 28 l -7 -12 l 14 0 z" fill="#1c1c1e"/><text x="520.0" y="12" font-size="11" font-weight="800" fill="#1c1c1e" text-anchor="middle">例: 雲の上</text></svg></div>
+    <div class="ihead">具体例：この数字ならこう見る</div>
+    <div class="case"><span class="cv" style="background:#b9dcc0">雲の上での押し目</span><span>中期の支えがある下げ。+4点。</span></div><div class="case"><span class="cv" style="background:#f5e6b3">雲の中</span><span>方向感なし。他の指標で判断。</span></div><div class="case"><span class="cv" style="background:#f2c4a8">雲の下</span><span>中期は弱い。反発しても雲が上値抵抗になりやすい。−3点。</span></div>
+    <div class="ihead">落とし穴</div>
+    <div class="trap">雲のねじれ（先行スパンの交差）付近は転換点になりやすく、判断が難しい。</div>
+    <div class="ihead">このシステムでの扱い</div>
+    <div class="sc">雲の上 +4点／雲の下 −3点。</div>
+  </div>
+</details>
+<details class="ind sec" id="atr">
+  <summary><span class="itag">値幅・損切り幅の目安</span><b>ATR（アベレージ・トゥルー・レンジ）</b><span class="chev">›</span></summary>
+  <div class="ibody">
+    <div class="one">1日にどれくらい動く銘柄か（株価比%）。損切り幅・利確幅を「その銘柄の普段の動き」に合わせるのに使う。</div>
+    <div class="kid">🧒 その人の歩幅。歩幅の小さい人は少しの距離で判断できるが、大股の人は同じ距離だとすぐ踏み越える。</div>
+    <div class="meter"><svg viewBox="0 0 640 92" xmlns="http://www.w3.org/2000/svg" style="width:100%; height:auto;"><rect x="20.0" y="30" width="120.0" height="22" rx="4" fill="#b9dcc0"/><text x="80.0" y="45" font-size="12" font-weight="700" fill="#1c1c1e" text-anchor="middle">穏やか</text><rect x="140.0" y="30" width="90.0" height="22" rx="4" fill="#eeeae0"/><text x="185.0" y="45" font-size="12" font-weight="700" fill="#1c1c1e" text-anchor="middle">普通</text><rect x="230.0" y="30" width="90.0" height="22" rx="4" fill="#f5e6b3"/><text x="275.0" y="45" font-size="12" font-weight="700" fill="#1c1c1e" text-anchor="middle">大きめ</text><rect x="320.0" y="30" width="300.0" height="22" rx="4" fill="#f2c4a8"/><text x="470.0" y="45" font-size="12" font-weight="700" fill="#1c1c1e" text-anchor="middle">荒い</text><line x1="20.0" y1="52" x2="20.0" y2="60" stroke="#6e6e73" stroke-width="1.5"/><text x="20.0" y="74" font-size="11" fill="#6e6e73" text-anchor="middle">0%</text><line x1="140.0" y1="52" x2="140.0" y2="60" stroke="#6e6e73" stroke-width="1.5"/><text x="140.0" y="74" font-size="11" fill="#6e6e73" text-anchor="middle">2%</text><line x1="230.0" y1="52" x2="230.0" y2="60" stroke="#6e6e73" stroke-width="1.5"/><text x="230.0" y="74" font-size="11" fill="#6e6e73" text-anchor="middle">3.5%</text><line x1="320.0" y1="52" x2="320.0" y2="60" stroke="#6e6e73" stroke-width="1.5"/><text x="320.0" y="74" font-size="11" fill="#6e6e73" text-anchor="middle">5%</text><line x1="620.0" y1="52" x2="620.0" y2="60" stroke="#6e6e73" stroke-width="1.5"/><text x="620.0" y="74" font-size="11" fill="#6e6e73" text-anchor="middle">10%</text><path d="M 128.0 28 l -7 -12 l 14 0 z" fill="#1c1c1e"/><text x="128.0" y="12" font-size="11" font-weight="800" fill="#1c1c1e" text-anchor="middle">例: 1.8%</text></svg></div>
+    <div class="ihead">具体例：この数字ならこう見る</div>
+    <div class="case"><span class="cv" style="background:#b9dcc0">1.5%</span><span>日々の値幅が小さく、−8%損切りは十分な余裕。+3点。</span></div><div class="case"><span class="cv" style="background:#eeeae0">3%</span><span>普通。損切りは−8%で妥当。</span></div><div class="case"><span class="cv" style="background:#f2c4a8">6%</span><span>1日で損切りに届く。損切り幅を広げるか、そもそも見送り。−3点。</span></div>
+    <div class="ihead">落とし穴</div>
+    <div class="trap">ATRが小さすぎる銘柄は動かないので短期回転には向かない。「小さければ良い」ではない。</div>
+    <div class="ihead">このシステムでの扱い</div>
+    <div class="sc">2%以下 +3点／5%以上 −3点。損切り%の妥当性チェックにも。</div>
+  </div>
+</details>
+<details class="ind sec" id="obvmfi">
+  <summary><span class="itag">お金の流れ</span><b>OBV / MFI（出来高系）</b><span class="chev">›</span></summary>
+  <div class="ibody">
+    <div class="one">OBVは「上げた日の出来高を足し、下げた日を引く」累積線。株価が下がっているのにOBVが上向きなら「誰かが買い集めている」。MFIは出来高込みのRSI。</div>
+    <div class="kid">🧒 お店の売上（株価）は落ちているのに、常連客（出来高）が増えている——それは復活の前兆かもしれない。</div>
+    <div class="meter"><svg viewBox="0 0 640 92" xmlns="http://www.w3.org/2000/svg" style="width:100%; height:auto;"><rect x="20.0" y="30" width="120.0" height="22" rx="4" fill="#b9dcc0"/><text x="80.0" y="45" font-size="12" font-weight="700" fill="#1c1c1e" text-anchor="middle">MFI売られすぎ</text><rect x="140.0" y="30" width="60.0" height="22" rx="4" fill="#f5e6b3"/><text x="170.0" y="45" font-size="12" font-weight="700" fill="#1c1c1e" text-anchor="middle">やや</text><rect x="200.0" y="30" width="240.0" height="22" rx="4" fill="#eeeae0"/><text x="320.0" y="45" font-size="12" font-weight="700" fill="#1c1c1e" text-anchor="middle">中立</text><rect x="440.0" y="30" width="60.0" height="22" rx="4" fill="#f5e6b3"/><text x="470.0" y="45" font-size="12" font-weight="700" fill="#1c1c1e" text-anchor="middle">やや</text><rect x="500.0" y="30" width="120.0" height="22" rx="4" fill="#f2c4a8"/><text x="560.0" y="45" font-size="12" font-weight="700" fill="#1c1c1e" text-anchor="middle">買われすぎ</text><line x1="20.0" y1="52" x2="20.0" y2="60" stroke="#6e6e73" stroke-width="1.5"/><text x="20.0" y="74" font-size="11" fill="#6e6e73" text-anchor="middle">0</text><line x1="140.0" y1="52" x2="140.0" y2="60" stroke="#6e6e73" stroke-width="1.5"/><text x="140.0" y="74" font-size="11" fill="#6e6e73" text-anchor="middle">20</text><line x1="320.0" y1="52" x2="320.0" y2="60" stroke="#6e6e73" stroke-width="1.5"/><text x="320.0" y="74" font-size="11" fill="#6e6e73" text-anchor="middle">50</text><line x1="500.0" y1="52" x2="500.0" y2="60" stroke="#6e6e73" stroke-width="1.5"/><text x="500.0" y="74" font-size="11" fill="#6e6e73" text-anchor="middle">80</text><line x1="620.0" y1="52" x2="620.0" y2="60" stroke="#6e6e73" stroke-width="1.5"/><text x="620.0" y="74" font-size="11" fill="#6e6e73" text-anchor="middle">100</text><path d="M 128.0 28 l -7 -12 l 14 0 z" fill="#1c1c1e"/><text x="128.0" y="12" font-size="11" font-weight="800" fill="#1c1c1e" text-anchor="middle">例: MFI 18</text></svg></div>
+    <div class="ihead">具体例：この数字ならこう見る</div>
+    <div class="case"><span class="cv" style="background:#b9dcc0">OBV上向き＋株価下落</span><span>下げの中で買い集め。反発の芽。+3点。</span></div><div class="case"><span class="cv" style="background:#b9dcc0">MFI 15</span><span>出来高込みの売られすぎ。+3点。</span></div><div class="case"><span class="cv" style="background:#f2c4a8">OBV下向き＋株価横ばい</span><span>静かに売り抜けられている可能性。</span></div>
+    <div class="ihead">落とし穴</div>
+    <div class="trap">出来高の少ない銘柄では大口1件で歪む。売買代金の大きい銘柄で意味を持つ。</div>
+    <div class="ihead">このシステムでの扱い</div>
+    <div class="sc">OBV20日で+5%超 +3点／MFI20以下 +3点。</div>
+  </div>
+</details>
+<details class="ind sec" id="hv">
+  <summary><span class="itag">値動きの荒さ（年率）</span><b>ヒストリカル・ボラティリティ（HV）</b><span class="chev">›</span></summary>
+  <div class="ibody">
+    <div class="one">過去20日の値動きから計算した年率換算の変動率。日本株の平均は25〜35%程度。</div>
+    <div class="kid">🧒 ジェットコースターの高低差。高いほどスリルはあるが、目的地（利確）に着く前に振り落とされやすい。</div>
+    <div class="meter"><svg viewBox="0 0 640 92" xmlns="http://www.w3.org/2000/svg" style="width:100%; height:auto;"><rect x="20.0" y="30" width="125.0" height="22" rx="4" fill="#b9dcc0"/><text x="82.5" y="45" font-size="12" font-weight="700" fill="#1c1c1e" text-anchor="middle">穏やか</text><rect x="145.0" y="30" width="75.0" height="22" rx="4" fill="#eeeae0"/><text x="182.5" y="45" font-size="12" font-weight="700" fill="#1c1c1e" text-anchor="middle">普通</text><rect x="220.0" y="30" width="100.0" height="22" rx="4" fill="#f5e6b3"/><text x="270.0" y="45" font-size="12" font-weight="700" fill="#1c1c1e" text-anchor="middle">高め</text><rect x="320.0" y="30" width="300.0" height="22" rx="4" fill="#f2c4a8"/><text x="470.0" y="45" font-size="12" font-weight="700" fill="#1c1c1e" text-anchor="middle">非常に高い</text><line x1="20.0" y1="52" x2="20.0" y2="60" stroke="#6e6e73" stroke-width="1.5"/><text x="20.0" y="74" font-size="11" fill="#6e6e73" text-anchor="middle">0%</text><line x1="145.0" y1="52" x2="145.0" y2="60" stroke="#6e6e73" stroke-width="1.5"/><text x="145.0" y="74" font-size="11" fill="#6e6e73" text-anchor="middle">25%</text><line x1="220.0" y1="52" x2="220.0" y2="60" stroke="#6e6e73" stroke-width="1.5"/><text x="220.0" y="74" font-size="11" fill="#6e6e73" text-anchor="middle">40%</text><line x1="320.0" y1="52" x2="320.0" y2="60" stroke="#6e6e73" stroke-width="1.5"/><text x="320.0" y="74" font-size="11" fill="#6e6e73" text-anchor="middle">60%</text><line x1="620.0" y1="52" x2="620.0" y2="60" stroke="#6e6e73" stroke-width="1.5"/><text x="620.0" y="74" font-size="11" fill="#6e6e73" text-anchor="middle">120%</text><path d="M 170.0 28 l -7 -12 l 14 0 z" fill="#1c1c1e"/><text x="170.0" y="12" font-size="11" font-weight="800" fill="#1c1c1e" text-anchor="middle">例: 30%</text></svg></div>
+    <div class="ihead">具体例：この数字ならこう見る</div>
+    <div class="case"><span class="cv" style="background:#b9dcc0">22%</span><span>落ち着いた銘柄。夜1回判断のスタイルと相性が良い。</span></div><div class="case"><span class="cv" style="background:#eeeae0">35%</span><span>普通。</span></div><div class="case"><span class="cv" style="background:#f2c4a8">75%</span><span>荒すぎ。翌朝の窓開けも大きくなる。減点方式で減点対象。</span></div>
+    <div class="ihead">落とし穴</div>
+    <div class="trap">HVが低い＝安全ではない。決算前などに急に跳ねる。</div>
+    <div class="ihead">このシステムでの扱い</div>
+    <div class="sc">採点には直接使わず、ATR・夜間ギャップで代替。メーター表示のみ。</div>
+  </div>
+</details>
+<details class="ind sec" id="eqratio">
+  <summary><span class="itag">財務の厚み（倒産しにくさ）</span><b>自己資本比率</b><span class="chev">›</span></summary>
+  <div class="ibody">
+    <div class="one">総資産のうち返さなくていいお金（自己資本）の割合。高いほど不況に強い。目安: 50%以上=厚い、20%未満=借入依存。</div>
+    <div class="kid">🧒 家の値段のうち自分のお金で払った割合。ローンだらけの家は金利が上がると危ない。</div>
+    <div class="meter"><svg viewBox="0 0 640 92" xmlns="http://www.w3.org/2000/svg" style="width:100%; height:auto;"><rect x="20.0" y="30" width="120.0" height="22" rx="4" fill="#f2c4a8"/><text x="80.0" y="45" font-size="12" font-weight="700" fill="#1c1c1e" text-anchor="middle">借入依存</text><rect x="140.0" y="30" width="90.0" height="22" rx="4" fill="#f5e6b3"/><text x="185.0" y="45" font-size="12" font-weight="700" fill="#1c1c1e" text-anchor="middle">やや薄い</text><rect x="230.0" y="30" width="90.0" height="22" rx="4" fill="#eeeae0"/><text x="275.0" y="45" font-size="12" font-weight="700" fill="#1c1c1e" text-anchor="middle">標準</text><rect x="320.0" y="30" width="300.0" height="22" rx="4" fill="#b9dcc0"/><text x="470.0" y="45" font-size="12" font-weight="700" fill="#1c1c1e" text-anchor="middle">厚い</text><line x1="20.0" y1="52" x2="20.0" y2="60" stroke="#6e6e73" stroke-width="1.5"/><text x="20.0" y="74" font-size="11" fill="#6e6e73" text-anchor="middle">0%</text><line x1="140.0" y1="52" x2="140.0" y2="60" stroke="#6e6e73" stroke-width="1.5"/><text x="140.0" y="74" font-size="11" fill="#6e6e73" text-anchor="middle">20%</text><line x1="230.0" y1="52" x2="230.0" y2="60" stroke="#6e6e73" stroke-width="1.5"/><text x="230.0" y="74" font-size="11" fill="#6e6e73" text-anchor="middle">35%</text><line x1="320.0" y1="52" x2="320.0" y2="60" stroke="#6e6e73" stroke-width="1.5"/><text x="320.0" y="74" font-size="11" fill="#6e6e73" text-anchor="middle">50%</text><line x1="620.0" y1="52" x2="620.0" y2="60" stroke="#6e6e73" stroke-width="1.5"/><text x="620.0" y="74" font-size="11" fill="#6e6e73" text-anchor="middle">100%</text><path d="M 350.0 28 l -7 -12 l 14 0 z" fill="#1c1c1e"/><text x="350.0" y="12" font-size="11" font-weight="800" fill="#1c1c1e" text-anchor="middle">例: 55%</text></svg></div>
+    <div class="ihead">具体例：この数字ならこう見る</div>
+    <div class="case"><span class="cv" style="background:#b9dcc0">60%</span><span>財務が厚い。下げても倒産リスクが低く、安心して押し目を拾える。+4点。</span></div><div class="case"><span class="cv" style="background:#eeeae0">40%</span><span>標準的。</span></div><div class="case"><span class="cv" style="background:#f2c4a8">12%</span><span>借入依存。金利上昇や業績悪化に脆い。−5点。</span></div>
+    <div class="ihead">落とし穴</div>
+    <div class="trap">銀行・リース・商社などは業種の性質上、低くて正常。同業比較が必須。</div>
+    <div class="ihead">このシステムでの扱い</div>
+    <div class="sc">50%以上 +4点／20%未満 −5点。</div>
+  </div>
+</details>
+<details class="ind sec" id="opmargin">
+  <summary><span class="itag">本業の稼ぐ力・資産効率</span><b>営業利益率 / ROA</b><span class="chev">›</span></summary>
+  <div class="ibody">
+    <div class="one">営業利益率＝売上のうち本業で残る利益の割合（10%以上=高収益）。ROA＝総資産に対する利益（5%以上=効率良い）。ROEと違い借金で水増しされない。</div>
+    <div class="kid">🧒 1,000円のお弁当を売って本業でいくら残るか。100円残れば営業利益率10%。</div>
+    <div class="meter"><svg viewBox="0 0 640 92" xmlns="http://www.w3.org/2000/svg" style="width:100%; height:auto;"><rect x="20.0" y="30" width="150.0" height="22" rx="4" fill="#f2c4a8"/><text x="95.0" y="45" font-size="12" font-weight="700" fill="#1c1c1e" text-anchor="middle">営業赤字</text><rect x="170.0" y="30" width="75.0" height="22" rx="4" fill="#f5e6b3"/><text x="207.5" y="45" font-size="12" font-weight="700" fill="#1c1c1e" text-anchor="middle">薄利</text><rect x="245.0" y="30" width="75.0" height="22" rx="4" fill="#eeeae0"/><text x="282.5" y="45" font-size="12" font-weight="700" fill="#1c1c1e" text-anchor="middle">標準</text><rect x="320.0" y="30" width="300.0" height="22" rx="4" fill="#b9dcc0"/><text x="470.0" y="45" font-size="12" font-weight="700" fill="#1c1c1e" text-anchor="middle">高収益</text><line x1="20.0" y1="52" x2="20.0" y2="60" stroke="#6e6e73" stroke-width="1.5"/><text x="20.0" y="74" font-size="11" fill="#6e6e73" text-anchor="middle">−10%</text><line x1="170.0" y1="52" x2="170.0" y2="60" stroke="#6e6e73" stroke-width="1.5"/><text x="170.0" y="74" font-size="11" fill="#6e6e73" text-anchor="middle">0%</text><line x1="245.0" y1="52" x2="245.0" y2="60" stroke="#6e6e73" stroke-width="1.5"/><text x="245.0" y="74" font-size="11" fill="#6e6e73" text-anchor="middle">5%</text><line x1="320.0" y1="52" x2="320.0" y2="60" stroke="#6e6e73" stroke-width="1.5"/><text x="320.0" y="74" font-size="11" fill="#6e6e73" text-anchor="middle">10%</text><line x1="620.0" y1="52" x2="620.0" y2="60" stroke="#6e6e73" stroke-width="1.5"/><text x="620.0" y="74" font-size="11" fill="#6e6e73" text-anchor="middle">30%</text><path d="M 350.0 28 l -7 -12 l 14 0 z" fill="#1c1c1e"/><text x="350.0" y="12" font-size="11" font-weight="800" fill="#1c1c1e" text-anchor="middle">例: 12%</text></svg></div>
+    <div class="ihead">具体例：この数字ならこう見る</div>
+    <div class="case"><span class="cv" style="background:#b9dcc0">営業利益率15%</span><span>本業が強い。株価が下げても業績が支える。+3点。</span></div><div class="case"><span class="cv" style="background:#eeeae0">5%</span><span>標準。</span></div><div class="case"><span class="cv" style="background:#f2c4a8">−3%（営業赤字）</span><span>本業で損している。下げても戻りが鈍い。−5点。</span></div>
+    <div class="ihead">落とし穴</div>
+    <div class="trap">利益率は業種差が大きい（小売は低く、ソフトは高い）。同業比較で見る。</div>
+    <div class="ihead">このシステムでの扱い</div>
+    <div class="sc">営業利益率10%以上 +3点／営業赤字 −5点／ROA5%以上 +3点。</div>
+  </div>
+</details>
+<details class="ind sec" id="payout">
+  <summary><span class="itag">配当の持続性・成長との割安度</span><b>配当性向 / PEG</b><span class="chev">›</span></summary>
+  <div class="ibody">
+    <div class="one">配当性向＝利益のうち配当に回す割合（30〜60%が健全、100%超は利益以上に配っており減配リスク）。PEG＝PER÷利益成長率（1倍以下なら成長に対して割安）。</div>
+    <div class="kid">🧒 配当性向はお小遣いのうち貯金せず使う割合。100%超は貯金を切り崩している。PEGは「伸び盛りの子の月謝が割安か」。</div>
+    <div class="meter"><svg viewBox="0 0 640 92" xmlns="http://www.w3.org/2000/svg" style="width:100%; height:auto;"><rect x="20.0" y="30" width="120.0" height="22" rx="4" fill="#eeeae0"/><text x="80.0" y="45" font-size="12" font-weight="700" fill="#1c1c1e" text-anchor="middle">低め</text><rect x="140.0" y="30" width="120.0" height="22" rx="4" fill="#b9dcc0"/><text x="200.0" y="45" font-size="12" font-weight="700" fill="#1c1c1e" text-anchor="middle">健全</text><rect x="260.0" y="30" width="160.0" height="22" rx="4" fill="#f5e6b3"/><text x="340.0" y="45" font-size="12" font-weight="700" fill="#1c1c1e" text-anchor="middle">高め</text><rect x="420.0" y="30" width="200.0" height="22" rx="4" fill="#f2c4a8"/><text x="520.0" y="45" font-size="12" font-weight="700" fill="#1c1c1e" text-anchor="middle">無理している</text><line x1="20.0" y1="52" x2="20.0" y2="60" stroke="#6e6e73" stroke-width="1.5"/><text x="20.0" y="74" font-size="11" fill="#6e6e73" text-anchor="middle">0%</text><line x1="140.0" y1="52" x2="140.0" y2="60" stroke="#6e6e73" stroke-width="1.5"/><text x="140.0" y="74" font-size="11" fill="#6e6e73" text-anchor="middle">30%</text><line x1="260.0" y1="52" x2="260.0" y2="60" stroke="#6e6e73" stroke-width="1.5"/><text x="260.0" y="74" font-size="11" fill="#6e6e73" text-anchor="middle">60%</text><line x1="420.0" y1="52" x2="420.0" y2="60" stroke="#6e6e73" stroke-width="1.5"/><text x="420.0" y="74" font-size="11" fill="#6e6e73" text-anchor="middle">100%</text><line x1="620.0" y1="52" x2="620.0" y2="60" stroke="#6e6e73" stroke-width="1.5"/><text x="620.0" y="74" font-size="11" fill="#6e6e73" text-anchor="middle">150%</text><path d="M 200.0 28 l -7 -12 l 14 0 z" fill="#1c1c1e"/><text x="200.0" y="12" font-size="11" font-weight="800" fill="#1c1c1e" text-anchor="middle">例: 45%</text></svg></div>
+    <div class="ihead">具体例：この数字ならこう見る</div>
+    <div class="case"><span class="cv" style="background:#b9dcc0">配当性向40%</span><span>余裕を持って配当。持続性が高い。</span></div><div class="case"><span class="cv" style="background:#f2c4a8">配当性向120%</span><span>利益以上に配当。減配の予備軍。−3点。</span></div><div class="case"><span class="cv" style="background:#c9dcf3">PEG 0.8倍</span><span>成長率に対して株価が割安。+4点。</span></div>
+    <div class="ihead">落とし穴</div>
+    <div class="trap">PEGは予想EPSに依存する。会社予想は保守的にも楽観的にもなる。</div>
+    <div class="ihead">このシステムでの扱い</div>
+    <div class="sc">配当性向100%超 −3点／PEG1倍以下 +4点。</div>
+  </div>
+</details>
+<details class="ind sec" id="breadth">
+  <summary><span class="itag">市場全体の体温</span><b>騰落レシオ・新高値新安値・NT倍率</b><span class="chev">›</span></summary>
+  <div class="ibody">
+    <div class="one">騰落レシオ＝値上がり銘柄数÷値下がり銘柄数（25日累計で120%超は過熱、70%未満は売られすぎ）。新高値・新安値の銘柄数は相場の広がり。NT倍率＝日経平均÷TOPIX（高いほど値がさハイテク偏重）。</div>
+    <div class="kid">🧒 クラス全員の機嫌。半分以上が笑顔なら地合いは良い。数人だけ笑って残りが泣いていたら偏った相場。</div>
+    <div class="meter"><svg viewBox="0 0 640 92" xmlns="http://www.w3.org/2000/svg" style="width:100%; height:auto;"><rect x="20.0" y="30" width="262.5" height="22" rx="4" fill="#b9dcc0"/><text x="151.2" y="45" font-size="12" font-weight="700" fill="#1c1c1e" text-anchor="middle">売られすぎ（逆張り好機）</text><rect x="282.5" y="30" width="112.5" height="22" rx="4" fill="#eeeae0"/><text x="338.8" y="45" font-size="12" font-weight="700" fill="#1c1c1e" text-anchor="middle">普通</text><rect x="395.0" y="30" width="75.0" height="22" rx="4" fill="#eeeae0"/><text x="432.5" y="45" font-size="12" font-weight="700" fill="#1c1c1e" text-anchor="middle">やや強い</text><rect x="470.0" y="30" width="150.0" height="22" rx="4" fill="#f2c4a8"/><text x="545.0" y="45" font-size="12" font-weight="700" fill="#1c1c1e" text-anchor="middle">過熱</text><line x1="20.0" y1="52" x2="20.0" y2="60" stroke="#6e6e73" stroke-width="1.5"/><text x="20.0" y="74" font-size="11" fill="#6e6e73" text-anchor="middle">0%</text><line x1="282.5" y1="52" x2="282.5" y2="60" stroke="#6e6e73" stroke-width="1.5"/><text x="282.5" y="74" font-size="11" fill="#6e6e73" text-anchor="middle">70%</text><line x1="395.0" y1="52" x2="395.0" y2="60" stroke="#6e6e73" stroke-width="1.5"/><text x="395.0" y="74" font-size="11" fill="#6e6e73" text-anchor="middle">100%</text><line x1="470.0" y1="52" x2="470.0" y2="60" stroke="#6e6e73" stroke-width="1.5"/><text x="470.0" y="74" font-size="11" fill="#6e6e73" text-anchor="middle">120%</text><line x1="620.0" y1="52" x2="620.0" y2="60" stroke="#6e6e73" stroke-width="1.5"/><text x="620.0" y="74" font-size="11" fill="#6e6e73" text-anchor="middle">160%</text><path d="M 376.2 28 l -7 -12 l 14 0 z" fill="#1c1c1e"/><text x="376.2" y="12" font-size="11" font-weight="800" fill="#1c1c1e" text-anchor="middle">例: 95%</text></svg></div>
+    <div class="ihead">具体例：この数字ならこう見る</div>
+    <div class="case"><span class="cv" style="background:#b9dcc0">騰落レシオ65%</span><span>市場全体が売られすぎ。個別の押し目が効きやすい局面。</span></div><div class="case"><span class="cv" style="background:#f2c4a8">新安値銘柄が急増</span><span>全体が崩れている。個別で良く見えても慎重に。</span></div><div class="case"><span class="cv" style="background:#f5e6b3">NT倍率が急上昇</span><span>一部の値がさ株だけが相場を引っ張っている。裾野が狭い。</span></div>
+    <div class="ihead">落とし穴</div>
+    <div class="trap">全体指標は「傾向」。個別の勝負を保証しない。帳簿上部の地合いバナーで毎日確認。</div>
+    <div class="ihead">このシステムでの扱い</div>
+    <div class="sc">採点には入れず、地合いバナーに表示。</div>
+  </div>
+</details><details class="tier3"><summary><b>参考: 用語集（その他の指標 約40）</b><span class="chev">›</span></summary><div class="tier3body"><div class="note">採点には使っていないが、投資家として知っておくと判断が深まる指標。「なぜ採用していないか」も添えています。</div><details class="gcat"><summary>バリュエーション<span class="chev">›</span></summary><div class="gbody"><div class="gterm"><b>EPS / BPS / SPS / CFPS / DPS</b><span>1株あたりの利益・純資産・売上・キャッシュフロー・配当。PER・PBR・PSR・PCFR・利回りの分母になる基礎数字。</span></div><div class="gterm"><b>PSR（株価売上高倍率）</b><span>株価÷1株売上。赤字の成長企業をPERで測れないときの代替。1倍未満は割安寄りだが業種差が大きい。</span></div><div class="gterm"><b>PCFR（株価キャッシュフロー倍率）</b><span>株価÷1株CF。利益より操作されにくいCFで見た割安度。</span></div><div class="gterm"><b>EV/EBITDA</b><span>企業価値÷（営業利益+減価償却）。買収の値付けで使う指標。8倍以下は割安寄り。個人の短期売買では出番は少ない。</span></div></div></details><details class="gcat"><summary>財務健全性・効率性<span class="chev">›</span></summary><div class="gbody"><div class="gterm"><b>流動比率 / 当座比率</b><span>1年以内に払う負債に対し、1年以内に現金化できる資産がどれだけあるか。流動比率200%以上・当座比率100%以上が安心の目安。</span></div><div class="gterm"><b>D/Eレシオ</b><span>有利子負債÷自己資本。1倍以下が健全の目安。</span></div><div class="gterm"><b>インタレスト・カバレッジ</b><span>営業利益÷支払利息。利払いの余裕。10倍以上なら安心。</span></div><div class="gterm"><b>フリーキャッシュフロー（FCF）</b><span>本業で稼いだ現金から投資を引いた残り。プラスが続く会社は自力で成長・還元できる。</span></div><div class="gterm"><b>粗利益率 / 経常利益率 / 純利益率</b><span>売上に対する各段階の利益率。粗利は商品力、経常は財務込み、純利益は最終。</span></div><div class="gterm"><b>総資産回転率 / 棚卸資産回転率</b><span>資産・在庫がどれだけ効率よく売上に変わっているか。低下は在庫過剰の兆し。</span></div><div class="gterm"><b>ROIC</b><span>投下資本利益率。事業に投じたお金に対する本業の利益率。WACC（資本コスト）を上回っていれば価値を生んでいる。</span></div></div></details><details class="gcat"><summary>テクニカル（トレンド系）<span class="chev">›</span></summary><div class="gbody"><div class="gterm"><b>EMA / WMA / HMA / ALMA</b><span>直近を重視した移動平均の変種。SMAより反応が速い。当システムは50日/200日SMAとMACD（EMAベース）で代替。</span></div><div class="gterm"><b>パラボリックSAR</b><span>トレンドの転換点をドットで示す。追随には向くが、レンジ相場でダマシが多い。</span></div><div class="gterm"><b>エンベロープ / ケルトナー / ドンチャン</b><span>移動平均や高値安値からの一定幅のバンド。ボリンジャーバンドの兄弟。</span></div><div class="gterm"><b>GMMA</b><span>短期6本+長期6本の移動平均の束。束の広がりでトレンドの強さを見る。</span></div><div class="gterm"><b>スーパートレンド</b><span>ATRベースのトレンド追随線。損切りラインの置き場にも使われる。</span></div><div class="gterm"><b>ジグザグ</b><span>細かい動きを消して山と谷だけを結ぶ。過去の波の把握用で、直近は確定しない（後から変わる）。</span></div></div></details><details class="gcat"><summary>テクニカル（オシレーター系）<span class="chev">›</span></summary><div class="gbody"><div class="gterm"><b>CCI / ウィリアムズ%R / ROC / モメンタム</b><span>いずれも「勢い」や「行きすぎ」を測る指標。RSI・ストキャスと役割が重なるため、当システムでは二重加点を避けて採用せず。</span></div><div class="gterm"><b>RCI（順位相関指数）</b><span>日付と価格の順位相関。−80以下で売られすぎ。日本の個人投資家に人気。</span></div><div class="gterm"><b>アルティメット / デマーカー / TRIX / CMO / AO</b><span>各種の派生オシレーター。基本はRSI・MACD・ストキャスで足りる。</span></div><div class="gterm"><b>サイコロジカルライン</b><span>直近12日のうち上げた日の割合。25%以下は売られすぎ。</span></div></div></details><details class="gcat"><summary>出来高・ボラティリティ<span class="chev">›</span></summary><div class="gbody"><div class="gterm"><b>VWAP</b><span>出来高加重平均価格。その日の「平均的な約定値段」。日中トレード向けで、夜1回判断では出番が少ない。</span></div><div class="gterm"><b>VR / CMF / A/Dライン</b><span>出来高で買い圧力・売り圧力を測る指標群。OBV・MFIと同系統。</span></div><div class="gterm"><b>価格帯別出来高</b><span>どの値段で最も多く売買されたか。支持帯・抵抗帯の裏付けになる。当システムの「長期支持帯」の考え方に近い。</span></div></div></details><details class="gcat"><summary>市場全体・需給・センチメント<span class="chev">›</span></summary><div class="gbody"><div class="gterm"><b>空売り比率 / 信用倍率 / 投資部門別売買</b><span>需給の本丸。信用買い残の積み上がりは「将来の売り圧力」。J-Quants Standard以上で取得可（未導入）。</span></div><div class="gterm"><b>日経VI / VIX / プット・コール・レシオ</b><span>恐怖指数。急騰時は投げ売り一巡の目安になることも。</span></div><div class="gterm"><b>マクレラン・オシレーター / ヒンデンブルグ・オーメン</b><span>騰落データから作る市場全体のシグナル。後者は暴落の前兆として有名だが的中率は議論あり。</span></div></div></details><details class="gcat"><summary>クオンツ・成績評価<span class="chev">›</span></summary><div class="gbody"><div class="gterm"><b>β / α / R²</b><span>市場との連動性・超過収益・説明力。ポートフォリオ全体の性格を測る指標。</span></div><div class="gterm"><b>シャープ / ソルティノ / インフォメーション・レシオ</b><span>取ったリスクに対してどれだけ稼いだか。検証レポートの成績を「リスク調整後」で見る次の段階で導入予定。</span></div><div class="gterm"><b>最大ドローダウン / VaR / 標準偏差</b><span>最悪期の落ち込み・想定損失・ばらつき。「持ち株の管理」の通算成績に最大ドローダウンを追加するのが次の候補。</span></div></div></details></div></details>
+<div class="note">各指標の閾値はこのシステムの現在の設定に基づきます。相場環境や業種で最適値は変わるため、絶対的な基準ではなく「よく使われる目安」としてご覧ください。</div>
+
+<script>
+(function(){
+  const order = ['guide.html', 'indicators.html', 'universe.html', 'index.html', 'map.html', 'caps.html'];
+  let here = location.pathname.split('/').pop();
+  if (!here) here = 'index.html';
+  const idx = order.indexOf(here);
+  if (idx < 0) return;
+  let sx = 0, sy = 0, st = 0;
+  document.addEventListener('touchstart', e => {
+    const t = e.touches[0]; sx = t.clientX; sy = t.clientY; st = Date.now();
+  }, {passive: true});
+  document.addEventListener('touchend', e => {
+    const t = e.changedTouches[0];
+    const dx = t.clientX - sx, dy = t.clientY - sy;
+    if (Date.now() - st > 600) return;
+    if (Math.abs(dx) < 80 || Math.abs(dy) > 50 || Math.abs(dx) < Math.abs(dy) * 2) return;
+    if (e.target.closest('.topnav, .chips, .filters, input, textarea, .spark')) return;
+    const j = dx < 0 ? idx + 1 : idx - 1;
+    if (j >= 0 && j < order.length) location.href = order[j];
+  }, {passive: true});
+})();
+</script>
+</body>
+</html>

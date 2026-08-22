@@ -1,0 +1,1084 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="robots" content="noindex, nofollow">
+<link rel="apple-touch-icon" href="icon.png">
+<link rel="icon" type="image/png" href="icon.png">
+<title>TOB素地ランキング — 買収されやすい体質の順位 ｜ 株ノート</title>
+<style>
+  :root{--ink:#1c1c1e; --ink2:#6e6e73; --ink3:#aeaeb2; --paper:#faf6ec;
+    --paper-line:#e7e0cf; --bg:#f2f2f7; --line:#e5e5ea; --cheap:#c62f2f; --cheap-bg:#fdeeee;
+    --mild:#b06a00; --mild-bg:#fdf3e3;}
+  *{box-sizing:border-box; margin:0; padding:0;}
+  body{font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Noto Sans JP",sans-serif;
+    background:var(--bg); color:var(--ink); max-width:640px; margin:0 auto;
+    padding:14px 12px 40px;}
+  .num{font-family:ui-monospace,"SF Mono",Menlo,monospace; font-variant-numeric:tabular-nums;}
+  header{padding:6px 4px 12px;}
+  header .t{font-size:20px; font-weight:800;}
+  header .s{font-size:12px; color:var(--ink2); margin-top:3px; line-height:1.6;}
+  .back{display:inline-block; font-size:12px; font-weight:700; color:#2e4d7b;
+    text-decoration:none; margin-bottom:8px;}
+
+  .topnav{display:flex; gap:6px; overflow-x:auto; padding:2px 0 12px;
+    -webkit-overflow-scrolling:touch;}
+  .topnav a{flex:none; font-size:12.5px; font-weight:700; color:#4a3f28;
+    text-decoration:none; background:#f4eedd; border-radius:10px; padding:8px 14px;}
+  .topnav a.act{background:#1c1c1e; color:#fff;}
+  .topnav a.subtag{background:none; color:#8a5a17; font-weight:800; padding-left:2px;}
+
+  html, body{overflow-x:hidden; max-width:100%;}
+  body{overscroll-behavior-x:none;}
+  *{min-width:0;}
+  img, svg{max-width:100%;}
+  .topnav, .chips, .filters{overflow-x:auto; overscroll-behavior-x:contain; -webkit-overflow-scrolling:touch;}
+  .card, .hcard, .ledger, .list, .flatlist, .soonbox, .capcard, details, .notebox, .ubody{max-width:100%; overflow-wrap:anywhere;}
+  input, select{max-width:100%;}
+
+  .card{background:var(--paper); border-radius:14px; padding:12px 14px;
+    margin-bottom:12px; box-shadow:0 1px 3px rgba(0,0,0,.06);}
+  .card h2{font-size:13px; font-weight:800; color:#7a6a45; letter-spacing:.05em;
+    margin-bottom:8px;}
+  .fact{display:flex; justify-content:space-between; font-size:12.5px; padding:6px 0;
+    border-bottom:1px solid #f0ead9;}
+  .fact span:first-child{color:var(--ink2);}
+  .fact .v{font-weight:700;}
+  .plus{color:#2e7d32;} .minus{color:var(--cheap);}
+  .note{font-size:11px; color:var(--ink3); line-height:1.7; padding:8px 4px;}
+  
+  .gt{font-size:12.5px; line-height:1.85;}
+  details.crit2{background:#faf6ec; border-radius:14px; margin-bottom:12px; box-shadow:0 1px 3px rgba(0,0,0,.06);}
+  details.crit2 summary{list-style:none; cursor:pointer; font-size:13px; font-weight:800; color:#7a6a45;
+    padding:12px 14px; display:flex; justify-content:space-between; align-items:center;}
+  details.crit2 summary::-webkit-details-marker{display:none;}
+  .critbody2{padding:0 14px 12px;}
+  .cr{font-size:12px; line-height:1.8; padding:6px 0; border-top:1px dashed #e7e0cf; color:var(--ink2);}
+  .cr b{color:#4a3f28;}
+  .tchev{color:#c9bd9d; font-weight:700; transition:transform .15s;}
+  details[open] > summary .tchev{transform:rotate(90deg);}
+  .warncard2{background:#fdf6e6 !important; border-left:5px solid #b06a00;}
+  .warncard2 h2{color:#8a5a17;}
+  details.trow{border-top:1px solid var(--paper-line);}
+  .tsum{list-style:none; cursor:pointer; display:flex; align-items:center; gap:8px; padding:8px 14px;}
+  .tsum::-webkit-details-marker{display:none;}
+  details.trow[open] .tsum{background:#f4eedd;}
+  .trk{flex:none; width:26px; text-align:center; font-size:13px; font-weight:800; color:#6b4487;}
+  .tnm{flex:1; min-width:0; font-size:12.5px; line-height:1.5;}
+  .tuc{color:var(--ink2); font-size:11px; margin-left:2px;}
+  .tfact{display:block; font-size:10px; color:var(--ink2);}
+  .tsc{flex:none; font-size:15px; font-weight:800; color:#6b4487;}
+  .tsc small{font-size:9px; font-weight:600; color:var(--ink3);}
+  .tbody{background:#fffdf6; border-top:1px dashed var(--paper-line); padding:10px 14px 14px;}
+  .tbar{height:10px; background:#f0ead9; border-radius:5px; overflow:hidden; margin-bottom:8px;}
+  .tbarfill{height:100%; background:#9a7ab5; border-radius:5px;}
+  .thit{display:flex; justify-content:space-between; gap:10px; font-size:11.5px; line-height:1.7;
+    padding:4px 0; border-bottom:1px dashed #f0ead9;}
+  .thit .tpp{font-weight:800; color:#6b4487; flex:none;}
+  .thit .tpm{font-weight:800; color:#b06a00; flex:none;}
+  .tpbadge{display:inline-block; font-size:9.5px; font-weight:800; color:#fff; border-radius:4px;
+    padding:1px 6px; margin-left:5px; vertical-align:1px;}
+  .tpbadge.twarn{background:#8a6d1a;}
+  .chip{display:inline-block; font-size:9px; font-weight:600; border-radius:5px; padding:1.5px 5px; vertical-align:1px;}
+  .chip.prime{background:#e8eef8; color:#2e4d7b;}
+  .chip.std{background:#e9f3ea; color:#3a5a40;}
+  .chip.growth{background:#f4ecf9; color:#6b4487;}
+  .chip.local{background:#f7efe4; color:#8a5a17;}
+  .linkrow{display:flex; gap:8px; margin-top:12px; flex-wrap:wrap;}
+  .linkrow .ylink{flex:1; min-width:45%;}
+  .ylink{display:block; font-size:12px; font-weight:700; color:#2e4d7b; font-family:inherit;
+    text-decoration:none; text-align:center; background:#eef2f8; border-radius:9px; padding:9px;
+    border:none; cursor:pointer;}
+  .ylink.sbi{color:#1a5c37; background:#e9f3ea;}
+
+</style>
+</head>
+<body>
+<div class="topnav"><a href="guide.html" class="act">はじめに</a><a href="indicators.html">指標の読み方</a><a href="universe.html">全銘柄台帳</a><a href="index.html">今夜の厳選</a><a href="map.html">銘柄マップ</a><a href="caps.html">時価総額マップ</a><a class="subtag">› その他の機能</a></div>
+<header><div class="t">TOB素地ランキング — 買収されやすい体質の順位</div><div class="s">8/23（日）03:12 判定 ・ 素材の揃った3,665銘柄（全3,754銘柄中）を採点 ・ 確率の予測ではなく「体質」の順位</div></header>
+
+<div class="card" style="border-left:5px solid #6b4487;">
+  <h2>これは何？（確率の予測ではありません）</h2>
+  <div class="gt">M&Aアドバイザーや中小企業診断士が「この会社は買収・非公開化の対象になりやすい」と見るときの
+  <b>定石を固定基準にして、全銘柄を機械的に採点した順位表</b>です。
+  「TOBが起きる」という予告ではなく、<b>買収側から見て魅力的な体質かどうか</b>の素地スコアです。
+  役割分担: 体質での絞り込みは機械が毎晩やる → 最後の確認と判断は人間がやる。</div>
+</div>
+
+<details class="crit2">
+<summary>採点の物差し（9つの観点・タップで開閉）<span class="tchev">›</span></summary>
+<div class="critbody2">
+  <div class="cr"><b>① 解散価値との比較（最大22点）</b> PBR1倍割れ、特に0.6倍未満は「会社を丸ごと買って資産を得た方が安い」状態。買収の最重要シグナル</div>
+  <div class="cr"><b>② 買える大きさか（最大15点）</b> TOB・MBOの主戦場は時価総額100〜1000億円。大型すぎると資金面で非現実的（減点）</div>
+  <div class="cr"><b>③ ため込み体質（最大18点）</b> 自己資本比率が高いのにROEが低い＝現金と資産を抱えて活かせていない。ファンド・アクティビストが最も好む型</div>
+  <div class="cr"><b>④ 稼ぐ力はあるか（最大8点）</b> 営業黒字が前提。壊れた会社は買われない——「安いのに健全」の組み合わせが核心</div>
+  <div class="cr"><b>⑤ 還元の渋さ（5点）</b> 黒字なのに配当性向が低い＝ため込みの傍証</div>
+  <div class="cr"><b>⑥ 株価の放置（最大6点）</b> 1年レンジ下位に放置されているほど、プレミアムを乗せた買付けがしやすい</div>
+  <div class="cr"><b>⑦ 出来高の薄さ（4点）</b> 市場の目が届かない銘柄ほど割安の歪みが残る</div>
+  <div class="cr"><b>⑧ 市場区分（4点）</b> スタンダード・グロースは非公開化しやすい。プライムのPBR1倍割れは東証の改善要請が直撃</div>
+  <div class="cr"><b>⑨ 利益面の割安（4点）</b> PER10倍未満はおまけの加点</div>
+</div>
+</details>
+
+<div class="card warncard2">
+  <h2>⚠ このスコアの限界（正直な注意書き）</h2>
+  <div class="gt">このスコアに入っていない決定的な要因: 親子上場・支配株主の存在、創業家の持株比率と経営者の年齢（MBOの最大要因）、アクティビストの大量保有、政策保有株の解消動向、不動産などの含み益。これらは無料の公開データでは機械判定できないため、上位に入った銘柄はこの観点を人間が確認してください。</div>
+  <div class="gt" style="margin-top:6px">また「TOB狙い」の投資は、<b>発表がなければ延々と塩漬け</b>になりやすい戦法です。
+  上位銘柄はどれも「安くて健全」ではあるので、TOBが来なくても持てる銘柄かを通常の三層判定（安全・質・タイミング）でも確認してください。</div>
+</div>
+
+<div class="card"><h2>📌 答え合わせ: 実際にTOB・MBOが発表された銘柄（直近14日）</h2><div class="fact"><span><b>サンセイランディック</b> <span class="num">3277</span><span class="tpbadge twarn">TOB・MBO発表済み</span></span><span class="v num">素地 55点・全体489位</span></div><div class="fact"><span><b>土木管理総合試験所</b> <span class="num">6171</span><span class="tpbadge twarn">TOB・MBO発表済み</span></span><span class="v num">素地 52点・全体641位</span></div><div class="fact"><span><b>コムチュア</b> <span class="num">3844</span><span class="tpbadge twarn">TOB・MBO発表済み</span></span><span class="v num">素地 43点・全体1,234位</span></div><div class="fact"><span><b>ラックランド</b> <span class="num">9612</span><span class="tpbadge twarn">TOB・MBO発表済み</span></span><span class="v num">素地 38点・全体1,633位</span></div><div class="fact"><span><b>ボードルア</b> <span class="num">4413</span><span class="tpbadge twarn">TOB・MBO発表済み</span></span><span class="v num">素地 24点・全体2,533位</span></div><div class="fact"><span><b>デジタルガレージ</b> <span class="num">4819</span><span class="tpbadge twarn">TOB・MBO発表済み</span></span><span class="v num">素地 11点・全体3,172位</span></div><div class="fact"><span><b>ＣＡＰＩＴＡ</b> <span class="num">7462</span><span class="tpbadge twarn">TOB・MBO発表済み</span></span><span class="v num">素地 6点・全体3,330位</span></div><div class="fact"><span><b>カカクコム</b> <span class="num">2371</span><span class="tpbadge twarn">TOB・MBO発表済み</span></span><span class="v num">素地 5点・全体3,340位</span></div><div class="fact"><span><b>ＬＩＮＥヤフー</b> <span class="num">4689</span><span class="tpbadge twarn">TOB・MBO発表済み</span></span><span class="v num">素地 5点・全体3,354位</span></div><div class="note">発表当日は株価が跳ねてPBR等が上がるため、上の点数は発表の影響を受けた後の値です。このランキングの実力は「発表<b>前</b>に何位だったか」で測るのが正しく、毎晩の実行を重ねるほど答え合わせの精度が上がっていきます。</div></div>
+
+<div class="card" style="padding:4px 0 8px;">
+  <h2 style="padding:10px 14px 2px;">素地スコア上位50銘柄（判定 3,665銘柄中）</h2>
+  
+<details class="trow">
+<summary class="tsum">
+  <span class="trk num">1</span>
+  <span class="tnm"><b>ＫＶＫ</b> <span class="chip std">スタンダード</span>
+    <span class="num tuc">6484</span>
+    <span class="tfact num">PBR 0.58倍 ・ 時価総額 178億円 ・ 自己資本 85% ・ ROE 7.1%</span></span>
+  <span class="tsc num">86<small>点</small></span>
+  <span class="tchev">›</span>
+</summary>
+<div class="tbody">
+  <div class="tbar"><div class="tbarfill" style="width:100%"></div></div>
+  <div class="thit"><span>PBR 0.58倍 ＝ 解散価値の6割未満（最重要の割安シグナル）</span><span class="num tpp">+22</span></div><div class="thit"><span>時価総額 178億円 ＝ TOB・MBOの主戦場サイズ</span><span class="num tpp">+15</span></div><div class="thit"><span>自己資本比率 85% ＝ ほぼ無借金のため込み体質</span><span class="num tpp">+12</span></div><div class="thit"><span>厚い資本にROE 7.1% ＝ 資本を活かせていない（アクティビスト誘因）</span><span class="num tpp">+6</span></div><div class="thit"><span>営業利益率 8.8% ＝ 本業の稼ぐ力あり</span><span class="num tpp">+8</span></div><div class="thit"><span>配当性向 15% ＝ 黒字なのに還元が渋い</span><span class="num tpp">+5</span></div><div class="thit"><span>株価は1年レンジの下位25%に放置</span><span class="num tpp">+6</span></div><div class="thit"><span>売買代金が薄く市場の目が届きにくい</span><span class="num tpp">+4</span></div><div class="thit"><span>スタンダード市場 ＝ 上場維持メリットが薄く非公開化しやすい</span><span class="num tpp">+4</span></div><div class="thit"><span>PER 8.1倍 ＝ 利益面でも割安</span><span class="num tpp">+4</span></div>
+  <div class="linkrow">
+    <a class="ylink" href="https://finance.yahoo.co.jp/quote/6484.T" target="_blank" rel="noopener">Yahoo!ファイナンス →</a>
+    <button type="button" class="ylink sbi" onclick="openSBI('6484', event)">SBI証券アプリで見る</button>
+  </div>
+</div>
+</details>
+<details class="trow">
+<summary class="tsum">
+  <span class="trk num">2</span>
+  <span class="tnm"><b>トリニティ工業</b> <span class="chip std">スタンダード</span>
+    <span class="num tuc">6382</span>
+    <span class="tfact num">PBR 0.57倍 ・ 時価総額 199億円 ・ 自己資本 80% ・ ROE 7.8%</span></span>
+  <span class="tsc num">83<small>点</small></span>
+  <span class="tchev">›</span>
+</summary>
+<div class="tbody">
+  <div class="tbar"><div class="tbarfill" style="width:97%"></div></div>
+  <div class="thit"><span>PBR 0.57倍 ＝ 解散価値の6割未満（最重要の割安シグナル）</span><span class="num tpp">+22</span></div><div class="thit"><span>時価総額 199億円 ＝ TOB・MBOの主戦場サイズ</span><span class="num tpp">+15</span></div><div class="thit"><span>自己資本比率 80% ＝ ほぼ無借金のため込み体質</span><span class="num tpp">+12</span></div><div class="thit"><span>厚い資本にROE 7.8% ＝ 資本を活かせていない（アクティビスト誘因）</span><span class="num tpp">+6</span></div><div class="thit"><span>営業利益率 8.2% ＝ 本業の稼ぐ力あり</span><span class="num tpp">+8</span></div><div class="thit"><span>配当性向 25% ＝ 黒字なのに還元が渋い</span><span class="num tpp">+5</span></div><div class="thit"><span>株価は1年レンジの下位40%</span><span class="num tpp">+3</span></div><div class="thit"><span>売買代金が薄く市場の目が届きにくい</span><span class="num tpp">+4</span></div><div class="thit"><span>スタンダード市場 ＝ 上場維持メリットが薄く非公開化しやすい</span><span class="num tpp">+4</span></div><div class="thit"><span>PER 7.4倍 ＝ 利益面でも割安</span><span class="num tpp">+4</span></div>
+  <div class="linkrow">
+    <a class="ylink" href="https://finance.yahoo.co.jp/quote/6382.T" target="_blank" rel="noopener">Yahoo!ファイナンス →</a>
+    <button type="button" class="ylink sbi" onclick="openSBI('6382', event)">SBI証券アプリで見る</button>
+  </div>
+</div>
+</details>
+<details class="trow">
+<summary class="tsum">
+  <span class="trk num">3</span>
+  <span class="tnm"><b>タイガースポリマー</b> <span class="chip std">スタンダード</span>
+    <span class="num tuc">4231</span>
+    <span class="tfact num">PBR 0.42倍 ・ 時価総額 199億円 ・ 自己資本 80% ・ ROE 5.0%</span></span>
+  <span class="tsc num">80<small>点</small></span>
+  <span class="tchev">›</span>
+</summary>
+<div class="tbody">
+  <div class="tbar"><div class="tbarfill" style="width:93%"></div></div>
+  <div class="thit"><span>PBR 0.42倍 ＝ 解散価値の6割未満（最重要の割安シグナル）</span><span class="num tpp">+22</span></div><div class="thit"><span>時価総額 199億円 ＝ TOB・MBOの主戦場サイズ</span><span class="num tpp">+15</span></div><div class="thit"><span>自己資本比率 80% ＝ ほぼ無借金のため込み体質</span><span class="num tpp">+12</span></div><div class="thit"><span>厚い資本にROE 5.0% ＝ 資本を活かせていない（アクティビスト誘因）</span><span class="num tpp">+6</span></div><div class="thit"><span>営業利益率 6.0% ＝ 本業は黒字</span><span class="num tpp">+5</span></div><div class="thit"><span>配当性向 20% ＝ 黒字なのに還元が渋い</span><span class="num tpp">+5</span></div><div class="thit"><span>株価は1年レンジの下位40%</span><span class="num tpp">+3</span></div><div class="thit"><span>売買代金が薄く市場の目が届きにくい</span><span class="num tpp">+4</span></div><div class="thit"><span>スタンダード市場 ＝ 上場維持メリットが薄く非公開化しやすい</span><span class="num tpp">+4</span></div><div class="thit"><span>PER 8.5倍 ＝ 利益面でも割安</span><span class="num tpp">+4</span></div>
+  <div class="linkrow">
+    <a class="ylink" href="https://finance.yahoo.co.jp/quote/4231.T" target="_blank" rel="noopener">Yahoo!ファイナンス →</a>
+    <button type="button" class="ylink sbi" onclick="openSBI('4231', event)">SBI証券アプリで見る</button>
+  </div>
+</div>
+</details>
+<details class="trow">
+<summary class="tsum">
+  <span class="trk num">4</span>
+  <span class="tnm"><b>フジオーゼックス</b> <span class="chip std">スタンダード</span>
+    <span class="num tuc">7299</span>
+    <span class="tfact num">PBR 0.57倍 ・ 時価総額 182億円 ・ 自己資本 85% ・ ROE 6.5%</span></span>
+  <span class="tsc num">80<small>点</small></span>
+  <span class="tchev">›</span>
+</summary>
+<div class="tbody">
+  <div class="tbar"><div class="tbarfill" style="width:93%"></div></div>
+  <div class="thit"><span>PBR 0.57倍 ＝ 解散価値の6割未満（最重要の割安シグナル）</span><span class="num tpp">+22</span></div><div class="thit"><span>時価総額 182億円 ＝ TOB・MBOの主戦場サイズ</span><span class="num tpp">+15</span></div><div class="thit"><span>自己資本比率 85% ＝ ほぼ無借金のため込み体質</span><span class="num tpp">+12</span></div><div class="thit"><span>厚い資本にROE 6.5% ＝ 資本を活かせていない（アクティビスト誘因）</span><span class="num tpp">+6</span></div><div class="thit"><span>営業利益率 8.6% ＝ 本業の稼ぐ力あり</span><span class="num tpp">+8</span></div><div class="thit"><span>配当性向 15% ＝ 黒字なのに還元が渋い</span><span class="num tpp">+5</span></div><div class="thit"><span>売買代金が薄く市場の目が届きにくい</span><span class="num tpp">+4</span></div><div class="thit"><span>スタンダード市場 ＝ 上場維持メリットが薄く非公開化しやすい</span><span class="num tpp">+4</span></div><div class="thit"><span>PER 8.7倍 ＝ 利益面でも割安</span><span class="num tpp">+4</span></div>
+  <div class="linkrow">
+    <a class="ylink" href="https://finance.yahoo.co.jp/quote/7299.T" target="_blank" rel="noopener">Yahoo!ファイナンス →</a>
+    <button type="button" class="ylink sbi" onclick="openSBI('7299', event)">SBI証券アプリで見る</button>
+  </div>
+</div>
+</details>
+<details class="trow">
+<summary class="tsum">
+  <span class="trk num">5</span>
+  <span class="tnm"><b>田岡化学工業</b> <span class="chip std">スタンダード</span>
+    <span class="num tuc">4113</span>
+    <span class="tfact num">PBR 0.55倍 ・ 時価総額 107億円 ・ 自己資本 63% ・ ROE 7.8%</span></span>
+  <span class="tsc num">79<small>点</small></span>
+  <span class="tchev">›</span>
+</summary>
+<div class="tbody">
+  <div class="tbar"><div class="tbarfill" style="width:92%"></div></div>
+  <div class="thit"><span>PBR 0.55倍 ＝ 解散価値の6割未満（最重要の割安シグナル）</span><span class="num tpp">+22</span></div><div class="thit"><span>時価総額 107億円 ＝ TOB・MBOの主戦場サイズ</span><span class="num tpp">+15</span></div><div class="thit"><span>自己資本比率 63% ＝ 財務が厚く買収後の余力大</span><span class="num tpp">+8</span></div><div class="thit"><span>厚い資本にROE 7.8% ＝ 資本を活かせていない（アクティビスト誘因）</span><span class="num tpp">+6</span></div><div class="thit"><span>営業利益率 6.2% ＝ 本業は黒字</span><span class="num tpp">+5</span></div><div class="thit"><span>配当性向 17% ＝ 黒字なのに還元が渋い</span><span class="num tpp">+5</span></div><div class="thit"><span>株価は1年レンジの下位25%に放置</span><span class="num tpp">+6</span></div><div class="thit"><span>売買代金が薄く市場の目が届きにくい</span><span class="num tpp">+4</span></div><div class="thit"><span>スタンダード市場 ＝ 上場維持メリットが薄く非公開化しやすい</span><span class="num tpp">+4</span></div><div class="thit"><span>PER 7.0倍 ＝ 利益面でも割安</span><span class="num tpp">+4</span></div>
+  <div class="linkrow">
+    <a class="ylink" href="https://finance.yahoo.co.jp/quote/4113.T" target="_blank" rel="noopener">Yahoo!ファイナンス →</a>
+    <button type="button" class="ylink sbi" onclick="openSBI('4113', event)">SBI証券アプリで見る</button>
+  </div>
+</div>
+</details>
+<details class="trow">
+<summary class="tsum">
+  <span class="trk num">6</span>
+  <span class="tnm"><b>ＮＩＴＴＡＮ</b> <span class="chip std">スタンダード</span>
+    <span class="num tuc">6493</span>
+    <span class="tfact num">PBR 0.48倍 ・ 時価総額 147億円 ・ 自己資本 60% ・ ROE 7.2%</span></span>
+  <span class="tsc num">79<small>点</small></span>
+  <span class="tchev">›</span>
+</summary>
+<div class="tbody">
+  <div class="tbar"><div class="tbarfill" style="width:92%"></div></div>
+  <div class="thit"><span>PBR 0.48倍 ＝ 解散価値の6割未満（最重要の割安シグナル）</span><span class="num tpp">+22</span></div><div class="thit"><span>時価総額 147億円 ＝ TOB・MBOの主戦場サイズ</span><span class="num tpp">+15</span></div><div class="thit"><span>自己資本比率 60% ＝ 財務が厚く買収後の余力大</span><span class="num tpp">+8</span></div><div class="thit"><span>厚い資本にROE 7.2% ＝ 資本を活かせていない（アクティビスト誘因）</span><span class="num tpp">+6</span></div><div class="thit"><span>営業利益率 7.7% ＝ 本業は黒字</span><span class="num tpp">+5</span></div><div class="thit"><span>配当性向 17% ＝ 黒字なのに還元が渋い</span><span class="num tpp">+5</span></div><div class="thit"><span>株価は1年レンジの下位25%に放置</span><span class="num tpp">+6</span></div><div class="thit"><span>売買代金が薄く市場の目が届きにくい</span><span class="num tpp">+4</span></div><div class="thit"><span>スタンダード市場 ＝ 上場維持メリットが薄く非公開化しやすい</span><span class="num tpp">+4</span></div><div class="thit"><span>PER 6.6倍 ＝ 利益面でも割安</span><span class="num tpp">+4</span></div>
+  <div class="linkrow">
+    <a class="ylink" href="https://finance.yahoo.co.jp/quote/6493.T" target="_blank" rel="noopener">Yahoo!ファイナンス →</a>
+    <button type="button" class="ylink sbi" onclick="openSBI('6493', event)">SBI証券アプリで見る</button>
+  </div>
+</div>
+</details>
+<details class="trow">
+<summary class="tsum">
+  <span class="trk num">7</span>
+  <span class="tnm"><b>オーエムツーネットワーク</b> <span class="chip std">スタンダード</span>
+    <span class="num tuc">7614</span>
+    <span class="tfact num">PBR 0.56倍 ・ 時価総額 102億円 ・ 自己資本 77% ・ ROE 5.2%</span></span>
+  <span class="tsc num">79<small>点</small></span>
+  <span class="tchev">›</span>
+</summary>
+<div class="tbody">
+  <div class="tbar"><div class="tbarfill" style="width:92%"></div></div>
+  <div class="thit"><span>PBR 0.56倍 ＝ 解散価値の6割未満（最重要の割安シグナル）</span><span class="num tpp">+22</span></div><div class="thit"><span>時価総額 102億円 ＝ TOB・MBOの主戦場サイズ</span><span class="num tpp">+15</span></div><div class="thit"><span>自己資本比率 77% ＝ ほぼ無借金のため込み体質</span><span class="num tpp">+12</span></div><div class="thit"><span>厚い資本にROE 5.2% ＝ 資本を活かせていない（アクティビスト誘因）</span><span class="num tpp">+6</span></div><div class="thit"><span>営業利益率 3.7% ＝ 本業は黒字</span><span class="num tpp">+5</span></div><div class="thit"><span>配当性向 25% ＝ 黒字なのに還元が渋い</span><span class="num tpp">+5</span></div><div class="thit"><span>株価は1年レンジの下位25%に放置</span><span class="num tpp">+6</span></div><div class="thit"><span>売買代金が薄く市場の目が届きにくい</span><span class="num tpp">+4</span></div><div class="thit"><span>スタンダード市場 ＝ 上場維持メリットが薄く非公開化しやすい</span><span class="num tpp">+4</span></div>
+  <div class="linkrow">
+    <a class="ylink" href="https://finance.yahoo.co.jp/quote/7614.T" target="_blank" rel="noopener">Yahoo!ファイナンス →</a>
+    <button type="button" class="ylink sbi" onclick="openSBI('7614', event)">SBI証券アプリで見る</button>
+  </div>
+</div>
+</details>
+<details class="trow">
+<summary class="tsum">
+  <span class="trk num">8</span>
+  <span class="tnm"><b>ニホンフラッシュ</b> <span class="chip prime">プライム</span>
+    <span class="num tuc">7820</span>
+    <span class="tfact num">PBR 0.51倍 ・ 時価総額 163億円 ・ 自己資本 73% ・ ROE 4.5%</span></span>
+  <span class="tsc num">79<small>点</small></span>
+  <span class="tchev">›</span>
+</summary>
+<div class="tbody">
+  <div class="tbar"><div class="tbarfill" style="width:92%"></div></div>
+  <div class="thit"><span>PBR 0.51倍 ＝ 解散価値の6割未満（最重要の割安シグナル）</span><span class="num tpp">+22</span></div><div class="thit"><span>時価総額 163億円 ＝ TOB・MBOの主戦場サイズ</span><span class="num tpp">+15</span></div><div class="thit"><span>自己資本比率 73% ＝ ほぼ無借金のため込み体質</span><span class="num tpp">+12</span></div><div class="thit"><span>厚い資本にROE 4.5% ＝ 資本を活かせていない（アクティビスト誘因）</span><span class="num tpp">+6</span></div><div class="thit"><span>営業利益率 7.4% ＝ 本業は黒字</span><span class="num tpp">+5</span></div><div class="thit"><span>配当性向 29% ＝ 黒字なのに還元が渋い</span><span class="num tpp">+5</span></div><div class="thit"><span>株価は1年レンジの下位25%に放置</span><span class="num tpp">+6</span></div><div class="thit"><span>売買代金が薄く市場の目が届きにくい</span><span class="num tpp">+4</span></div><div class="thit"><span>プライムでPBR1倍割れ ＝ 東証の改善要請が直撃</span><span class="num tpp">+4</span></div>
+  <div class="linkrow">
+    <a class="ylink" href="https://finance.yahoo.co.jp/quote/7820.T" target="_blank" rel="noopener">Yahoo!ファイナンス →</a>
+    <button type="button" class="ylink sbi" onclick="openSBI('7820', event)">SBI証券アプリで見る</button>
+  </div>
+</div>
+</details>
+<details class="trow">
+<summary class="tsum">
+  <span class="trk num">9</span>
+  <span class="tnm"><b>ツツミ</b> <span class="chip std">スタンダード</span>
+    <span class="num tuc">7937</span>
+    <span class="tfact num">PBR 0.58倍 ・ 時価総額 407億円 ・ 自己資本 95% ・ ROE 5.3%</span></span>
+  <span class="tsc num">79<small>点</small></span>
+  <span class="tchev">›</span>
+</summary>
+<div class="tbody">
+  <div class="tbar"><div class="tbarfill" style="width:92%"></div></div>
+  <div class="thit"><span>PBR 0.58倍 ＝ 解散価値の6割未満（最重要の割安シグナル）</span><span class="num tpp">+22</span></div><div class="thit"><span>時価総額 407億円 ＝ TOB・MBOの主戦場サイズ</span><span class="num tpp">+15</span></div><div class="thit"><span>自己資本比率 95% ＝ ほぼ無借金のため込み体質</span><span class="num tpp">+12</span></div><div class="thit"><span>厚い資本にROE 5.3% ＝ 資本を活かせていない（アクティビスト誘因）</span><span class="num tpp">+6</span></div><div class="thit"><span>営業利益率 14.9% ＝ 本業の稼ぐ力あり</span><span class="num tpp">+8</span></div><div class="thit"><span>配当性向 30% ＝ 黒字なのに還元が渋い</span><span class="num tpp">+5</span></div><div class="thit"><span>株価は1年レンジの下位40%</span><span class="num tpp">+3</span></div><div class="thit"><span>売買代金が薄く市場の目が届きにくい</span><span class="num tpp">+4</span></div><div class="thit"><span>スタンダード市場 ＝ 上場維持メリットが薄く非公開化しやすい</span><span class="num tpp">+4</span></div>
+  <div class="linkrow">
+    <a class="ylink" href="https://finance.yahoo.co.jp/quote/7937.T" target="_blank" rel="noopener">Yahoo!ファイナンス →</a>
+    <button type="button" class="ylink sbi" onclick="openSBI('7937', event)">SBI証券アプリで見る</button>
+  </div>
+</div>
+</details>
+<details class="trow">
+<summary class="tsum">
+  <span class="trk num">10</span>
+  <span class="tnm"><b>藤倉化成</b> <span class="chip std">スタンダード</span>
+    <span class="num tuc">4620</span>
+    <span class="tfact num">PBR 0.57倍 ・ 時価総額 276億円 ・ 自己資本 71% ・ ROE 6.4%</span></span>
+  <span class="tsc num">77<small>点</small></span>
+  <span class="tchev">›</span>
+</summary>
+<div class="tbody">
+  <div class="tbar"><div class="tbarfill" style="width:90%"></div></div>
+  <div class="thit"><span>PBR 0.57倍 ＝ 解散価値の6割未満（最重要の割安シグナル）</span><span class="num tpp">+22</span></div><div class="thit"><span>時価総額 276億円 ＝ TOB・MBOの主戦場サイズ</span><span class="num tpp">+15</span></div><div class="thit"><span>自己資本比率 71% ＝ ほぼ無借金のため込み体質</span><span class="num tpp">+12</span></div><div class="thit"><span>厚い資本にROE 6.4% ＝ 資本を活かせていない（アクティビスト誘因）</span><span class="num tpp">+6</span></div><div class="thit"><span>営業利益率 4.1% ＝ 本業は黒字</span><span class="num tpp">+5</span></div><div class="thit"><span>配当性向 10% ＝ 黒字なのに還元が渋い</span><span class="num tpp">+5</span></div><div class="thit"><span>売買代金が薄く市場の目が届きにくい</span><span class="num tpp">+4</span></div><div class="thit"><span>スタンダード市場 ＝ 上場維持メリットが薄く非公開化しやすい</span><span class="num tpp">+4</span></div><div class="thit"><span>PER 8.9倍 ＝ 利益面でも割安</span><span class="num tpp">+4</span></div>
+  <div class="linkrow">
+    <a class="ylink" href="https://finance.yahoo.co.jp/quote/4620.T" target="_blank" rel="noopener">Yahoo!ファイナンス →</a>
+    <button type="button" class="ylink sbi" onclick="openSBI('4620', event)">SBI証券アプリで見る</button>
+  </div>
+</div>
+</details>
+<details class="trow">
+<summary class="tsum">
+  <span class="trk num">11</span>
+  <span class="tnm"><b>きもと</b> <span class="chip std">スタンダード</span>
+    <span class="num tuc">7908</span>
+    <span class="tfact num">PBR 0.55倍 ・ 時価総額 104億円 ・ 自己資本 82% ・ ROE 2.9%</span></span>
+  <span class="tsc num">77<small>点</small></span>
+  <span class="tchev">›</span>
+</summary>
+<div class="tbody">
+  <div class="tbar"><div class="tbarfill" style="width:90%"></div></div>
+  <div class="thit"><span>PBR 0.55倍 ＝ 解散価値の6割未満（最重要の割安シグナル）</span><span class="num tpp">+22</span></div><div class="thit"><span>時価総額 104億円 ＝ TOB・MBOの主戦場サイズ</span><span class="num tpp">+15</span></div><div class="thit"><span>自己資本比率 82% ＝ ほぼ無借金のため込み体質</span><span class="num tpp">+12</span></div><div class="thit"><span>厚い資本にROE 2.9% ＝ 資本を活かせていない（アクティビスト誘因）</span><span class="num tpp">+6</span></div><div class="thit"><span>営業利益率 10.1% ＝ 本業の稼ぐ力あり</span><span class="num tpp">+8</span></div><div class="thit"><span>株価は1年レンジの下位25%に放置</span><span class="num tpp">+6</span></div><div class="thit"><span>売買代金が薄く市場の目が届きにくい</span><span class="num tpp">+4</span></div><div class="thit"><span>スタンダード市場 ＝ 上場維持メリットが薄く非公開化しやすい</span><span class="num tpp">+4</span></div>
+  <div class="linkrow">
+    <a class="ylink" href="https://finance.yahoo.co.jp/quote/7908.T" target="_blank" rel="noopener">Yahoo!ファイナンス →</a>
+    <button type="button" class="ylink sbi" onclick="openSBI('7908', event)">SBI証券アプリで見る</button>
+  </div>
+</div>
+</details>
+<details class="trow">
+<summary class="tsum">
+  <span class="trk num">12</span>
+  <span class="tnm"><b>マミヤ・オーピー</b> <span class="chip std">スタンダード</span>
+    <span class="num tuc">7991</span>
+    <span class="tfact num">PBR 0.42倍 ・ 時価総額 109億円 ・ 自己資本 65% ・ ROE 6.6%</span></span>
+  <span class="tsc num">77<small>点</small></span>
+  <span class="tchev">›</span>
+</summary>
+<div class="tbody">
+  <div class="tbar"><div class="tbarfill" style="width:90%"></div></div>
+  <div class="thit"><span>PBR 0.42倍 ＝ 解散価値の6割未満（最重要の割安シグナル）</span><span class="num tpp">+22</span></div><div class="thit"><span>時価総額 109億円 ＝ TOB・MBOの主戦場サイズ</span><span class="num tpp">+15</span></div><div class="thit"><span>自己資本比率 65% ＝ 財務が厚く買収後の余力大</span><span class="num tpp">+8</span></div><div class="thit"><span>厚い資本にROE 6.6% ＝ 資本を活かせていない（アクティビスト誘因）</span><span class="num tpp">+6</span></div><div class="thit"><span>営業利益率 9.0% ＝ 本業の稼ぐ力あり</span><span class="num tpp">+8</span></div><div class="thit"><span>株価は1年レンジの下位25%に放置</span><span class="num tpp">+6</span></div><div class="thit"><span>売買代金が薄く市場の目が届きにくい</span><span class="num tpp">+4</span></div><div class="thit"><span>スタンダード市場 ＝ 上場維持メリットが薄く非公開化しやすい</span><span class="num tpp">+4</span></div><div class="thit"><span>PER 6.4倍 ＝ 利益面でも割安</span><span class="num tpp">+4</span></div>
+  <div class="linkrow">
+    <a class="ylink" href="https://finance.yahoo.co.jp/quote/7991.T" target="_blank" rel="noopener">Yahoo!ファイナンス →</a>
+    <button type="button" class="ylink sbi" onclick="openSBI('7991', event)">SBI証券アプリで見る</button>
+  </div>
+</div>
+</details>
+<details class="trow">
+<summary class="tsum">
+  <span class="trk num">13</span>
+  <span class="tnm"><b>神姫バス</b> <span class="chip std">スタンダード</span>
+    <span class="num tuc">9083</span>
+    <span class="tfact num">PBR 0.44倍 ・ 時価総額 237億円 ・ 自己資本 72% ・ ROE 5.9%</span></span>
+  <span class="tsc num">77<small>点</small></span>
+  <span class="tchev">›</span>
+</summary>
+<div class="tbody">
+  <div class="tbar"><div class="tbarfill" style="width:90%"></div></div>
+  <div class="thit"><span>PBR 0.44倍 ＝ 解散価値の6割未満（最重要の割安シグナル）</span><span class="num tpp">+22</span></div><div class="thit"><span>時価総額 237億円 ＝ TOB・MBOの主戦場サイズ</span><span class="num tpp">+15</span></div><div class="thit"><span>自己資本比率 72% ＝ ほぼ無借金のため込み体質</span><span class="num tpp">+12</span></div><div class="thit"><span>厚い資本にROE 5.9% ＝ 資本を活かせていない（アクティビスト誘因）</span><span class="num tpp">+6</span></div><div class="thit"><span>営業利益率 7.6% ＝ 本業は黒字</span><span class="num tpp">+5</span></div><div class="thit"><span>配当性向 12% ＝ 黒字なのに還元が渋い</span><span class="num tpp">+5</span></div><div class="thit"><span>売買代金が薄く市場の目が届きにくい</span><span class="num tpp">+4</span></div><div class="thit"><span>スタンダード市場 ＝ 上場維持メリットが薄く非公開化しやすい</span><span class="num tpp">+4</span></div><div class="thit"><span>PER 7.5倍 ＝ 利益面でも割安</span><span class="num tpp">+4</span></div>
+  <div class="linkrow">
+    <a class="ylink" href="https://finance.yahoo.co.jp/quote/9083.T" target="_blank" rel="noopener">Yahoo!ファイナンス →</a>
+    <button type="button" class="ylink sbi" onclick="openSBI('9083', event)">SBI証券アプリで見る</button>
+  </div>
+</div>
+</details>
+<details class="trow">
+<summary class="tsum">
+  <span class="trk num">14</span>
+  <span class="tnm"><b>北陸瓦斯</b> <span class="chip std">スタンダード</span>
+    <span class="num tuc">9537</span>
+    <span class="tfact num">PBR 0.39倍 ・ 時価総額 208億円 ・ 自己資本 80% ・ ROE 5.9%</span></span>
+  <span class="tsc num">77<small>点</small></span>
+  <span class="tchev">›</span>
+</summary>
+<div class="tbody">
+  <div class="tbar"><div class="tbarfill" style="width:90%"></div></div>
+  <div class="thit"><span>PBR 0.39倍 ＝ 解散価値の6割未満（最重要の割安シグナル）</span><span class="num tpp">+22</span></div><div class="thit"><span>時価総額 208億円 ＝ TOB・MBOの主戦場サイズ</span><span class="num tpp">+15</span></div><div class="thit"><span>自己資本比率 80% ＝ ほぼ無借金のため込み体質</span><span class="num tpp">+12</span></div><div class="thit"><span>厚い資本にROE 5.9% ＝ 資本を活かせていない（アクティビスト誘因）</span><span class="num tpp">+6</span></div><div class="thit"><span>営業利益率 5.9% ＝ 本業は黒字</span><span class="num tpp">+5</span></div><div class="thit"><span>配当性向 12% ＝ 黒字なのに還元が渋い</span><span class="num tpp">+5</span></div><div class="thit"><span>売買代金が薄く市場の目が届きにくい</span><span class="num tpp">+4</span></div><div class="thit"><span>スタンダード市場 ＝ 上場維持メリットが薄く非公開化しやすい</span><span class="num tpp">+4</span></div><div class="thit"><span>PER 6.5倍 ＝ 利益面でも割安</span><span class="num tpp">+4</span></div>
+  <div class="linkrow">
+    <a class="ylink" href="https://finance.yahoo.co.jp/quote/9537.T" target="_blank" rel="noopener">Yahoo!ファイナンス →</a>
+    <button type="button" class="ylink sbi" onclick="openSBI('9537', event)">SBI証券アプリで見る</button>
+  </div>
+</div>
+</details>
+<details class="trow">
+<summary class="tsum">
+  <span class="trk num">15</span>
+  <span class="tnm"><b>北野建設</b> <span class="chip std">スタンダード</span>
+    <span class="num tuc">1866</span>
+    <span class="tfact num">PBR 0.57倍 ・ 時価総額 292億円 ・ 自己資本 65% ・ ROE 6.8%</span></span>
+  <span class="tsc num">76<small>点</small></span>
+  <span class="tchev">›</span>
+</summary>
+<div class="tbody">
+  <div class="tbar"><div class="tbarfill" style="width:88%"></div></div>
+  <div class="thit"><span>PBR 0.57倍 ＝ 解散価値の6割未満（最重要の割安シグナル）</span><span class="num tpp">+22</span></div><div class="thit"><span>時価総額 292億円 ＝ TOB・MBOの主戦場サイズ</span><span class="num tpp">+15</span></div><div class="thit"><span>自己資本比率 65% ＝ 財務が厚く買収後の余力大</span><span class="num tpp">+8</span></div><div class="thit"><span>厚い資本にROE 6.8% ＝ 資本を活かせていない（アクティビスト誘因）</span><span class="num tpp">+6</span></div><div class="thit"><span>営業利益率 5.9% ＝ 本業は黒字</span><span class="num tpp">+5</span></div><div class="thit"><span>配当性向 21% ＝ 黒字なのに還元が渋い</span><span class="num tpp">+5</span></div><div class="thit"><span>株価は1年レンジの下位40%</span><span class="num tpp">+3</span></div><div class="thit"><span>売買代金が薄く市場の目が届きにくい</span><span class="num tpp">+4</span></div><div class="thit"><span>スタンダード市場 ＝ 上場維持メリットが薄く非公開化しやすい</span><span class="num tpp">+4</span></div><div class="thit"><span>PER 8.4倍 ＝ 利益面でも割安</span><span class="num tpp">+4</span></div>
+  <div class="linkrow">
+    <a class="ylink" href="https://finance.yahoo.co.jp/quote/1866.T" target="_blank" rel="noopener">Yahoo!ファイナンス →</a>
+    <button type="button" class="ylink sbi" onclick="openSBI('1866', event)">SBI証券アプリで見る</button>
+  </div>
+</div>
+</details>
+<details class="trow">
+<summary class="tsum">
+  <span class="trk num">16</span>
+  <span class="tnm"><b>岩塚製菓</b> <span class="chip std">スタンダード</span>
+    <span class="num tuc">2221</span>
+    <span class="tfact num">PBR 0.45倍 ・ 時価総額 313億円 ・ 自己資本 75% ・ ROE 2.9%</span></span>
+  <span class="tsc num">76<small>点</small></span>
+  <span class="tchev">›</span>
+</summary>
+<div class="tbody">
+  <div class="tbar"><div class="tbarfill" style="width:88%"></div></div>
+  <div class="thit"><span>PBR 0.45倍 ＝ 解散価値の6割未満（最重要の割安シグナル）</span><span class="num tpp">+22</span></div><div class="thit"><span>時価総額 313億円 ＝ TOB・MBOの主戦場サイズ</span><span class="num tpp">+15</span></div><div class="thit"><span>自己資本比率 75% ＝ ほぼ無借金のため込み体質</span><span class="num tpp">+12</span></div><div class="thit"><span>厚い資本にROE 2.9% ＝ 資本を活かせていない（アクティビスト誘因）</span><span class="num tpp">+6</span></div><div class="thit"><span>営業利益率 3.0% ＝ 本業は黒字</span><span class="num tpp">+5</span></div><div class="thit"><span>配当性向 16% ＝ 黒字なのに還元が渋い</span><span class="num tpp">+5</span></div><div class="thit"><span>株価は1年レンジの下位40%</span><span class="num tpp">+3</span></div><div class="thit"><span>売買代金が薄く市場の目が届きにくい</span><span class="num tpp">+4</span></div><div class="thit"><span>スタンダード市場 ＝ 上場維持メリットが薄く非公開化しやすい</span><span class="num tpp">+4</span></div>
+  <div class="linkrow">
+    <a class="ylink" href="https://finance.yahoo.co.jp/quote/2221.T" target="_blank" rel="noopener">Yahoo!ファイナンス →</a>
+    <button type="button" class="ylink sbi" onclick="openSBI('2221', event)">SBI証券アプリで見る</button>
+  </div>
+</div>
+</details>
+<details class="trow">
+<summary class="tsum">
+  <span class="trk num">17</span>
+  <span class="tnm"><b>イチカワ</b> <span class="chip std">スタンダード</span>
+    <span class="num tuc">3513</span>
+    <span class="tfact num">PBR 0.59倍 ・ 時価総額 142億円 ・ 自己資本 75% ・ ROE 4.8%</span></span>
+  <span class="tsc num">76<small>点</small></span>
+  <span class="tchev">›</span>
+</summary>
+<div class="tbody">
+  <div class="tbar"><div class="tbarfill" style="width:88%"></div></div>
+  <div class="thit"><span>PBR 0.59倍 ＝ 解散価値の6割未満（最重要の割安シグナル）</span><span class="num tpp">+22</span></div><div class="thit"><span>時価総額 142億円 ＝ TOB・MBOの主戦場サイズ</span><span class="num tpp">+15</span></div><div class="thit"><span>自己資本比率 75% ＝ ほぼ無借金のため込み体質</span><span class="num tpp">+12</span></div><div class="thit"><span>厚い資本にROE 4.8% ＝ 資本を活かせていない（アクティビスト誘因）</span><span class="num tpp">+6</span></div><div class="thit"><span>営業利益率 10.6% ＝ 本業の稼ぐ力あり</span><span class="num tpp">+8</span></div><div class="thit"><span>配当性向 18% ＝ 黒字なのに還元が渋い</span><span class="num tpp">+5</span></div><div class="thit"><span>売買代金が薄く市場の目が届きにくい</span><span class="num tpp">+4</span></div><div class="thit"><span>スタンダード市場 ＝ 上場維持メリットが薄く非公開化しやすい</span><span class="num tpp">+4</span></div>
+  <div class="linkrow">
+    <a class="ylink" href="https://finance.yahoo.co.jp/quote/3513.T" target="_blank" rel="noopener">Yahoo!ファイナンス →</a>
+    <button type="button" class="ylink sbi" onclick="openSBI('3513', event)">SBI証券アプリで見る</button>
+  </div>
+</div>
+</details>
+<details class="trow">
+<summary class="tsum">
+  <span class="trk num">18</span>
+  <span class="tnm"><b>群栄化学工業</b> <span class="chip prime">プライム</span>
+    <span class="num tuc">4229</span>
+    <span class="tfact num">PBR 0.55倍 ・ 時価総額 298億円 ・ 自己資本 84% ・ ROE 3.6%</span></span>
+  <span class="tsc num">76<small>点</small></span>
+  <span class="tchev">›</span>
+</summary>
+<div class="tbody">
+  <div class="tbar"><div class="tbarfill" style="width:88%"></div></div>
+  <div class="thit"><span>PBR 0.55倍 ＝ 解散価値の6割未満（最重要の割安シグナル）</span><span class="num tpp">+22</span></div><div class="thit"><span>時価総額 298億円 ＝ TOB・MBOの主戦場サイズ</span><span class="num tpp">+15</span></div><div class="thit"><span>自己資本比率 84% ＝ ほぼ無借金のため込み体質</span><span class="num tpp">+12</span></div><div class="thit"><span>厚い資本にROE 3.6% ＝ 資本を活かせていない（アクティビスト誘因）</span><span class="num tpp">+6</span></div><div class="thit"><span>営業利益率 8.2% ＝ 本業の稼ぐ力あり</span><span class="num tpp">+8</span></div><div class="thit"><span>配当性向 17% ＝ 黒字なのに還元が渋い</span><span class="num tpp">+5</span></div><div class="thit"><span>売買代金が薄く市場の目が届きにくい</span><span class="num tpp">+4</span></div><div class="thit"><span>プライムでPBR1倍割れ ＝ 東証の改善要請が直撃</span><span class="num tpp">+4</span></div>
+  <div class="linkrow">
+    <a class="ylink" href="https://finance.yahoo.co.jp/quote/4229.T" target="_blank" rel="noopener">Yahoo!ファイナンス →</a>
+    <button type="button" class="ylink sbi" onclick="openSBI('4229', event)">SBI証券アプリで見る</button>
+  </div>
+</div>
+</details>
+<details class="trow">
+<summary class="tsum">
+  <span class="trk num">19</span>
+  <span class="tnm"><b>ヨシコン</b> <span class="chip std">スタンダード</span>
+    <span class="num tuc">5280</span>
+    <span class="tfact num">PBR 0.52倍 ・ 時価総額 153億円 ・ 自己資本 67% ・ ROE 9.0%</span></span>
+  <span class="tsc num">76<small>点</small></span>
+  <span class="tchev">›</span>
+</summary>
+<div class="tbody">
+  <div class="tbar"><div class="tbarfill" style="width:88%"></div></div>
+  <div class="thit"><span>PBR 0.52倍 ＝ 解散価値の6割未満（最重要の割安シグナル）</span><span class="num tpp">+22</span></div><div class="thit"><span>時価総額 153億円 ＝ TOB・MBOの主戦場サイズ</span><span class="num tpp">+15</span></div><div class="thit"><span>自己資本比率 67% ＝ 財務が厚く買収後の余力大</span><span class="num tpp">+8</span></div><div class="thit"><span>営業利益率 13.4% ＝ 本業の稼ぐ力あり</span><span class="num tpp">+8</span></div><div class="thit"><span>配当性向 22% ＝ 黒字なのに還元が渋い</span><span class="num tpp">+5</span></div><div class="thit"><span>株価は1年レンジの下位25%に放置</span><span class="num tpp">+6</span></div><div class="thit"><span>売買代金が薄く市場の目が届きにくい</span><span class="num tpp">+4</span></div><div class="thit"><span>スタンダード市場 ＝ 上場維持メリットが薄く非公開化しやすい</span><span class="num tpp">+4</span></div><div class="thit"><span>PER 5.8倍 ＝ 利益面でも割安</span><span class="num tpp">+4</span></div>
+  <div class="linkrow">
+    <a class="ylink" href="https://finance.yahoo.co.jp/quote/5280.T" target="_blank" rel="noopener">Yahoo!ファイナンス →</a>
+    <button type="button" class="ylink sbi" onclick="openSBI('5280', event)">SBI証券アプリで見る</button>
+  </div>
+</div>
+</details>
+<details class="trow">
+<summary class="tsum">
+  <span class="trk num">20</span>
+  <span class="tnm"><b>兼房</b> <span class="chip std">スタンダード</span>
+    <span class="num tuc">5984</span>
+    <span class="tfact num">PBR 0.34倍 ・ 時価総額 107億円 ・ 自己資本 82% ・ ROE 3.3%</span></span>
+  <span class="tsc num">76<small>点</small></span>
+  <span class="tchev">›</span>
+</summary>
+<div class="tbody">
+  <div class="tbar"><div class="tbarfill" style="width:88%"></div></div>
+  <div class="thit"><span>PBR 0.34倍 ＝ 解散価値の6割未満（最重要の割安シグナル）</span><span class="num tpp">+22</span></div><div class="thit"><span>時価総額 107億円 ＝ TOB・MBOの主戦場サイズ</span><span class="num tpp">+15</span></div><div class="thit"><span>自己資本比率 82% ＝ ほぼ無借金のため込み体質</span><span class="num tpp">+12</span></div><div class="thit"><span>厚い資本にROE 3.3% ＝ 資本を活かせていない（アクティビスト誘因）</span><span class="num tpp">+6</span></div><div class="thit"><span>営業利益率 5.2% ＝ 本業は黒字</span><span class="num tpp">+5</span></div><div class="thit"><span>配当性向 25% ＝ 黒字なのに還元が渋い</span><span class="num tpp">+5</span></div><div class="thit"><span>株価は1年レンジの下位40%</span><span class="num tpp">+3</span></div><div class="thit"><span>売買代金が薄く市場の目が届きにくい</span><span class="num tpp">+4</span></div><div class="thit"><span>スタンダード市場 ＝ 上場維持メリットが薄く非公開化しやすい</span><span class="num tpp">+4</span></div>
+  <div class="linkrow">
+    <a class="ylink" href="https://finance.yahoo.co.jp/quote/5984.T" target="_blank" rel="noopener">Yahoo!ファイナンス →</a>
+    <button type="button" class="ylink sbi" onclick="openSBI('5984', event)">SBI証券アプリで見る</button>
+  </div>
+</div>
+</details>
+<details class="trow">
+<summary class="tsum">
+  <span class="trk num">21</span>
+  <span class="tnm"><b>ムサシ</b> <span class="chip std">スタンダード</span>
+    <span class="num tuc">7521</span>
+    <span class="tfact num">PBR 0.51倍 ・ 時価総額 188億円 ・ 自己資本 70% ・ ROE 7.6%</span></span>
+  <span class="tsc num">76<small>点</small></span>
+  <span class="tchev">›</span>
+</summary>
+<div class="tbody">
+  <div class="tbar"><div class="tbarfill" style="width:88%"></div></div>
+  <div class="thit"><span>PBR 0.51倍 ＝ 解散価値の6割未満（最重要の割安シグナル）</span><span class="num tpp">+22</span></div><div class="thit"><span>時価総額 188億円 ＝ TOB・MBOの主戦場サイズ</span><span class="num tpp">+15</span></div><div class="thit"><span>自己資本比率 70% ＝ 財務が厚く買収後の余力大</span><span class="num tpp">+8</span></div><div class="thit"><span>厚い資本にROE 7.6% ＝ 資本を活かせていない（アクティビスト誘因）</span><span class="num tpp">+6</span></div><div class="thit"><span>営業利益率 11.5% ＝ 本業の稼ぐ力あり</span><span class="num tpp">+8</span></div><div class="thit"><span>配当性向 12% ＝ 黒字なのに還元が渋い</span><span class="num tpp">+5</span></div><div class="thit"><span>売買代金が薄く市場の目が届きにくい</span><span class="num tpp">+4</span></div><div class="thit"><span>スタンダード市場 ＝ 上場維持メリットが薄く非公開化しやすい</span><span class="num tpp">+4</span></div><div class="thit"><span>PER 6.7倍 ＝ 利益面でも割安</span><span class="num tpp">+4</span></div>
+  <div class="linkrow">
+    <a class="ylink" href="https://finance.yahoo.co.jp/quote/7521.T" target="_blank" rel="noopener">Yahoo!ファイナンス →</a>
+    <button type="button" class="ylink sbi" onclick="openSBI('7521', event)">SBI証券アプリで見る</button>
+  </div>
+</div>
+</details>
+<details class="trow">
+<summary class="tsum">
+  <span class="trk num">22</span>
+  <span class="tnm"><b>フクビ化学工業</b> <span class="chip std">スタンダード</span>
+    <span class="num tuc">7871</span>
+    <span class="tfact num">PBR 0.50倍 ・ 時価総額 199億円 ・ 自己資本 74% ・ ROE 4.2%</span></span>
+  <span class="tsc num">76<small>点</small></span>
+  <span class="tchev">›</span>
+</summary>
+<div class="tbody">
+  <div class="tbar"><div class="tbarfill" style="width:88%"></div></div>
+  <div class="thit"><span>PBR 0.50倍 ＝ 解散価値の6割未満（最重要の割安シグナル）</span><span class="num tpp">+22</span></div><div class="thit"><span>時価総額 199億円 ＝ TOB・MBOの主戦場サイズ</span><span class="num tpp">+15</span></div><div class="thit"><span>自己資本比率 74% ＝ ほぼ無借金のため込み体質</span><span class="num tpp">+12</span></div><div class="thit"><span>厚い資本にROE 4.2% ＝ 資本を活かせていない（アクティビスト誘因）</span><span class="num tpp">+6</span></div><div class="thit"><span>営業利益率 4.3% ＝ 本業は黒字</span><span class="num tpp">+5</span></div><div class="thit"><span>配当性向 18% ＝ 黒字なのに還元が渋い</span><span class="num tpp">+5</span></div><div class="thit"><span>株価は1年レンジの下位40%</span><span class="num tpp">+3</span></div><div class="thit"><span>売買代金が薄く市場の目が届きにくい</span><span class="num tpp">+4</span></div><div class="thit"><span>スタンダード市場 ＝ 上場維持メリットが薄く非公開化しやすい</span><span class="num tpp">+4</span></div>
+  <div class="linkrow">
+    <a class="ylink" href="https://finance.yahoo.co.jp/quote/7871.T" target="_blank" rel="noopener">Yahoo!ファイナンス →</a>
+    <button type="button" class="ylink sbi" onclick="openSBI('7871', event)">SBI証券アプリで見る</button>
+  </div>
+</div>
+</details>
+<details class="trow">
+<summary class="tsum">
+  <span class="trk num">23</span>
+  <span class="tnm"><b>Ｋ＆Ｏエナジーグループ</b> <span class="chip prime">プライム</span>
+    <span class="num tuc">1663</span>
+    <span class="tfact num">PBR 0.46倍 ・ 時価総額 515億円 ・ 自己資本 85% ・ ROE 2.2%</span></span>
+  <span class="tsc num">75<small>点</small></span>
+  <span class="tchev">›</span>
+</summary>
+<div class="tbody">
+  <div class="tbar"><div class="tbarfill" style="width:87%"></div></div>
+  <div class="thit"><span>PBR 0.46倍 ＝ 解散価値の6割未満（最重要の割安シグナル）</span><span class="num tpp">+22</span></div><div class="thit"><span>時価総額 515億円 ＝ TOB・MBOの主戦場サイズ</span><span class="num tpp">+15</span></div><div class="thit"><span>自己資本比率 85% ＝ ほぼ無借金のため込み体質</span><span class="num tpp">+12</span></div><div class="thit"><span>厚い資本にROE 2.2% ＝ 資本を活かせていない（アクティビスト誘因）</span><span class="num tpp">+6</span></div><div class="thit"><span>営業利益率 14.4% ＝ 本業の稼ぐ力あり</span><span class="num tpp">+8</span></div><div class="thit"><span>配当性向 17% ＝ 黒字なのに還元が渋い</span><span class="num tpp">+5</span></div><div class="thit"><span>株価は1年レンジの下位40%</span><span class="num tpp">+3</span></div><div class="thit"><span>プライムでPBR1倍割れ ＝ 東証の改善要請が直撃</span><span class="num tpp">+4</span></div>
+  <div class="linkrow">
+    <a class="ylink" href="https://finance.yahoo.co.jp/quote/1663.T" target="_blank" rel="noopener">Yahoo!ファイナンス →</a>
+    <button type="button" class="ylink sbi" onclick="openSBI('1663', event)">SBI証券アプリで見る</button>
+  </div>
+</div>
+</details>
+<details class="trow">
+<summary class="tsum">
+  <span class="trk num">24</span>
+  <span class="tnm"><b>岡山製紙</b> <span class="chip std">スタンダード</span>
+    <span class="num tuc">3892</span>
+    <span class="tfact num">PBR 0.49倍 ・ 時価総額 72億円 ・ 自己資本 79% ・ ROE 4.2%</span></span>
+  <span class="tsc num">75<small>点</small></span>
+  <span class="tchev">›</span>
+</summary>
+<div class="tbody">
+  <div class="tbar"><div class="tbarfill" style="width:87%"></div></div>
+  <div class="thit"><span>PBR 0.49倍 ＝ 解散価値の6割未満（最重要の割安シグナル）</span><span class="num tpp">+22</span></div><div class="thit"><span>時価総額 72億円 ＝ 買収資金が十分現実的</span><span class="num tpp">+8</span></div><div class="thit"><span>自己資本比率 79% ＝ ほぼ無借金のため込み体質</span><span class="num tpp">+12</span></div><div class="thit"><span>厚い資本にROE 4.2% ＝ 資本を活かせていない（アクティビスト誘因）</span><span class="num tpp">+6</span></div><div class="thit"><span>営業利益率 8.7% ＝ 本業の稼ぐ力あり</span><span class="num tpp">+8</span></div><div class="thit"><span>配当性向 19% ＝ 黒字なのに還元が渋い</span><span class="num tpp">+5</span></div><div class="thit"><span>株価は1年レンジの下位25%に放置</span><span class="num tpp">+6</span></div><div class="thit"><span>売買代金が薄く市場の目が届きにくい</span><span class="num tpp">+4</span></div><div class="thit"><span>スタンダード市場 ＝ 上場維持メリットが薄く非公開化しやすい</span><span class="num tpp">+4</span></div>
+  <div class="linkrow">
+    <a class="ylink" href="https://finance.yahoo.co.jp/quote/3892.T" target="_blank" rel="noopener">Yahoo!ファイナンス →</a>
+    <button type="button" class="ylink sbi" onclick="openSBI('3892', event)">SBI証券アプリで見る</button>
+  </div>
+</div>
+</details>
+<details class="trow">
+<summary class="tsum">
+  <span class="trk num">25</span>
+  <span class="tnm"><b>キクカワエンタープライズ</b> <span class="chip std">スタンダード</span>
+    <span class="num tuc">6346</span>
+    <span class="tfact num">PBR 0.54倍 ・ 時価総額 70億円 ・ 自己資本 87% ・ ROE 2.5%</span></span>
+  <span class="tsc num">75<small>点</small></span>
+  <span class="tchev">›</span>
+</summary>
+<div class="tbody">
+  <div class="tbar"><div class="tbarfill" style="width:87%"></div></div>
+  <div class="thit"><span>PBR 0.54倍 ＝ 解散価値の6割未満（最重要の割安シグナル）</span><span class="num tpp">+22</span></div><div class="thit"><span>時価総額 70億円 ＝ 買収資金が十分現実的</span><span class="num tpp">+8</span></div><div class="thit"><span>自己資本比率 87% ＝ ほぼ無借金のため込み体質</span><span class="num tpp">+12</span></div><div class="thit"><span>厚い資本にROE 2.5% ＝ 資本を活かせていない（アクティビスト誘因）</span><span class="num tpp">+6</span></div><div class="thit"><span>営業利益率 9.8% ＝ 本業の稼ぐ力あり</span><span class="num tpp">+8</span></div><div class="thit"><span>配当性向 30% ＝ 黒字なのに還元が渋い</span><span class="num tpp">+5</span></div><div class="thit"><span>株価は1年レンジの下位25%に放置</span><span class="num tpp">+6</span></div><div class="thit"><span>売買代金が薄く市場の目が届きにくい</span><span class="num tpp">+4</span></div><div class="thit"><span>スタンダード市場 ＝ 上場維持メリットが薄く非公開化しやすい</span><span class="num tpp">+4</span></div>
+  <div class="linkrow">
+    <a class="ylink" href="https://finance.yahoo.co.jp/quote/6346.T" target="_blank" rel="noopener">Yahoo!ファイナンス →</a>
+    <button type="button" class="ylink sbi" onclick="openSBI('6346', event)">SBI証券アプリで見る</button>
+  </div>
+</div>
+</details>
+<details class="trow">
+<summary class="tsum">
+  <span class="trk num">26</span>
+  <span class="tnm"><b>名古屋電機工業</b> <span class="chip std">スタンダード</span>
+    <span class="num tuc">6797</span>
+    <span class="tfact num">PBR 0.57倍 ・ 時価総額 138億円 ・ 自己資本 82% ・ ROE 6.3%</span></span>
+  <span class="tsc num">75<small>点</small></span>
+  <span class="tchev">›</span>
+</summary>
+<div class="tbody">
+  <div class="tbar"><div class="tbarfill" style="width:87%"></div></div>
+  <div class="thit"><span>PBR 0.57倍 ＝ 解散価値の6割未満（最重要の割安シグナル）</span><span class="num tpp">+22</span></div><div class="thit"><span>時価総額 138億円 ＝ TOB・MBOの主戦場サイズ</span><span class="num tpp">+15</span></div><div class="thit"><span>自己資本比率 82% ＝ ほぼ無借金のため込み体質</span><span class="num tpp">+12</span></div><div class="thit"><span>厚い資本にROE 6.3% ＝ 資本を活かせていない（アクティビスト誘因）</span><span class="num tpp">+6</span></div><div class="thit"><span>営業利益率 10.1% ＝ 本業の稼ぐ力あり</span><span class="num tpp">+8</span></div><div class="thit"><span>売買代金が薄く市場の目が届きにくい</span><span class="num tpp">+4</span></div><div class="thit"><span>スタンダード市場 ＝ 上場維持メリットが薄く非公開化しやすい</span><span class="num tpp">+4</span></div><div class="thit"><span>PER 9.1倍 ＝ 利益面でも割安</span><span class="num tpp">+4</span></div>
+  <div class="linkrow">
+    <a class="ylink" href="https://finance.yahoo.co.jp/quote/6797.T" target="_blank" rel="noopener">Yahoo!ファイナンス →</a>
+    <button type="button" class="ylink sbi" onclick="openSBI('6797', event)">SBI証券アプリで見る</button>
+  </div>
+</div>
+</details>
+<details class="trow">
+<summary class="tsum">
+  <span class="trk num">27</span>
+  <span class="tnm"><b>サンコーテクノ</b> <span class="chip std">スタンダード</span>
+    <span class="num tuc">3435</span>
+    <span class="tfact num">PBR 0.58倍 ・ 時価総額 115億円 ・ 自己資本 71% ・ ROE 8.0%</span></span>
+  <span class="tsc num">74<small>点</small></span>
+  <span class="tchev">›</span>
+</summary>
+<div class="tbody">
+  <div class="tbar"><div class="tbarfill" style="width:86%"></div></div>
+  <div class="thit"><span>PBR 0.58倍 ＝ 解散価値の6割未満（最重要の割安シグナル）</span><span class="num tpp">+22</span></div><div class="thit"><span>時価総額 115億円 ＝ TOB・MBOの主戦場サイズ</span><span class="num tpp">+15</span></div><div class="thit"><span>自己資本比率 71% ＝ ほぼ無借金のため込み体質</span><span class="num tpp">+12</span></div><div class="thit"><span>営業利益率 8.2% ＝ 本業の稼ぐ力あり</span><span class="num tpp">+8</span></div><div class="thit"><span>配当性向 21% ＝ 黒字なのに還元が渋い</span><span class="num tpp">+5</span></div><div class="thit"><span>売買代金が薄く市場の目が届きにくい</span><span class="num tpp">+4</span></div><div class="thit"><span>スタンダード市場 ＝ 上場維持メリットが薄く非公開化しやすい</span><span class="num tpp">+4</span></div><div class="thit"><span>PER 7.2倍 ＝ 利益面でも割安</span><span class="num tpp">+4</span></div>
+  <div class="linkrow">
+    <a class="ylink" href="https://finance.yahoo.co.jp/quote/3435.T" target="_blank" rel="noopener">Yahoo!ファイナンス →</a>
+    <button type="button" class="ylink sbi" onclick="openSBI('3435', event)">SBI証券アプリで見る</button>
+  </div>
+</div>
+</details>
+<details class="trow">
+<summary class="tsum">
+  <span class="trk num">28</span>
+  <span class="tnm"><b>東京窯業</b> <span class="chip std">スタンダード</span>
+    <span class="num tuc">5363</span>
+    <span class="tfact num">PBR 0.65倍 ・ 時価総額 308億円 ・ 自己資本 81% ・ ROE 7.9%</span></span>
+  <span class="tsc num">74<small>点</small></span>
+  <span class="tchev">›</span>
+</summary>
+<div class="tbody">
+  <div class="tbar"><div class="tbarfill" style="width:86%"></div></div>
+  <div class="thit"><span>PBR 0.65倍 ＝ 解散価値を大きく下回る</span><span class="num tpp">+16</span></div><div class="thit"><span>時価総額 308億円 ＝ TOB・MBOの主戦場サイズ</span><span class="num tpp">+15</span></div><div class="thit"><span>自己資本比率 81% ＝ ほぼ無借金のため込み体質</span><span class="num tpp">+12</span></div><div class="thit"><span>厚い資本にROE 7.9% ＝ 資本を活かせていない（アクティビスト誘因）</span><span class="num tpp">+6</span></div><div class="thit"><span>営業利益率 10.9% ＝ 本業の稼ぐ力あり</span><span class="num tpp">+8</span></div><div class="thit"><span>配当性向 19% ＝ 黒字なのに還元が渋い</span><span class="num tpp">+5</span></div><div class="thit"><span>売買代金が薄く市場の目が届きにくい</span><span class="num tpp">+4</span></div><div class="thit"><span>スタンダード市場 ＝ 上場維持メリットが薄く非公開化しやすい</span><span class="num tpp">+4</span></div><div class="thit"><span>PER 8.2倍 ＝ 利益面でも割安</span><span class="num tpp">+4</span></div>
+  <div class="linkrow">
+    <a class="ylink" href="https://finance.yahoo.co.jp/quote/5363.T" target="_blank" rel="noopener">Yahoo!ファイナンス →</a>
+    <button type="button" class="ylink sbi" onclick="openSBI('5363', event)">SBI証券アプリで見る</button>
+  </div>
+</div>
+</details>
+<details class="trow">
+<summary class="tsum">
+  <span class="trk num">29</span>
+  <span class="tnm"><b>ＰＥＧＡＳＵＳ</b> <span class="chip std">スタンダード</span>
+    <span class="num tuc">6262</span>
+    <span class="tfact num">PBR 0.39倍 ・ 時価総額 128億円 ・ 自己資本 75% ・ ROE 1.0%</span></span>
+  <span class="tsc num">74<small>点</small></span>
+  <span class="tchev">›</span>
+</summary>
+<div class="tbody">
+  <div class="tbar"><div class="tbarfill" style="width:86%"></div></div>
+  <div class="thit"><span>PBR 0.39倍 ＝ 解散価値の6割未満（最重要の割安シグナル）</span><span class="num tpp">+22</span></div><div class="thit"><span>時価総額 128億円 ＝ TOB・MBOの主戦場サイズ</span><span class="num tpp">+15</span></div><div class="thit"><span>自己資本比率 75% ＝ ほぼ無借金のため込み体質</span><span class="num tpp">+12</span></div><div class="thit"><span>厚い資本にROE 1.0% ＝ 資本を活かせていない（アクティビスト誘因）</span><span class="num tpp">+6</span></div><div class="thit"><span>営業利益率 4.4% ＝ 本業は黒字</span><span class="num tpp">+5</span></div><div class="thit"><span>株価は1年レンジの下位25%に放置</span><span class="num tpp">+6</span></div><div class="thit"><span>売買代金が薄く市場の目が届きにくい</span><span class="num tpp">+4</span></div><div class="thit"><span>スタンダード市場 ＝ 上場維持メリットが薄く非公開化しやすい</span><span class="num tpp">+4</span></div>
+  <div class="linkrow">
+    <a class="ylink" href="https://finance.yahoo.co.jp/quote/6262.T" target="_blank" rel="noopener">Yahoo!ファイナンス →</a>
+    <button type="button" class="ylink sbi" onclick="openSBI('6262', event)">SBI証券アプリで見る</button>
+  </div>
+</div>
+</details>
+<details class="trow">
+<summary class="tsum">
+  <span class="trk num">30</span>
+  <span class="tnm"><b>マースグループホールディングス</b> <span class="chip prime">プライム</span>
+    <span class="num tuc">6419</span>
+    <span class="tfact num">PBR 0.68倍 ・ 時価総額 583億円 ・ 自己資本 91% ・ ROE 7.7%</span></span>
+  <span class="tsc num">74<small>点</small></span>
+  <span class="tchev">›</span>
+</summary>
+<div class="tbody">
+  <div class="tbar"><div class="tbarfill" style="width:86%"></div></div>
+  <div class="thit"><span>PBR 0.68倍 ＝ 解散価値を大きく下回る</span><span class="num tpp">+16</span></div><div class="thit"><span>時価総額 583億円 ＝ TOB・MBOの主戦場サイズ</span><span class="num tpp">+15</span></div><div class="thit"><span>自己資本比率 91% ＝ ほぼ無借金のため込み体質</span><span class="num tpp">+12</span></div><div class="thit"><span>厚い資本にROE 7.7% ＝ 資本を活かせていない（アクティビスト誘因）</span><span class="num tpp">+6</span></div><div class="thit"><span>営業利益率 27.2% ＝ 本業の稼ぐ力あり</span><span class="num tpp">+8</span></div><div class="thit"><span>配当性向 21% ＝ 黒字なのに還元が渋い</span><span class="num tpp">+5</span></div><div class="thit"><span>売買代金が薄く市場の目が届きにくい</span><span class="num tpp">+4</span></div><div class="thit"><span>プライムでPBR1倍割れ ＝ 東証の改善要請が直撃</span><span class="num tpp">+4</span></div><div class="thit"><span>PER 8.8倍 ＝ 利益面でも割安</span><span class="num tpp">+4</span></div>
+  <div class="linkrow">
+    <a class="ylink" href="https://finance.yahoo.co.jp/quote/6419.T" target="_blank" rel="noopener">Yahoo!ファイナンス →</a>
+    <button type="button" class="ylink sbi" onclick="openSBI('6419', event)">SBI証券アプリで見る</button>
+  </div>
+</div>
+</details>
+<details class="trow">
+<summary class="tsum">
+  <span class="trk num">31</span>
+  <span class="tnm"><b>佐藤渡辺</b> <span class="chip std">スタンダード</span>
+    <span class="num tuc">1807</span>
+    <span class="tfact num">PBR 0.52倍 ・ 時価総額 118億円 ・ 自己資本 70% ・ ROE 3.9%</span></span>
+  <span class="tsc num">73<small>点</small></span>
+  <span class="tchev">›</span>
+</summary>
+<div class="tbody">
+  <div class="tbar"><div class="tbarfill" style="width:85%"></div></div>
+  <div class="thit"><span>PBR 0.52倍 ＝ 解散価値の6割未満（最重要の割安シグナル）</span><span class="num tpp">+22</span></div><div class="thit"><span>時価総額 118億円 ＝ TOB・MBOの主戦場サイズ</span><span class="num tpp">+15</span></div><div class="thit"><span>自己資本比率 70% ＝ ほぼ無借金のため込み体質</span><span class="num tpp">+12</span></div><div class="thit"><span>厚い資本にROE 3.9% ＝ 資本を活かせていない（アクティビスト誘因）</span><span class="num tpp">+6</span></div><div class="thit"><span>営業利益率 3.2% ＝ 本業は黒字</span><span class="num tpp">+5</span></div><div class="thit"><span>配当性向 28% ＝ 黒字なのに還元が渋い</span><span class="num tpp">+5</span></div><div class="thit"><span>売買代金が薄く市場の目が届きにくい</span><span class="num tpp">+4</span></div><div class="thit"><span>スタンダード市場 ＝ 上場維持メリットが薄く非公開化しやすい</span><span class="num tpp">+4</span></div>
+  <div class="linkrow">
+    <a class="ylink" href="https://finance.yahoo.co.jp/quote/1807.T" target="_blank" rel="noopener">Yahoo!ファイナンス →</a>
+    <button type="button" class="ylink sbi" onclick="openSBI('1807', event)">SBI証券アプリで見る</button>
+  </div>
+</div>
+</details>
+<details class="trow">
+<summary class="tsum">
+  <span class="trk num">32</span>
+  <span class="tnm"><b>昭和パックス</b> <span class="chip std">スタンダード</span>
+    <span class="num tuc">3954</span>
+    <span class="tfact num">PBR 0.53倍 ・ 時価総額 143億円 ・ 自己資本 74% ・ ROE 4.8%</span></span>
+  <span class="tsc num">73<small>点</small></span>
+  <span class="tchev">›</span>
+</summary>
+<div class="tbody">
+  <div class="tbar"><div class="tbarfill" style="width:85%"></div></div>
+  <div class="thit"><span>PBR 0.53倍 ＝ 解散価値の6割未満（最重要の割安シグナル）</span><span class="num tpp">+22</span></div><div class="thit"><span>時価総額 143億円 ＝ TOB・MBOの主戦場サイズ</span><span class="num tpp">+15</span></div><div class="thit"><span>自己資本比率 74% ＝ ほぼ無借金のため込み体質</span><span class="num tpp">+12</span></div><div class="thit"><span>厚い資本にROE 4.8% ＝ 資本を活かせていない（アクティビスト誘因）</span><span class="num tpp">+6</span></div><div class="thit"><span>営業利益率 6.9% ＝ 本業は黒字</span><span class="num tpp">+5</span></div><div class="thit"><span>配当性向 10% ＝ 黒字なのに還元が渋い</span><span class="num tpp">+5</span></div><div class="thit"><span>売買代金が薄く市場の目が届きにくい</span><span class="num tpp">+4</span></div><div class="thit"><span>スタンダード市場 ＝ 上場維持メリットが薄く非公開化しやすい</span><span class="num tpp">+4</span></div>
+  <div class="linkrow">
+    <a class="ylink" href="https://finance.yahoo.co.jp/quote/3954.T" target="_blank" rel="noopener">Yahoo!ファイナンス →</a>
+    <button type="button" class="ylink sbi" onclick="openSBI('3954', event)">SBI証券アプリで見る</button>
+  </div>
+</div>
+</details>
+<details class="trow">
+<summary class="tsum">
+  <span class="trk num">33</span>
+  <span class="tnm"><b>エスケー化研</b> <span class="chip std">スタンダード</span>
+    <span class="num tuc">4628</span>
+    <span class="tfact num">PBR 0.69倍 ・ 時価総額 1,205億円 ・ 自己資本 85% ・ ROE 7.0%</span></span>
+  <span class="tsc num">73<small>点</small></span>
+  <span class="tchev">›</span>
+</summary>
+<div class="tbody">
+  <div class="tbar"><div class="tbarfill" style="width:85%"></div></div>
+  <div class="thit"><span>PBR 0.69倍 ＝ 解散価値を大きく下回る</span><span class="num tpp">+16</span></div><div class="thit"><span>時価総額 1,205億円 ＝ 買収資金が十分現実的</span><span class="num tpp">+8</span></div><div class="thit"><span>自己資本比率 85% ＝ ほぼ無借金のため込み体質</span><span class="num tpp">+12</span></div><div class="thit"><span>厚い資本にROE 7.0% ＝ 資本を活かせていない（アクティビスト誘因）</span><span class="num tpp">+6</span></div><div class="thit"><span>営業利益率 11.1% ＝ 本業の稼ぐ力あり</span><span class="num tpp">+8</span></div><div class="thit"><span>配当性向 25% ＝ 黒字なのに還元が渋い</span><span class="num tpp">+5</span></div><div class="thit"><span>株価は1年レンジの下位25%に放置</span><span class="num tpp">+6</span></div><div class="thit"><span>売買代金が薄く市場の目が届きにくい</span><span class="num tpp">+4</span></div><div class="thit"><span>スタンダード市場 ＝ 上場維持メリットが薄く非公開化しやすい</span><span class="num tpp">+4</span></div><div class="thit"><span>PER 9.8倍 ＝ 利益面でも割安</span><span class="num tpp">+4</span></div>
+  <div class="linkrow">
+    <a class="ylink" href="https://finance.yahoo.co.jp/quote/4628.T" target="_blank" rel="noopener">Yahoo!ファイナンス →</a>
+    <button type="button" class="ylink sbi" onclick="openSBI('4628', event)">SBI証券アプリで見る</button>
+  </div>
+</div>
+</details>
+<details class="trow">
+<summary class="tsum">
+  <span class="trk num">34</span>
+  <span class="tnm"><b>ジオスター</b> <span class="chip std">スタンダード</span>
+    <span class="num tuc">5282</span>
+    <span class="tfact num">PBR 0.49倍 ・ 時価総額 122億円 ・ 自己資本 68% ・ ROE 7.2%</span></span>
+  <span class="tsc num">73<small>点</small></span>
+  <span class="tchev">›</span>
+</summary>
+<div class="tbody">
+  <div class="tbar"><div class="tbarfill" style="width:85%"></div></div>
+  <div class="thit"><span>PBR 0.49倍 ＝ 解散価値の6割未満（最重要の割安シグナル）</span><span class="num tpp">+22</span></div><div class="thit"><span>時価総額 122億円 ＝ TOB・MBOの主戦場サイズ</span><span class="num tpp">+15</span></div><div class="thit"><span>自己資本比率 68% ＝ 財務が厚く買収後の余力大</span><span class="num tpp">+8</span></div><div class="thit"><span>厚い資本にROE 7.2% ＝ 資本を活かせていない（アクティビスト誘因）</span><span class="num tpp">+6</span></div><div class="thit"><span>営業利益率 7.1% ＝ 本業は黒字</span><span class="num tpp">+5</span></div><div class="thit"><span>配当性向 15% ＝ 黒字なのに還元が渋い</span><span class="num tpp">+5</span></div><div class="thit"><span>売買代金が薄く市場の目が届きにくい</span><span class="num tpp">+4</span></div><div class="thit"><span>スタンダード市場 ＝ 上場維持メリットが薄く非公開化しやすい</span><span class="num tpp">+4</span></div><div class="thit"><span>PER 6.7倍 ＝ 利益面でも割安</span><span class="num tpp">+4</span></div>
+  <div class="linkrow">
+    <a class="ylink" href="https://finance.yahoo.co.jp/quote/5282.T" target="_blank" rel="noopener">Yahoo!ファイナンス →</a>
+    <button type="button" class="ylink sbi" onclick="openSBI('5282', event)">SBI証券アプリで見る</button>
+  </div>
+</div>
+</details>
+<details class="trow">
+<summary class="tsum">
+  <span class="trk num">35</span>
+  <span class="tnm"><b>中山製鋼所</b> <span class="chip prime">プライム</span>
+    <span class="num tuc">5408</span>
+    <span class="tfact num">PBR 0.32倍 ・ 時価総額 344億円 ・ 自己資本 72% ・ ROE 2.3%</span></span>
+  <span class="tsc num">73<small>点</small></span>
+  <span class="tchev">›</span>
+</summary>
+<div class="tbody">
+  <div class="tbar"><div class="tbarfill" style="width:85%"></div></div>
+  <div class="thit"><span>PBR 0.32倍 ＝ 解散価値の6割未満（最重要の割安シグナル）</span><span class="num tpp">+22</span></div><div class="thit"><span>時価総額 344億円 ＝ TOB・MBOの主戦場サイズ</span><span class="num tpp">+15</span></div><div class="thit"><span>自己資本比率 72% ＝ ほぼ無借金のため込み体質</span><span class="num tpp">+12</span></div><div class="thit"><span>厚い資本にROE 2.3% ＝ 資本を活かせていない（アクティビスト誘因）</span><span class="num tpp">+6</span></div><div class="thit"><span>営業利益率 3.3% ＝ 本業は黒字</span><span class="num tpp">+5</span></div><div class="thit"><span>配当性向 13% ＝ 黒字なのに還元が渋い</span><span class="num tpp">+5</span></div><div class="thit"><span>売買代金が薄く市場の目が届きにくい</span><span class="num tpp">+4</span></div><div class="thit"><span>プライムでPBR1倍割れ ＝ 東証の改善要請が直撃</span><span class="num tpp">+4</span></div>
+  <div class="linkrow">
+    <a class="ylink" href="https://finance.yahoo.co.jp/quote/5408.T" target="_blank" rel="noopener">Yahoo!ファイナンス →</a>
+    <button type="button" class="ylink sbi" onclick="openSBI('5408', event)">SBI証券アプリで見る</button>
+  </div>
+</div>
+</details>
+<details class="trow">
+<summary class="tsum">
+  <span class="trk num">36</span>
+  <span class="tnm"><b>モリ工業</b> <span class="chip std">スタンダード</span>
+    <span class="num tuc">5464</span>
+    <span class="tfact num">PBR 0.61倍 ・ 時価総額 359億円 ・ 自己資本 81% ・ ROE 5.7%</span></span>
+  <span class="tsc num">73<small>点</small></span>
+  <span class="tchev">›</span>
+</summary>
+<div class="tbody">
+  <div class="tbar"><div class="tbarfill" style="width:85%"></div></div>
+  <div class="thit"><span>PBR 0.61倍 ＝ 解散価値を大きく下回る</span><span class="num tpp">+16</span></div><div class="thit"><span>時価総額 359億円 ＝ TOB・MBOの主戦場サイズ</span><span class="num tpp">+15</span></div><div class="thit"><span>自己資本比率 81% ＝ ほぼ無借金のため込み体質</span><span class="num tpp">+12</span></div><div class="thit"><span>厚い資本にROE 5.7% ＝ 資本を活かせていない（アクティビスト誘因）</span><span class="num tpp">+6</span></div><div class="thit"><span>営業利益率 10.1% ＝ 本業の稼ぐ力あり</span><span class="num tpp">+8</span></div><div class="thit"><span>配当性向 23% ＝ 黒字なのに還元が渋い</span><span class="num tpp">+5</span></div><div class="thit"><span>株価は1年レンジの下位40%</span><span class="num tpp">+3</span></div><div class="thit"><span>売買代金が薄く市場の目が届きにくい</span><span class="num tpp">+4</span></div><div class="thit"><span>スタンダード市場 ＝ 上場維持メリットが薄く非公開化しやすい</span><span class="num tpp">+4</span></div>
+  <div class="linkrow">
+    <a class="ylink" href="https://finance.yahoo.co.jp/quote/5464.T" target="_blank" rel="noopener">Yahoo!ファイナンス →</a>
+    <button type="button" class="ylink sbi" onclick="openSBI('5464', event)">SBI証券アプリで見る</button>
+  </div>
+</div>
+</details>
+<details class="trow">
+<summary class="tsum">
+  <span class="trk num">37</span>
+  <span class="tnm"><b>日亜鋼業</b> <span class="chip std">スタンダード</span>
+    <span class="num tuc">5658</span>
+    <span class="tfact num">PBR 0.34倍 ・ 時価総額 181億円 ・ 自己資本 78% ・ ROE 1.9%</span></span>
+  <span class="tsc num">73<small>点</small></span>
+  <span class="tchev">›</span>
+</summary>
+<div class="tbody">
+  <div class="tbar"><div class="tbarfill" style="width:85%"></div></div>
+  <div class="thit"><span>PBR 0.34倍 ＝ 解散価値の6割未満（最重要の割安シグナル）</span><span class="num tpp">+22</span></div><div class="thit"><span>時価総額 181億円 ＝ TOB・MBOの主戦場サイズ</span><span class="num tpp">+15</span></div><div class="thit"><span>自己資本比率 78% ＝ ほぼ無借金のため込み体質</span><span class="num tpp">+12</span></div><div class="thit"><span>厚い資本にROE 1.9% ＝ 資本を活かせていない（アクティビスト誘因）</span><span class="num tpp">+6</span></div><div class="thit"><span>営業利益率 4.2% ＝ 本業は黒字</span><span class="num tpp">+5</span></div><div class="thit"><span>配当性向 27% ＝ 黒字なのに還元が渋い</span><span class="num tpp">+5</span></div><div class="thit"><span>売買代金が薄く市場の目が届きにくい</span><span class="num tpp">+4</span></div><div class="thit"><span>スタンダード市場 ＝ 上場維持メリットが薄く非公開化しやすい</span><span class="num tpp">+4</span></div>
+  <div class="linkrow">
+    <a class="ylink" href="https://finance.yahoo.co.jp/quote/5658.T" target="_blank" rel="noopener">Yahoo!ファイナンス →</a>
+    <button type="button" class="ylink sbi" onclick="openSBI('5658', event)">SBI証券アプリで見る</button>
+  </div>
+</div>
+</details>
+<details class="trow">
+<summary class="tsum">
+  <span class="trk num">38</span>
+  <span class="tnm"><b>日東工器</b> <span class="chip prime">プライム</span>
+    <span class="num tuc">6151</span>
+    <span class="tfact num">PBR 0.54倍 ・ 時価総額 331億円 ・ 自己資本 89% ・ ROE 3.5%</span></span>
+  <span class="tsc num">73<small>点</small></span>
+  <span class="tchev">›</span>
+</summary>
+<div class="tbody">
+  <div class="tbar"><div class="tbarfill" style="width:85%"></div></div>
+  <div class="thit"><span>PBR 0.54倍 ＝ 解散価値の6割未満（最重要の割安シグナル）</span><span class="num tpp">+22</span></div><div class="thit"><span>時価総額 331億円 ＝ TOB・MBOの主戦場サイズ</span><span class="num tpp">+15</span></div><div class="thit"><span>自己資本比率 89% ＝ ほぼ無借金のため込み体質</span><span class="num tpp">+12</span></div><div class="thit"><span>厚い資本にROE 3.5% ＝ 資本を活かせていない（アクティビスト誘因）</span><span class="num tpp">+6</span></div><div class="thit"><span>営業利益率 4.3% ＝ 本業は黒字</span><span class="num tpp">+5</span></div><div class="thit"><span>配当性向 18% ＝ 黒字なのに還元が渋い</span><span class="num tpp">+5</span></div><div class="thit"><span>売買代金が薄く市場の目が届きにくい</span><span class="num tpp">+4</span></div><div class="thit"><span>プライムでPBR1倍割れ ＝ 東証の改善要請が直撃</span><span class="num tpp">+4</span></div>
+  <div class="linkrow">
+    <a class="ylink" href="https://finance.yahoo.co.jp/quote/6151.T" target="_blank" rel="noopener">Yahoo!ファイナンス →</a>
+    <button type="button" class="ylink sbi" onclick="openSBI('6151', event)">SBI証券アプリで見る</button>
+  </div>
+</div>
+</details>
+<details class="trow">
+<summary class="tsum">
+  <span class="trk num">39</span>
+  <span class="tnm"><b>カネミツ</b> <span class="chip std">スタンダード</span>
+    <span class="num tuc">7208</span>
+    <span class="tfact num">PBR 0.52倍 ・ 時価総額 65億円 ・ 自己資本 78% ・ ROE 5.9%</span></span>
+  <span class="tsc num">73<small>点</small></span>
+  <span class="tchev">›</span>
+</summary>
+<div class="tbody">
+  <div class="tbar"><div class="tbarfill" style="width:85%"></div></div>
+  <div class="thit"><span>PBR 0.52倍 ＝ 解散価値の6割未満（最重要の割安シグナル）</span><span class="num tpp">+22</span></div><div class="thit"><span>時価総額 65億円 ＝ 買収資金が十分現実的</span><span class="num tpp">+8</span></div><div class="thit"><span>自己資本比率 78% ＝ ほぼ無借金のため込み体質</span><span class="num tpp">+12</span></div><div class="thit"><span>厚い資本にROE 5.9% ＝ 資本を活かせていない（アクティビスト誘因）</span><span class="num tpp">+6</span></div><div class="thit"><span>営業利益率 8.0% ＝ 本業の稼ぐ力あり</span><span class="num tpp">+8</span></div><div class="thit"><span>配当性向 14% ＝ 黒字なのに還元が渋い</span><span class="num tpp">+5</span></div><div class="thit"><span>売買代金が薄く市場の目が届きにくい</span><span class="num tpp">+4</span></div><div class="thit"><span>スタンダード市場 ＝ 上場維持メリットが薄く非公開化しやすい</span><span class="num tpp">+4</span></div><div class="thit"><span>PER 8.8倍 ＝ 利益面でも割安</span><span class="num tpp">+4</span></div>
+  <div class="linkrow">
+    <a class="ylink" href="https://finance.yahoo.co.jp/quote/7208.T" target="_blank" rel="noopener">Yahoo!ファイナンス →</a>
+    <button type="button" class="ylink sbi" onclick="openSBI('7208', event)">SBI証券アプリで見る</button>
+  </div>
+</div>
+</details>
+<details class="trow">
+<summary class="tsum">
+  <span class="trk num">40</span>
+  <span class="tnm"><b>田中精密工業</b> <span class="chip std">スタンダード</span>
+    <span class="num tuc">7218</span>
+    <span class="tfact num">PBR 0.41倍 ・ 時価総額 107億円 ・ 自己資本 70% ・ ROE 4.6%</span></span>
+  <span class="tsc num">73<small>点</small></span>
+  <span class="tchev">›</span>
+</summary>
+<div class="tbody">
+  <div class="tbar"><div class="tbarfill" style="width:85%"></div></div>
+  <div class="thit"><span>PBR 0.41倍 ＝ 解散価値の6割未満（最重要の割安シグナル）</span><span class="num tpp">+22</span></div><div class="thit"><span>時価総額 107億円 ＝ TOB・MBOの主戦場サイズ</span><span class="num tpp">+15</span></div><div class="thit"><span>自己資本比率 70% ＝ 財務が厚く買収後の余力大</span><span class="num tpp">+8</span></div><div class="thit"><span>厚い資本にROE 4.6% ＝ 資本を活かせていない（アクティビスト誘因）</span><span class="num tpp">+6</span></div><div class="thit"><span>営業利益率 5.4% ＝ 本業は黒字</span><span class="num tpp">+5</span></div><div class="thit"><span>配当性向 13% ＝ 黒字なのに還元が渋い</span><span class="num tpp">+5</span></div><div class="thit"><span>売買代金が薄く市場の目が届きにくい</span><span class="num tpp">+4</span></div><div class="thit"><span>スタンダード市場 ＝ 上場維持メリットが薄く非公開化しやすい</span><span class="num tpp">+4</span></div><div class="thit"><span>PER 8.9倍 ＝ 利益面でも割安</span><span class="num tpp">+4</span></div>
+  <div class="linkrow">
+    <a class="ylink" href="https://finance.yahoo.co.jp/quote/7218.T" target="_blank" rel="noopener">Yahoo!ファイナンス →</a>
+    <button type="button" class="ylink sbi" onclick="openSBI('7218', event)">SBI証券アプリで見る</button>
+  </div>
+</div>
+</details>
+<details class="trow">
+<summary class="tsum">
+  <span class="trk num">41</span>
+  <span class="tnm"><b>朝日放送グループホールディングス</b> <span class="chip prime">プライム</span>
+    <span class="num tuc">9405</span>
+    <span class="tfact num">PBR 0.42倍 ・ 時価総額 348億円 ・ 自己資本 63% ・ ROE 5.4%</span></span>
+  <span class="tsc num">73<small>点</small></span>
+  <span class="tchev">›</span>
+</summary>
+<div class="tbody">
+  <div class="tbar"><div class="tbarfill" style="width:85%"></div></div>
+  <div class="thit"><span>PBR 0.42倍 ＝ 解散価値の6割未満（最重要の割安シグナル）</span><span class="num tpp">+22</span></div><div class="thit"><span>時価総額 348億円 ＝ TOB・MBOの主戦場サイズ</span><span class="num tpp">+15</span></div><div class="thit"><span>自己資本比率 63% ＝ 財務が厚く買収後の余力大</span><span class="num tpp">+8</span></div><div class="thit"><span>厚い資本にROE 5.4% ＝ 資本を活かせていない（アクティビスト誘因）</span><span class="num tpp">+6</span></div><div class="thit"><span>営業利益率 5.0% ＝ 本業は黒字</span><span class="num tpp">+5</span></div><div class="thit"><span>配当性向 23% ＝ 黒字なのに還元が渋い</span><span class="num tpp">+5</span></div><div class="thit"><span>売買代金が薄く市場の目が届きにくい</span><span class="num tpp">+4</span></div><div class="thit"><span>プライムでPBR1倍割れ ＝ 東証の改善要請が直撃</span><span class="num tpp">+4</span></div><div class="thit"><span>PER 7.8倍 ＝ 利益面でも割安</span><span class="num tpp">+4</span></div>
+  <div class="linkrow">
+    <a class="ylink" href="https://finance.yahoo.co.jp/quote/9405.T" target="_blank" rel="noopener">Yahoo!ファイナンス →</a>
+    <button type="button" class="ylink sbi" onclick="openSBI('9405', event)">SBI証券アプリで見る</button>
+  </div>
+</div>
+</details>
+<details class="trow">
+<summary class="tsum">
+  <span class="trk num">42</span>
+  <span class="tnm"><b>ＢＳＮメディアホールディングス</b> <span class="chip std">スタンダード</span>
+    <span class="num tuc">9408</span>
+    <span class="tfact num">PBR 0.57倍 ・ 時価総額 152億円 ・ 自己資本 76% ・ ROE 5.2%</span></span>
+  <span class="tsc num">73<small>点</small></span>
+  <span class="tchev">›</span>
+</summary>
+<div class="tbody">
+  <div class="tbar"><div class="tbarfill" style="width:85%"></div></div>
+  <div class="thit"><span>PBR 0.57倍 ＝ 解散価値の6割未満（最重要の割安シグナル）</span><span class="num tpp">+22</span></div><div class="thit"><span>時価総額 152億円 ＝ TOB・MBOの主戦場サイズ</span><span class="num tpp">+15</span></div><div class="thit"><span>自己資本比率 76% ＝ ほぼ無借金のため込み体質</span><span class="num tpp">+12</span></div><div class="thit"><span>厚い資本にROE 5.2% ＝ 資本を活かせていない（アクティビスト誘因）</span><span class="num tpp">+6</span></div><div class="thit"><span>営業利益率 6.7% ＝ 本業は黒字</span><span class="num tpp">+5</span></div><div class="thit"><span>配当性向 4% ＝ 黒字なのに還元が渋い</span><span class="num tpp">+5</span></div><div class="thit"><span>売買代金が薄く市場の目が届きにくい</span><span class="num tpp">+4</span></div><div class="thit"><span>スタンダード市場 ＝ 上場維持メリットが薄く非公開化しやすい</span><span class="num tpp">+4</span></div>
+  <div class="linkrow">
+    <a class="ylink" href="https://finance.yahoo.co.jp/quote/9408.T" target="_blank" rel="noopener">Yahoo!ファイナンス →</a>
+    <button type="button" class="ylink sbi" onclick="openSBI('9408', event)">SBI証券アプリで見る</button>
+  </div>
+</div>
+</details>
+<details class="trow">
+<summary class="tsum">
+  <span class="trk num">43</span>
+  <span class="tnm"><b>セレスポ</b> <span class="chip std">スタンダード</span>
+    <span class="num tuc">9625</span>
+    <span class="tfact num">PBR 0.53倍 ・ 時価総額 52億円 ・ 自己資本 77% ・ ROE 7.8%</span></span>
+  <span class="tsc num">73<small>点</small></span>
+  <span class="tchev">›</span>
+</summary>
+<div class="tbody">
+  <div class="tbar"><div class="tbarfill" style="width:85%"></div></div>
+  <div class="thit"><span>PBR 0.53倍 ＝ 解散価値の6割未満（最重要の割安シグナル）</span><span class="num tpp">+22</span></div><div class="thit"><span>時価総額 52億円 ＝ 買収資金が十分現実的</span><span class="num tpp">+8</span></div><div class="thit"><span>自己資本比率 77% ＝ ほぼ無借金のため込み体質</span><span class="num tpp">+12</span></div><div class="thit"><span>厚い資本にROE 7.8% ＝ 資本を活かせていない（アクティビスト誘因）</span><span class="num tpp">+6</span></div><div class="thit"><span>営業利益率 7.2% ＝ 本業は黒字</span><span class="num tpp">+5</span></div><div class="thit"><span>配当性向 29% ＝ 黒字なのに還元が渋い</span><span class="num tpp">+5</span></div><div class="thit"><span>株価は1年レンジの下位40%</span><span class="num tpp">+3</span></div><div class="thit"><span>売買代金が薄く市場の目が届きにくい</span><span class="num tpp">+4</span></div><div class="thit"><span>スタンダード市場 ＝ 上場維持メリットが薄く非公開化しやすい</span><span class="num tpp">+4</span></div><div class="thit"><span>PER 6.8倍 ＝ 利益面でも割安</span><span class="num tpp">+4</span></div>
+  <div class="linkrow">
+    <a class="ylink" href="https://finance.yahoo.co.jp/quote/9625.T" target="_blank" rel="noopener">Yahoo!ファイナンス →</a>
+    <button type="button" class="ylink sbi" onclick="openSBI('9625', event)">SBI証券アプリで見る</button>
+  </div>
+</div>
+</details>
+<details class="trow">
+<summary class="tsum">
+  <span class="trk num">44</span>
+  <span class="tnm"><b>天満屋ストア</b> <span class="chip std">スタンダード</span>
+    <span class="num tuc">9846</span>
+    <span class="tfact num">PBR 0.41倍 ・ 時価総額 115億円 ・ 自己資本 61% ・ ROE 4.9%</span></span>
+  <span class="tsc num">73<small>点</small></span>
+  <span class="tchev">›</span>
+</summary>
+<div class="tbody">
+  <div class="tbar"><div class="tbarfill" style="width:85%"></div></div>
+  <div class="thit"><span>PBR 0.41倍 ＝ 解散価値の6割未満（最重要の割安シグナル）</span><span class="num tpp">+22</span></div><div class="thit"><span>時価総額 115億円 ＝ TOB・MBOの主戦場サイズ</span><span class="num tpp">+15</span></div><div class="thit"><span>自己資本比率 61% ＝ 財務が厚く買収後の余力大</span><span class="num tpp">+8</span></div><div class="thit"><span>厚い資本にROE 4.9% ＝ 資本を活かせていない（アクティビスト誘因）</span><span class="num tpp">+6</span></div><div class="thit"><span>営業利益率 3.7% ＝ 本業は黒字</span><span class="num tpp">+5</span></div><div class="thit"><span>配当性向 7% ＝ 黒字なのに還元が渋い</span><span class="num tpp">+5</span></div><div class="thit"><span>売買代金が薄く市場の目が届きにくい</span><span class="num tpp">+4</span></div><div class="thit"><span>スタンダード市場 ＝ 上場維持メリットが薄く非公開化しやすい</span><span class="num tpp">+4</span></div><div class="thit"><span>PER 8.5倍 ＝ 利益面でも割安</span><span class="num tpp">+4</span></div>
+  <div class="linkrow">
+    <a class="ylink" href="https://finance.yahoo.co.jp/quote/9846.T" target="_blank" rel="noopener">Yahoo!ファイナンス →</a>
+    <button type="button" class="ylink sbi" onclick="openSBI('9846', event)">SBI証券アプリで見る</button>
+  </div>
+</div>
+</details>
+<details class="trow">
+<summary class="tsum">
+  <span class="trk num">45</span>
+  <span class="tnm"><b>コックス</b> <span class="chip std">スタンダード</span>
+    <span class="num tuc">9876</span>
+    <span class="tfact num">PBR 0.57倍 ・ 時価総額 60億円 ・ 自己資本 71% ・ ROE 10.2%</span></span>
+  <span class="tsc num">73<small>点</small></span>
+  <span class="tchev">›</span>
+</summary>
+<div class="tbody">
+  <div class="tbar"><div class="tbarfill" style="width:85%"></div></div>
+  <div class="thit"><span>PBR 0.57倍 ＝ 解散価値の6割未満（最重要の割安シグナル）</span><span class="num tpp">+22</span></div><div class="thit"><span>時価総額 60億円 ＝ 買収資金が十分現実的</span><span class="num tpp">+8</span></div><div class="thit"><span>自己資本比率 71% ＝ ほぼ無借金のため込み体質</span><span class="num tpp">+12</span></div><div class="thit"><span>営業利益率 8.9% ＝ 本業の稼ぐ力あり</span><span class="num tpp">+8</span></div><div class="thit"><span>配当性向 0% ＝ 黒字なのに還元が渋い</span><span class="num tpp">+5</span></div><div class="thit"><span>株価は1年レンジの下位25%に放置</span><span class="num tpp">+6</span></div><div class="thit"><span>売買代金が薄く市場の目が届きにくい</span><span class="num tpp">+4</span></div><div class="thit"><span>スタンダード市場 ＝ 上場維持メリットが薄く非公開化しやすい</span><span class="num tpp">+4</span></div><div class="thit"><span>PER 5.7倍 ＝ 利益面でも割安</span><span class="num tpp">+4</span></div>
+  <div class="linkrow">
+    <a class="ylink" href="https://finance.yahoo.co.jp/quote/9876.T" target="_blank" rel="noopener">Yahoo!ファイナンス →</a>
+    <button type="button" class="ylink sbi" onclick="openSBI('9876', event)">SBI証券アプリで見る</button>
+  </div>
+</div>
+</details>
+<details class="trow">
+<summary class="tsum">
+  <span class="trk num">46</span>
+  <span class="tnm"><b>杉本商事</b> <span class="chip prime">プライム</span>
+    <span class="num tuc">9932</span>
+    <span class="tfact num">PBR 0.69倍 ・ 時価総額 233億円 ・ 自己資本 78% ・ ROE 6.0%</span></span>
+  <span class="tsc num">73<small>点</small></span>
+  <span class="tchev">›</span>
+</summary>
+<div class="tbody">
+  <div class="tbar"><div class="tbarfill" style="width:85%"></div></div>
+  <div class="thit"><span>PBR 0.69倍 ＝ 解散価値を大きく下回る</span><span class="num tpp">+16</span></div><div class="thit"><span>時価総額 233億円 ＝ TOB・MBOの主戦場サイズ</span><span class="num tpp">+15</span></div><div class="thit"><span>自己資本比率 78% ＝ ほぼ無借金のため込み体質</span><span class="num tpp">+12</span></div><div class="thit"><span>厚い資本にROE 6.0% ＝ 資本を活かせていない（アクティビスト誘因）</span><span class="num tpp">+6</span></div><div class="thit"><span>営業利益率 4.2% ＝ 本業は黒字</span><span class="num tpp">+5</span></div><div class="thit"><span>配当性向 23% ＝ 黒字なのに還元が渋い</span><span class="num tpp">+5</span></div><div class="thit"><span>株価は1年レンジの下位25%に放置</span><span class="num tpp">+6</span></div><div class="thit"><span>売買代金が薄く市場の目が届きにくい</span><span class="num tpp">+4</span></div><div class="thit"><span>プライムでPBR1倍割れ ＝ 東証の改善要請が直撃</span><span class="num tpp">+4</span></div>
+  <div class="linkrow">
+    <a class="ylink" href="https://finance.yahoo.co.jp/quote/9932.T" target="_blank" rel="noopener">Yahoo!ファイナンス →</a>
+    <button type="button" class="ylink sbi" onclick="openSBI('9932', event)">SBI証券アプリで見る</button>
+  </div>
+</div>
+</details>
+<details class="trow">
+<summary class="tsum">
+  <span class="trk num">47</span>
+  <span class="tnm"><b>技研ホールディングス</b> <span class="chip std">スタンダード</span>
+    <span class="num tuc">1443</span>
+    <span class="tfact num">PBR 0.35倍 ・ 時価総額 45億円 ・ 自己資本 71% ・ ROE 4.7%</span></span>
+  <span class="tsc num">72<small>点</small></span>
+  <span class="tchev">›</span>
+</summary>
+<div class="tbody">
+  <div class="tbar"><div class="tbarfill" style="width:84%"></div></div>
+  <div class="thit"><span>PBR 0.35倍 ＝ 解散価値の6割未満（最重要の割安シグナル）</span><span class="num tpp">+22</span></div><div class="thit"><span>時価総額 45億円 ＝ 小粒だが買収可能圏</span><span class="num tpp">+4</span></div><div class="thit"><span>自己資本比率 71% ＝ ほぼ無借金のため込み体質</span><span class="num tpp">+12</span></div><div class="thit"><span>厚い資本にROE 4.7% ＝ 資本を活かせていない（アクティビスト誘因）</span><span class="num tpp">+6</span></div><div class="thit"><span>営業利益率 15.0% ＝ 本業の稼ぐ力あり</span><span class="num tpp">+8</span></div><div class="thit"><span>配当性向 3% ＝ 黒字なのに還元が渋い</span><span class="num tpp">+5</span></div><div class="thit"><span>株価は1年レンジの下位40%</span><span class="num tpp">+3</span></div><div class="thit"><span>売買代金が薄く市場の目が届きにくい</span><span class="num tpp">+4</span></div><div class="thit"><span>スタンダード市場 ＝ 上場維持メリットが薄く非公開化しやすい</span><span class="num tpp">+4</span></div><div class="thit"><span>PER 7.3倍 ＝ 利益面でも割安</span><span class="num tpp">+4</span></div>
+  <div class="linkrow">
+    <a class="ylink" href="https://finance.yahoo.co.jp/quote/1443.T" target="_blank" rel="noopener">Yahoo!ファイナンス →</a>
+    <button type="button" class="ylink sbi" onclick="openSBI('1443', event)">SBI証券アプリで見る</button>
+  </div>
+</div>
+</details>
+<details class="trow">
+<summary class="tsum">
+  <span class="trk num">48</span>
+  <span class="tnm"><b>アトムリビンテック</b> <span class="chip std">スタンダード</span>
+    <span class="num tuc">3426</span>
+    <span class="tfact num">PBR 0.49倍 ・ 時価総額 52億円 ・ 自己資本 90% ・ ROE 2.8%</span></span>
+  <span class="tsc num">72<small>点</small></span>
+  <span class="tchev">›</span>
+</summary>
+<div class="tbody">
+  <div class="tbar"><div class="tbarfill" style="width:84%"></div></div>
+  <div class="thit"><span>PBR 0.49倍 ＝ 解散価値の6割未満（最重要の割安シグナル）</span><span class="num tpp">+22</span></div><div class="thit"><span>時価総額 52億円 ＝ 買収資金が十分現実的</span><span class="num tpp">+8</span></div><div class="thit"><span>自己資本比率 90% ＝ ほぼ無借金のため込み体質</span><span class="num tpp">+12</span></div><div class="thit"><span>厚い資本にROE 2.8% ＝ 資本を活かせていない（アクティビスト誘因）</span><span class="num tpp">+6</span></div><div class="thit"><span>営業利益率 4.9% ＝ 本業は黒字</span><span class="num tpp">+5</span></div><div class="thit"><span>配当性向 20% ＝ 黒字なのに還元が渋い</span><span class="num tpp">+5</span></div><div class="thit"><span>株価は1年レンジの下位25%に放置</span><span class="num tpp">+6</span></div><div class="thit"><span>売買代金が薄く市場の目が届きにくい</span><span class="num tpp">+4</span></div><div class="thit"><span>スタンダード市場 ＝ 上場維持メリットが薄く非公開化しやすい</span><span class="num tpp">+4</span></div>
+  <div class="linkrow">
+    <a class="ylink" href="https://finance.yahoo.co.jp/quote/3426.T" target="_blank" rel="noopener">Yahoo!ファイナンス →</a>
+    <button type="button" class="ylink sbi" onclick="openSBI('3426', event)">SBI証券アプリで見る</button>
+  </div>
+</div>
+</details>
+<details class="trow">
+<summary class="tsum">
+  <span class="trk num">49</span>
+  <span class="tnm"><b>トーソー</b> <span class="chip std">スタンダード</span>
+    <span class="num tuc">5956</span>
+    <span class="tfact num">PBR 0.32倍 ・ 時価総額 51億円 ・ 自己資本 69% ・ ROE 4.2%</span></span>
+  <span class="tsc num">72<small>点</small></span>
+  <span class="tchev">›</span>
+</summary>
+<div class="tbody">
+  <div class="tbar"><div class="tbarfill" style="width:84%"></div></div>
+  <div class="thit"><span>PBR 0.32倍 ＝ 解散価値の6割未満（最重要の割安シグナル）</span><span class="num tpp">+22</span></div><div class="thit"><span>時価総額 51億円 ＝ 買収資金が十分現実的</span><span class="num tpp">+8</span></div><div class="thit"><span>自己資本比率 69% ＝ 財務が厚く買収後の余力大</span><span class="num tpp">+8</span></div><div class="thit"><span>厚い資本にROE 4.2% ＝ 資本を活かせていない（アクティビスト誘因）</span><span class="num tpp">+6</span></div><div class="thit"><span>営業利益率 4.1% ＝ 本業は黒字</span><span class="num tpp">+5</span></div><div class="thit"><span>配当性向 14% ＝ 黒字なのに還元が渋い</span><span class="num tpp">+5</span></div><div class="thit"><span>株価は1年レンジの下位25%に放置</span><span class="num tpp">+6</span></div><div class="thit"><span>売買代金が薄く市場の目が届きにくい</span><span class="num tpp">+4</span></div><div class="thit"><span>スタンダード市場 ＝ 上場維持メリットが薄く非公開化しやすい</span><span class="num tpp">+4</span></div><div class="thit"><span>PER 7.5倍 ＝ 利益面でも割安</span><span class="num tpp">+4</span></div>
+  <div class="linkrow">
+    <a class="ylink" href="https://finance.yahoo.co.jp/quote/5956.T" target="_blank" rel="noopener">Yahoo!ファイナンス →</a>
+    <button type="button" class="ylink sbi" onclick="openSBI('5956', event)">SBI証券アプリで見る</button>
+  </div>
+</div>
+</details>
+<details class="trow">
+<summary class="tsum">
+  <span class="trk num">50</span>
+  <span class="tnm"><b>イトクロ</b> <span class="chip growth">グロース</span>
+    <span class="num tuc">6049</span>
+    <span class="tfact num">PBR 0.54倍 ・ 時価総額 50億円 ・ 自己資本 96% ・ ROE 0.5%</span></span>
+  <span class="tsc num">72<small>点</small></span>
+  <span class="tchev">›</span>
+</summary>
+<div class="tbody">
+  <div class="tbar"><div class="tbarfill" style="width:84%"></div></div>
+  <div class="thit"><span>PBR 0.54倍 ＝ 解散価値の6割未満（最重要の割安シグナル）</span><span class="num tpp">+22</span></div><div class="thit"><span>時価総額 50億円 ＝ 買収資金が十分現実的</span><span class="num tpp">+8</span></div><div class="thit"><span>自己資本比率 96% ＝ ほぼ無借金のため込み体質</span><span class="num tpp">+12</span></div><div class="thit"><span>厚い資本にROE 0.5% ＝ 資本を活かせていない（アクティビスト誘因）</span><span class="num tpp">+6</span></div><div class="thit"><span>営業利益率 6.8% ＝ 本業は黒字</span><span class="num tpp">+5</span></div><div class="thit"><span>配当性向 0% ＝ 黒字なのに還元が渋い</span><span class="num tpp">+5</span></div><div class="thit"><span>株価は1年レンジの下位25%に放置</span><span class="num tpp">+6</span></div><div class="thit"><span>売買代金が薄く市場の目が届きにくい</span><span class="num tpp">+4</span></div><div class="thit"><span>グロース市場 ＝ 上場維持メリットが薄く非公開化しやすい</span><span class="num tpp">+4</span></div>
+  <div class="linkrow">
+    <a class="ylink" href="https://finance.yahoo.co.jp/quote/6049.T" target="_blank" rel="noopener">Yahoo!ファイナンス →</a>
+    <button type="button" class="ylink sbi" onclick="openSBI('6049', event)">SBI証券アプリで見る</button>
+  </div>
+</div>
+</details>
+</div>
+
+<div class="note">採点はJPX公式（J-Quants）の決算数字と株価から毎回自動計算され、基準はこのページの「採点の物差し」の通りです。TOB・MBOの発生を保証するものではありません。全銘柄台帳の並べ替え「TOBされやすい順」でも全銘柄ぶんを確認できます。投資判断はご自身で。</div>
+<script>
+function copyCode(btn, code, e){
+  if (e){ e.preventDefault(); e.stopPropagation(); }
+  const done = () => {
+    const orig = btn.textContent;
+    btn.textContent = 'コピー済み';
+    btn.classList.add('copied');
+    setTimeout(() => { btn.textContent = orig; btn.classList.remove('copied'); }, 1200);
+  };
+  if (navigator.clipboard && navigator.clipboard.writeText){
+    navigator.clipboard.writeText(code).then(done).catch(done);
+  } else { done(); }
+}
+
+function openSBI(code, e){
+  if (e){ e.preventDefault(); e.stopPropagation(); }
+  const go = () => { location.href = 'shortcuts://run-shortcut?name=' + encodeURIComponent('SBIへ'); };
+  if (navigator.clipboard && navigator.clipboard.writeText){
+    navigator.clipboard.writeText(code).then(go).catch(go);
+  } else { go(); }
+}
+</script>
+<script>
+(function(){
+  const order = ['guide.html', 'indicators.html', 'universe.html', 'index.html', 'map.html', 'caps.html'];
+  let here = location.pathname.split('/').pop();
+  if (!here) here = 'index.html';
+  const idx = order.indexOf(here);
+  if (idx < 0) return;
+  let sx = 0, sy = 0, st = 0;
+  document.addEventListener('touchstart', e => {
+    const t = e.touches[0]; sx = t.clientX; sy = t.clientY; st = Date.now();
+  }, {passive: true});
+  document.addEventListener('touchend', e => {
+    const t = e.changedTouches[0];
+    const dx = t.clientX - sx, dy = t.clientY - sy;
+    if (Date.now() - st > 600) return;
+    if (Math.abs(dx) < 80 || Math.abs(dy) > 50 || Math.abs(dx) < Math.abs(dy) * 2) return;
+    if (e.target.closest('.topnav, .chips, .filters, input, textarea, .spark')) return;
+    const j = dx < 0 ? idx + 1 : idx - 1;
+    if (j >= 0 && j < order.length) location.href = order[j];
+  }, {passive: true});
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="robots" content="noindex, nofollow">
+<link rel="apple-touch-icon" href="icon.png">
+<link rel="icon" type="image/png" href="icon.png">
+<title>はじめに — この株ノートの使い方 ｜ 株ノート</title>
+<style>
+  :root{--ink:#1c1c1e; --ink2:#6e6e73; --ink3:#aeaeb2; --paper:#faf6ec;
+    --paper-line:#e7e0cf; --bg:#f2f2f7; --line:#e5e5ea; --cheap:#c62f2f; --cheap-bg:#fdeeee;
+    --mild:#b06a00; --mild-bg:#fdf3e3;}
+  *{box-sizing:border-box; margin:0; padding:0;}
+  body{font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Noto Sans JP",sans-serif;
+    background:var(--bg); color:var(--ink); max-width:640px; margin:0 auto;
+    padding:14px 12px 40px;}
+  .num{font-family:ui-monospace,"SF Mono",Menlo,monospace; font-variant-numeric:tabular-nums;}
+  header{padding:6px 4px 12px;}
+  header .t{font-size:20px; font-weight:800;}
+  header .s{font-size:12px; color:var(--ink2); margin-top:3px; line-height:1.6;}
+  .back{display:inline-block; font-size:12px; font-weight:700; color:#2e4d7b;
+    text-decoration:none; margin-bottom:8px;}
+
+  .topnav{display:flex; gap:6px; overflow-x:auto; padding:2px 0 12px;
+    -webkit-overflow-scrolling:touch;}
+  .topnav a{flex:none; font-size:12.5px; font-weight:700; color:#4a3f28;
+    text-decoration:none; background:#f4eedd; border-radius:10px; padding:8px 14px;}
+  .topnav a.act{background:#1c1c1e; color:#fff;}
+  .topnav a.subtag{background:none; color:#8a5a17; font-weight:800; padding-left:2px;}
+
+  html, body{overflow-x:hidden; max-width:100%;}
+  body{overscroll-behavior-x:none;}
+  *{min-width:0;}
+  img, svg{max-width:100%;}
+  .topnav, .chips, .filters{overflow-x:auto; overscroll-behavior-x:contain; -webkit-overflow-scrolling:touch;}
+  .card, .hcard, .ledger, .list, .flatlist, .soonbox, .capcard, details, .notebox, .ubody{max-width:100%; overflow-wrap:anywhere;}
+  input, select{max-width:100%;}
+
+  .card{background:var(--paper); border-radius:14px; padding:12px 14px;
+    margin-bottom:12px; box-shadow:0 1px 3px rgba(0,0,0,.06);}
+  .card h2{font-size:13px; font-weight:800; color:#7a6a45; letter-spacing:.05em;
+    margin-bottom:8px;}
+  .fact{display:flex; justify-content:space-between; font-size:12.5px; padding:6px 0;
+    border-bottom:1px solid #f0ead9;}
+  .fact span:first-child{color:var(--ink2);}
+  .fact .v{font-weight:700;}
+  .plus{color:#2e7d32;} .minus{color:var(--cheap);}
+  .note{font-size:11px; color:var(--ink3); line-height:1.7; padding:8px 4px;}
+  
+  .gcard{border-radius:14px; padding:13px 15px; margin-bottom:12px; border-left:6px solid;}
+  .c-green{background:#eef6ef; border-color:#3a5a40;} .c-blue{background:#eaf1fb; border-color:#2e5fa8;}
+  .c-paper{background:#faf6ec; border-color:#a99a76;} .c-yellow{background:#fdf6e6; border-color:#c9a227;}
+  .c-red{background:#fdeeee; border-color:#c62f2f;} .c-gray{background:#f0f0f4; border-color:#6e6e73;}
+  .c-sub{background:#fff; border-color:#8a5a17;}
+  .subbtn{display:block; text-decoration:none; color:inherit; background:#faf6ec; border-radius:10px;
+    padding:10px 12px; margin-top:8px;}
+  .subbtn b{display:block; font-size:13px; color:#4a3f28; margin-bottom:3px;}
+  .subbtn span{font-size:11.5px; line-height:1.7; color:var(--ink2);}
+  .gh{font-size:14px; font-weight:800; margin-bottom:8px;}
+  .gt{font-size:12.5px; line-height:1.85;}
+  .steps{padding-left:20px; font-size:12.5px; line-height:1.9;} .steps li{margin-bottom:3px;}
+  .tabrow{display:flex; gap:8px; align-items:baseline; font-size:12px; line-height:1.7; padding:4px 0; border-bottom:1px dashed #e7e0cf;}
+  .tb{flex:none; font-size:11px; font-weight:800; color:#fff; background:#1c1c1e; border-radius:6px; padding:2px 8px;}
+
+</style>
+</head>
+<body>
+<div class="topnav"><a href="guide.html" class="act">はじめに</a><a href="indicators.html">指標の読み方</a><a href="universe.html">全銘柄台帳</a><a href="index.html">今夜の厳選</a><a href="map.html">銘柄マップ</a><a href="caps.html">時価総額マップ</a></div>
+<header><div class="t">はじめに — この株ノートの使い方</div><div class="s">役割分担・毎晩の流れ・タブの意味 ・ 8/23（日）時点の仕様</div></header>
+
+<div class="gcard c-green"><div class="gh">🟢 これは何？</div>
+<div class="gt">おじいさま・おばあさまの株手法（毎日の四本値記録・普段より安くなったら買い・決めたルールで売る）をWeb化。
+<b>下準備はシステムが自動、買う・売るの判断と注文はあなた</b>。注文機能はありません。</div></div>
+
+<div class="gcard c-blue"><div class="gh">🔵 毎晩の流れ（1〜2分）</div>
+<ol class="steps">
+<li><b>「今夜の厳選」を開く</b> ホーム画面のアイコン → 合言葉（記憶した端末は自動）</li>
+<li><b>厳選10銘柄を見る</b> タップで根拠・チャート・ノート・会社の発表が開く</li>
+<li><b>買うなら</b> 銘柄内の「買った→持ち株に登録」を押してから証券会社アプリで注文</li>
+<li><b>売り時は自動監視</b> 「持ち株の管理」（このページ最下部）が利確／損切りライン到達を色で知らせる。売ったら「売った」で記録</li>
+</ol></div>
+
+<div class="gcard c-paper"><div class="gh">📒 タブの役割</div>
+<div class="tabrow"><span class="tb">今夜の厳選</span>安全×質×タイミングの三層で選んだ厳選10銘柄＋「まもなく買い場」の待ち銘柄。持ち金・★・根拠</div>
+<div class="tabrow"><span class="tb">全銘柄台帳</span>約4,000銘柄の台帳。安全（減点）・質・タイミングの3スコア、無傷／まもなく絞り込み、並べ替え、タップで全詳細（指標メーター付き）</div>
+<div class="tabrow"><span class="tb">指標の読み方</span>PER・RSIなど全指標の図解。数字の読み方はここ</div>
+<div class="tabrow"><span class="tb">銘柄マップ</span>全銘柄を財務×テクニカル×値動きでベクトル化した3D空間。似ている銘柄が近くに並び、タップで「発想が繋がる銘柄」へ光の糸が伸びる</div>
+<div class="tabrow"><span class="tb">時価総額マップ</span>株価×発行株式数の平面に全銘柄を配置。右上ほど時価総額が大きく、100億〜10兆円の等高線で市場の全体像がひと目でわかる</div></div>
+
+<div class="gcard c-yellow"><div class="gh">🟡 選定の仕組み（要約）</div>
+<div class="gt">全銘柄 → 対象外（流動性不足・低位株・上場浅）→ 除外（終わった株・急落直後・荒い値動き・下げ止まり未確認）→
+残りを<b>6観点で採点</b>（安さ／下げの質／トレンド／過去1年の利確実績／長期テクニカル／財務健全性）→ 上位60が候補 → 持ち金で買える10銘柄を表示。
+詳細は「今夜の厳選」の「選定基準」カードと各銘柄の根拠。</div></div>
+
+<div class="gcard c-red"><div class="gh">🔴 大事な前提</div>
+<div class="gt">・持ち金・売りルール・★・持ち株・売却履歴・合言葉の記憶は<b>すべてこの端末の中だけ</b>に保存（iPhoneとMacで別）<br>
+・データはJPX公式・Yahoo Finance・TDnet。表示は毎時の「写真」で、リアルタイムはYahooリンクで<br>
+・このサイトは判断材料の表示のみ。投資判断は自己責任で</div></div>
+
+<div class="gcard c-sub"><div class="gh">🧩 その他の機能（サブシステム）</div>
+<div class="gt">メインの4タブとは別に、使いたい人向けの補助機能です。</div>
+<a class="subbtn" href="holdings.html"><b>持ち株の管理</b><span>保有銘柄の登録 → 毎時の監視（利確／損切りライン到達を色で通知）→ 売却記録 → 通算成績（勝率・損益率）。「今夜の厳選」の「買った」ボタンからも登録できます</span></a>
+<a class="subbtn" href="tob.html"><b>TOB素地ランキング</b><span>買収・非公開化されやすい「体質」を診断士の定石（PBR・時価総額・ため込み度など9観点）で全銘柄採点した順位表。確率の予測ではなく、最後の確認は人間の役割</span></a>
+<a class="subbtn" href="backtest.html"><b>手法の検証レポート</b><span>採点ルールと売りルール自身の成績表。損切り%の最適比較（★）、持ち金別シミュレーション、どの根拠が実際に効いているかの実測</span></a></div>
+
+<div class="gcard c-gray"><div class="gh">⚙️ 操作のコツ・初期設定</div>
+<div class="gt"><b>スワイプ</b>で左右のタブへ移動 ／ 銘柄コード（例 2489 ⧉）を<b>タップでコピー</b> ／
+<b>SBIアプリ連携</b>は1回だけ設定：ショートカットApp →「＋」→「Appを開く」→ SBI証券 株 → 名前を「SBIへ」に</div>
+<div class="gt" style="margin-top:6px"><b>更新タイミング</b> 平日 9:40〜14:40毎時・15:45・20:30（夜が入れ替え基準）。実行に30〜60分かかるため表示は最大1時間前の値です</div>
+<div class="gt" style="margin-top:6px"><b>「🔄 いま更新」ボタン</b>（「今夜の厳選」と「全銘柄台帳」の右上）でページから直接更新を起動できます。
+初回だけGitHubの「更新用トークン」の設定が必要（ボタン内に手順あり・5分）。トークンはこの端末にだけ保存され、GitHub以外には送信されません</div></div>
+
+<div class="note">仕様を変えるとこのページも自動で追随します。数字の読み方は「指標の読み方」ページへ。</div>
+
+<script>
+(function(){
+  const order = ['guide.html', 'indicators.html', 'universe.html', 'index.html', 'map.html', 'caps.html'];
+  let here = location.pathname.split('/').pop();
+  if (!here) here = 'index.html';
+  const idx = order.indexOf(here);
+  if (idx < 0) return;
+  let sx = 0, sy = 0, st = 0;
+  document.addEventListener('touchstart', e => {
+    const t = e.touches[0]; sx = t.clientX; sy = t.clientY; st = Date.now();
+  }, {passive: true});
+  document.addEventListener('touchend', e => {
+    const t = e.changedTouches[0];
+    const dx = t.clientX - sx, dy = t.clientY - sy;
+    if (Date.now() - st > 600) return;
+    if (Math.abs(dx) < 80 || Math.abs(dy) > 50 || Math.abs(dx) < Math.abs(dy) * 2) return;
+    if (e.target.closest('.topnav, .chips, .filters, input, textarea, .spark')) return;
+    const j = dx < 0 ? idx + 1 : idx - 1;
+    if (j >= 0 && j < order.length) location.href = order[j];
+  }, {passive: true});
+})();
+</script>
+</body>
+</html>

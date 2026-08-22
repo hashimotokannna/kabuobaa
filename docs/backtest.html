@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="robots" content="noindex, nofollow">
+<link rel="apple-touch-icon" href="icon.png">
+<link rel="icon" type="image/png" href="icon.png">
+<title>手法の検証レポート — ルール自身の成績表 ｜ 株ノート</title>
+<style>
+  :root{--ink:#1c1c1e; --ink2:#6e6e73; --ink3:#aeaeb2; --paper:#faf6ec;
+    --paper-line:#e7e0cf; --bg:#f2f2f7; --line:#e5e5ea; --cheap:#c62f2f; --cheap-bg:#fdeeee;
+    --mild:#b06a00; --mild-bg:#fdf3e3;}
+  *{box-sizing:border-box; margin:0; padding:0;}
+  body{font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Noto Sans JP",sans-serif;
+    background:var(--bg); color:var(--ink); max-width:640px; margin:0 auto;
+    padding:14px 12px 40px;}
+  .num{font-family:ui-monospace,"SF Mono",Menlo,monospace; font-variant-numeric:tabular-nums;}
+  header{padding:6px 4px 12px;}
+  header .t{font-size:20px; font-weight:800;}
+  header .s{font-size:12px; color:var(--ink2); margin-top:3px; line-height:1.6;}
+  .back{display:inline-block; font-size:12px; font-weight:700; color:#2e4d7b;
+    text-decoration:none; margin-bottom:8px;}
+
+  .topnav{display:flex; gap:6px; overflow-x:auto; padding:2px 0 12px;
+    -webkit-overflow-scrolling:touch;}
+  .topnav a{flex:none; font-size:12.5px; font-weight:700; color:#4a3f28;
+    text-decoration:none; background:#f4eedd; border-radius:10px; padding:8px 14px;}
+  .topnav a.act{background:#1c1c1e; color:#fff;}
+  .topnav a.subtag{background:none; color:#8a5a17; font-weight:800; padding-left:2px;}
+
+  html, body{overflow-x:hidden; max-width:100%;}
+  body{overscroll-behavior-x:none;}
+  *{min-width:0;}
+  img, svg{max-width:100%;}
+  .topnav, .chips, .filters{overflow-x:auto; overscroll-behavior-x:contain; -webkit-overflow-scrolling:touch;}
+  .card, .hcard, .ledger, .list, .flatlist, .soonbox, .capcard, details, .notebox, .ubody{max-width:100%; overflow-wrap:anywhere;}
+  input, select{max-width:100%;}
+
+  .card{background:var(--paper); border-radius:14px; padding:12px 14px;
+    margin-bottom:12px; box-shadow:0 1px 3px rgba(0,0,0,.06);}
+  .card h2{font-size:13px; font-weight:800; color:#7a6a45; letter-spacing:.05em;
+    margin-bottom:8px;}
+  .fact{display:flex; justify-content:space-between; font-size:12.5px; padding:6px 0;
+    border-bottom:1px solid #f0ead9;}
+  .fact span:first-child{color:var(--ink2);}
+  .fact .v{font-weight:700;}
+  .plus{color:#2e7d32;} .minus{color:var(--cheap);}
+  .note{font-size:11px; color:var(--ink3); line-height:1.7; padding:8px 4px;}
+  
+  .capset{font-size:12px; color:var(--ink2); padding:2px 0 10px;}
+  .capin{width:70px; font-size:14px; font-weight:700; padding:5px 8px;
+    border:1.5px solid #d9d2bf; border-radius:8px; background:#fff; text-align:right;}
+  .tier{padding:8px 10px; border-radius:10px; margin-bottom:6px; background:#fff;}
+  .tier.me{outline:2px solid var(--cheap); background:var(--cheap-bg);}
+  .tier.me .tname::after{content:" ← いまのあなた"; color:var(--cheap); font-size:10.5px;}
+  .tname{font-size:13px; font-weight:800;}
+  .tfacts{font-size:11px; color:var(--ink2); margin-top:3px; line-height:1.6;}
+  .tiernote{font-size:11px; color:#8a5a17; line-height:1.7; padding-top:8px;}
+  .best{color:#c62f2f; font-size:10.5px; margin-left:8px;}
+  .guidecard{background:#fff !important; border-left:5px solid #3a5a40;}
+  .q{font-size:12.5px; line-height:1.8; padding:6px 0; border-bottom:1px dashed #f0ead9;}
+  .q b{color:#3a5a40;} .qnote{font-size:11px; color:var(--ink3); padding-top:8px;}
+  .warncard{background:#fdf6e6 !important; border-left:5px solid #b06a00;}
+  .warncard h2{color:#8a5a17;}
+  .q2{font-size:12px; line-height:1.9; padding:6px 0; border-bottom:1px dashed #eadfc2; color:#4a4a4f;}
+  .q2:last-child{border-bottom:none;}
+  .q2 b{color:#8a5a17;} .q2 b.minus{color:#c62f2f;}
+  .barwrap{position:relative; background:#f0ead9; border-radius:6px; height:18px;
+    margin:4px 0 2px; overflow:hidden;}
+  .barp{height:100%; background:#7fae86; border-radius:6px;}
+  .barm{height:100%; background:#d98c8c; border-radius:6px;}
+  .barv{position:absolute; right:8px; top:1.5px; font-size:11px; font-weight:800;}
+
+</style>
+</head>
+<body>
+<div class="topnav"><a href="guide.html" class="act">はじめに</a><a href="indicators.html">指標の読み方</a><a href="universe.html">全銘柄台帳</a><a href="index.html">今夜の厳選</a><a href="map.html">銘柄マップ</a><a href="caps.html">時価総額マップ</a><a class="subtag">› その他の機能</a></div>
+<header><div class="t">手法の検証レポート — ルール自身の成績表</div><div class="s">8/23（日）時点 ・ このシステムの「採点ルールと売りルール」自身の成績表 ・ 過去1年の全銘柄で仮想実行して毎回更新</div></header>
+<div class="card guidecard"><h2>このページで決めること（3つ）</h2><div class="q"><b>1. 損切りは何%にするか</b> → 下の「損切りルールの効果比較」で★最適と自分の設定を見比べる</div><div class="q"><b>2. 持ち金はいくらが適正か</b> → 「持ち金別シミュレーション」で、自分の段と1つ上の段の差を見る（差が大きければ増額の価値あり）</div><div class="q"><b>3. 採点ルールは信用できるか</b> → 「どの根拠が本当に効いているか」で、勝率に差が出ている要因だけを信じる</div><div class="qnote">個別銘柄の過去実績は「今夜の厳選」の各銘柄ノート内「この銘柄で同じ買い方をしていたら」にあります。</div></div>
+<div class="card"><h2>持ち金別・現実シミュレーション（この1年）</h2>
+<div class="capset">あなたの持ち金 <input id="cap" class="capin num" type="number" inputmode="numeric" placeholder="50"> 万円（この端末にだけ保存）</div>
+<div class="tier" data-budget="300000"><div class="tname num">30万円</div><div class="tfacts num">確定 <b class="plus">+96,788円</b>（58勝） ／ 資金不足で見送り 92,690回 ／ 持ち越し10件 <b class="minus">−1,570円</b> ／ 最大同時12銘柄</div></div>
+<div class="tier" data-budget="500000"><div class="tname num">50万円</div><div class="tfacts num">確定 <b class="plus">+203,125円</b>（57勝） ／ 資金不足で見送り 93,006回 ／ 持ち越し11件 <b class="minus">−34,510円</b> ／ 最大同時14銘柄</div></div>
+<div class="tier" data-budget="1000000"><div class="tname num">100万円</div><div class="tfacts num">確定 <b class="plus">+392,001円</b>（107勝） ／ 資金不足で見送り 91,644回 ／ 持ち越し20件 <b class="minus">−30,720円</b> ／ 最大同時24銘柄</div></div>
+<div class="tier" data-budget="2000000"><div class="tname num">200万円</div><div class="tfacts num">確定 <b class="plus">+715,337円</b>（183勝） ／ 資金不足で見送り 89,802回 ／ 持ち越し30件 <b class="minus">−144,847円</b> ／ 最大同時36銘柄</div></div>
+<div class="tier" data-budget="inf"><div class="tname num">無制限（参考）</div><div class="tfacts num">確定 <b class="plus">+66,349,739円</b>（4645勝） ／ 資金不足で見送り 0回 ／ 持ち越し801件 <b class="minus">−15,772,045円</b> ／ 最大同時947銘柄</div></div>
+<div class="tiernote">持ち金を増やすと「見送り」が減って確定益が伸びる一方、持ち越しの含み損も増えます。次の段の伸び幅が小さければ、まだ増額の必要はない、という読み方ができます。</div></div>
+<div class="card"><h2>損切りルールの効果比較（利確+5%共通・資金無制限）</h2>
+<div class="tier" data-sl="none"><div class="tname">損切りなし（おばあさん流）<span class="best">★ この1年の最適</span></div><div class="barwrap"><div class="barp" style="width:100%"></div><span class="barv num plus">+45,685,972円</span></div><div class="tfacts num">勝率100%（利確4,325・損切り0） ／ 持ち越し792件 −15,263,095円 ／ 最悪の塩漬け1件 <b class="minus">−582,000円</b> ／ 塩漬けの資金拘束 延べ62,173日</div></div>
+<div class="tier" data-sl="3"><div class="tname">損切り −3%</div><div class="barwrap"><div class="barp" style="width:49%"></div><span class="barv num plus">+22,340,850円</span></div><div class="tfacts num">勝率42%（利確10,570・損切り14,546） ／ 持ち越し548件 +2,620,270円 ／ 最悪の塩漬け1件 <b class="minus">−5,900円</b> ／ 塩漬けの資金拘束 延べ2,526日</div></div>
+<div class="tier" data-sl="5"><div class="tname">損切り −5%</div><div class="barwrap"><div class="barp" style="width:55%"></div><span class="barv num plus">+24,999,361円</span></div><div class="tfacts num">勝率56%（利確9,762・損切り7,677） ／ 持ち越し579件 +2,082,110円 ／ 最悪の塩漬け1件 <b class="minus">−18,000円</b> ／ 塩漬けの資金拘束 延べ3,834日</div></div>
+<div class="tier" data-sl="8"><div class="tname">損切り −8%</div><div class="barwrap"><div class="barp" style="width:64%"></div><span class="barv num plus">+29,041,417円</span></div><div class="tfacts num">勝率70%（利確8,465・損切り3,673） ／ 持ち越し602件 +666,810円 ／ 最悪の塩漬け1件 <b class="minus">−46,200円</b> ／ 塩漬けの資金拘束 延べ5,863日</div></div>
+<div class="tier" data-sl="10"><div class="tname">損切り −10%</div><div class="barwrap"><div class="barp" style="width:72%"></div><span class="barv num plus">+32,861,014円</span></div><div class="tfacts num">勝率76%（利確7,708・損切り2,443） ／ 持ち越し618件 +106,727円 ／ 最悪の塩漬け1件 <b class="minus">−155,500円</b> ／ 塩漬けの資金拘束 延べ7,804日</div></div>
+<div class="tier" data-sl="15"><div class="tname">損切り −15%</div><div class="barwrap"><div class="barp" style="width:83%"></div><span class="barv num plus">+37,740,932円</span></div><div class="tfacts num">勝率86%（利確6,454・損切り1,043） ／ 持ち越し663件 −2,530,623円 ／ 最悪の塩漬け1件 <b class="minus">−582,000円</b> ／ 塩漬けの資金拘束 延べ18,487日</div></div>
+<div class="tiernote">棒の長さ＝トータル損益（確定+含み）。★が過去1年での最適設定です。ただし過去1年に最適だった数字が来年も最適とは限らないため、★と自分の設定（印付き）が大きくズレていないかを確認する使い方が健全です。</div></div>
+<div class="card warncard"><h2>⚠ 「損切りなしが一番」をそのまま信じない</h2><div class="q2">損切りしなければマイナスは<b>確定しない</b>ので、負けは全部「持ち越しの含み損」に姿を変えて生き残ります。上の比較はその含み損もトータルに含めていますが、それでも損切りなしが有利に見えるのには理由があります。</div><div class="q2"><b>① 上げ相場の追い風</b> この1年が上向きなら、塩漬けの多くは「待てば戻った」ことになります。下げ相場の1年で同じ計算をすると順位は逆転しがちです。過去1年でたまたま勝った手法は、来年勝つ手法とは限りません。</div><div class="q2"><b>② 破滅の一撃が数字に出にくい</b> 損切りなしの持ち越し792件のうち、最悪の1件は<b class="minus">−582,000円</b>の含み損、こうした銘柄が上場廃止級の下落（−80%など）になった場合の損失は、この1年の集計には現れません。損切りは「平均を上げる」ためでなく「退場を防ぐ」ための保険です。</div><div class="q2"><b>③ 資金が寝る（機会損失）</b> 塩漬けの資金拘束は延べ<b>62,173日</b>。この比較は資金無制限の仮定なので塩漬けのコストがゼロですが、実際の50万円運用では塩漬け1件で次の買い場に参加できなくなります。上の「持ち金別シミュレーション」の見送り回数がそのコストです。</div><div class="q2"><b>結論</b> このシステムの推奨は<b>損切り −8%</b>。確定益を大きく削らずに、②の破滅リスクと③の資金拘束を断ち切れる位置だからです（「持ち株の管理」ページの初期値もこの値）。</div></div>
+<div class="card"><h2>どの根拠が本当に効いているか（この1年の全買いシグナル実測）</h2>
+<div class="fact"><span>ゴールデンクロス中（50日線＞200日線）</span><span class="v num">勝率 72% vs 非該当 72%（<b class="plus">+0pt</b>・70,351回中）</span></div>
+<div class="fact"><span>RSI(14)が40以下（売られすぎ）</span><span class="v num">勝率 71% vs 非該当 73%（<b class="minus">-2pt</b>・42,141回中）</span></div>
+<div class="fact"><span>じわ下げ（直近に1日4%超の急落なし）</span><span class="v num">勝率 72% vs 非該当 73%（<b class="minus">-1pt</b>・58,176回中）</span></div>
+<div class="tiernote">「勝ち」＝買いシグナルの後40営業日以内に利確ライン到達。差がプラスの要因は採点で重視する価値があり、差が無い/マイナスの要因は配点を見直す根拠になります。毎晩の実行で更新される、採点ルール自身の成績表です。</div></div>
+<div class="card"><h2>参考: 全シグナルの母数</h2><div class="fact"><span>この1年の買いシグナル総数</span><span class="v num">5,117回</span></div><div class="fact"><span>うち利確ライン到達</span><span class="v num">4,325回（85%）・平均24営業日</span></div><div class="fact"><span>持ち越し（未決済）</span><span class="v num">792件・うち含み損 565件</span></div></div>
+<div class="note">この検証は「いまの対象銘柄」の過去1年をなぞった簡易計算です。手数料・税金は含みません。買値は翌営業日の始値、売りは買値+5%に到達した日に成立と仮定（損切りなし）。「持ち株の管理」で設定した個人の利確・損切り%とは独立に、共通基準で計算しています。</div>
+<script>
+const CAP_KEY = 'kabuobaa_capital';
+const capIn = document.getElementById('cap');
+function applyTier(){
+  const man = parseFloat(capIn.value) || 0;
+  const cap = man * 10000;
+  localStorage.setItem(CAP_KEY, capIn.value || '');
+  const tiers = Array.from(document.querySelectorAll('.tier[data-budget]'));
+  tiers.forEach(t => t.classList.remove('me'));
+  if (cap > 0){
+    const fit = tiers.filter(t => t.dataset.budget !== 'inf' && Number(t.dataset.budget) <= cap).pop()
+             || tiers[0];
+    if (fit) fit.classList.add('me');
+  }
+}
+if (capIn){
+  capIn.value = localStorage.getItem(CAP_KEY) || '';
+  capIn.addEventListener('input', applyTier);
+  applyTier();
+}
+(function(){
+  const sl = parseFloat(localStorage.getItem('kabuobaa_sl')) || 8;
+  const rows = Array.from(document.querySelectorAll('.tier[data-sl]'));
+  if (!rows.length) return;
+  let best = null, bestDiff = 1e9;
+  rows.forEach(t => {
+    if (t.dataset.sl === 'none') return;
+    const diff = Math.abs(Number(t.dataset.sl) - sl);
+    if (diff < bestDiff){ bestDiff = diff; best = t; }
+  });
+  if (best) best.classList.add('me');
+})();
+</script>
+<script>
+(function(){
+  const order = ['guide.html', 'indicators.html', 'universe.html', 'index.html', 'map.html', 'caps.html'];
+  let here = location.pathname.split('/').pop();
+  if (!here) here = 'index.html';
+  const idx = order.indexOf(here);
+  if (idx < 0) return;
+  let sx = 0, sy = 0, st = 0;
+  document.addEventListener('touchstart', e => {
+    const t = e.touches[0]; sx = t.clientX; sy = t.clientY; st = Date.now();
+  }, {passive: true});
+  document.addEventListener('touchend', e => {
+    const t = e.changedTouches[0];
+    const dx = t.clientX - sx, dy = t.clientY - sy;
+    if (Date.now() - st > 600) return;
+    if (Math.abs(dx) < 80 || Math.abs(dy) > 50 || Math.abs(dx) < Math.abs(dy) * 2) return;
+    if (e.target.closest('.topnav, .chips, .filters, input, textarea, .spark')) return;
+    const j = dx < 0 ? idx + 1 : idx - 1;
+    if (j >= 0 && j < order.length) location.href = order[j];
+  }, {passive: true});
+})();
+</script>
+</body>
+</html>
