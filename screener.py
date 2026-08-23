@@ -187,14 +187,14 @@ def fetch_universe():
 # ------------------------------------------------------------
 # 2. 日足データの取得（Yahoo Finance chart API）
 # ------------------------------------------------------------
-def fetch_daily(session, code, suffix=".T", range_="max"):
-    """日足を [{date, open, high, low, close, volume}] (古い順) で返す。range_="max"で上場以来すべて"""
+def _fetch_chart(session, code, suffix=".T", range_="10y", interval="1d", retries=None):
+    """Yahoo chart APIから [{date, open, high, low, close, volume}] (古い順) を返す。"""
     url = f"https://query1.finance.yahoo.com/v8/finance/chart/{code}{suffix}"
-    params = {"range": range_, "interval": "1d"}
+    params = {"range": range_, "interval": interval}
     headers = {"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)"}
 
     last_err = None
-    for attempt in range(CONFIG["RETRIES"]):
+    for attempt in range(retries if retries is not None else CONFIG["RETRIES"]):
         try:
             resp = session.get(url, params=params, headers=headers, timeout=30)
             if resp.status_code == 429:  # レート制限: 長めに待って再試行
@@ -271,7 +271,59 @@ def fetch_daily(session, code, suffix=".T", range_="max"):
     return None
 
 
-_FUND_CACHE = {}  # code -> metaから拾ったファンダ素材（fetch_daily内で埋まる）
+def _median_gap_days(days, tail=60):
+    """直近tail本の日付間隔の中央値（日）。日足なら1〜3、週足なら7、月足なら28-31。"""
+    seg = days[-tail:] if len(days) > tail else days
+    if len(seg) < 8:
+        return 1
+    gaps = []
+    prev = None
+    for d in seg:
+        cur = datetime.strptime(d["date"], "%Y-%m-%d").date()
+        if prev is not None:
+            gaps.append((cur - prev).days)
+        prev = cur
+    gaps.sort()
+    return gaps[len(gaps) // 2]
+
+
+def fetch_daily(session, code, suffix=".T", range_="10y"):
+    """日足を [{date, open, high, low, close, volume}] (古い順) で返す。
+
+    重要: Yahooは range=max & interval=1d を指定しても月足を返すことがある
+    （2026-08に本番で発生したデグレの原因）。そのため:
+      1. 主データは range=10y で取得（日足が保証される）
+      2. 念のため粒度を検証し、日足でなければ10yで取り直す
+      3. 全期間チャート用の月足は fetch_all_history() で別途明示的に取得する
+    """
+    days = _fetch_chart(session, code, suffix, range_, "1d")
+    if not days:
+        return days
+    # 粒度ガード: 「日足のはず」が週足/月足で返ってきたら取り直す
+    if _median_gap_days(days) > 4:
+        print(f"  ! {code}: 日足要求に対し粗い足が返却 (range={range_}) → 10yで再取得",
+              file=sys.stderr)
+        redo = _fetch_chart(session, code, suffix, "10y", "1d")
+        if redo and _median_gap_days(redo) <= 4:
+            days = redo
+        elif redo is None or _median_gap_days(days) > 4:
+            # 日足が得られない場合はこの銘柄を不成立扱い（月足で判定すると誤判定するため）
+            return None
+    return days
+
+
+def fetch_all_history(session, code, suffix=".T"):
+    """全期間チャート用に月足の終値系列 [[date, close], ...] を返す（失敗時None）。
+    月足はあくまで長期の形を見るための素材で、判定・シミュレーションには使わない。"""
+    mo = _fetch_chart(session, code, suffix, "max", "1mo", retries=1)
+    if not mo or len(mo) < 12:
+        return None
+    return [[d["date"], round(d["close"], 1)] for d in mo]
+
+
+_ALLHIST_CACHE = {}  # code -> [[date, close], ...] 月足の全期間終値（全期間チャート用）
+
+_FUND_CACHE = {}  # code -> metaから拾ったファンダ素材（_fetch_chart内で埋まる）
 
 
 # ------------------------------------------------------------
@@ -806,7 +858,7 @@ def score_stock(s):
 #  - W底（ダブルボトム）形成
 #  - セリングクライマックス兆候（出来高急増+長い下ヒゲ）
 # ------------------------------------------------------------
-def compute_long_metrics(days_full):
+def compute_long_metrics(days_full, code=None):
     out = {}
     if not days_full or len(days_full) < 120:
         return out
@@ -975,9 +1027,27 @@ def compute_long_metrics(days_full):
     closes3 = closes[-n3:]
     out["spark"] = [[dates3[i], round(closes3[i], 1)] for i in range(0, n3, 5)]
     out["spark10"] = _spark_slice(min(len(closes), 2450), 150)
-    if len(closes) > 2500:
-        out["sparkall"] = _spark_slice(0, 160)
-        out["years_all"] = round(len(closes) / 245)
+    # 全期間: 別途取得した月足（_ALLHIST_CACHE）を使う。
+    # 日足の10年分より約1年以上長い履歴があるときだけ「全期間」を出す
+    # （上場10年未満なら10年チャートが実質全期間なので重複表示しない）。
+    allhist = _ALLHIST_CACHE.get(code) if code else None
+    if allhist and len(allhist) >= 12:
+        try:
+            d_first = datetime.strptime(allhist[0][0], "%Y-%m-%d").date()
+            d_last = datetime.strptime(allhist[-1][0], "%Y-%m-%d").date()
+            daily_first = datetime.strptime(dates[0], "%Y-%m-%d").date()
+            span_years = (d_last - d_first).days / 365.25
+            if (daily_first - d_first).days > 365:
+                step = max(1, len(allhist) // 160)
+                sp = [allhist[i] for i in range(0, len(allhist), step)]
+                if sp and sp[-1][0] != allhist[-1][0]:
+                    sp.append(allhist[-1])
+                # 最新の日足終値で末尾を上書き（月足の遅延対策）
+                sp[-1] = [dates[-1], round(closes[-1], 1)]
+                out["sparkall"] = sp
+                out["years_all"] = max(1, round(span_years))
+        except Exception:
+            pass
     return out
 
 
@@ -1990,24 +2060,20 @@ function draw(ts){
       ctx.beginPath(); ctx.arc(mx,my,1.6,0,Math.PI*2); ctx.fill();
     }
   }
-  /* points */
-  var zf=Math.pow(zoom,0.22);   /* 拡大しても球はあまり大きくしない（ぼやけ防止・ユーザ要望） */
-  var glowMin=ST.length>1500?5.2:1.8;   /* 大規模時は大きな点だけ光らせて60fpsを守る */
+  /* points: 全銘柄まったく同じ小さな点。ズーム・奥行きで大きさを変えない
+     （ユーザ要望: 大きさのばらつき＝差別に見える／拡大でぼやける、の両方を排除）。
+     以前あった光彩（ハロー）描画は「ぼやけ」の正体だったため廃止。 */
+  var R_DOT=2.1;
   for(var oi=0;oi<order.length;oi++){
     var idx=order[oi], s=ST[idx];
     if(!SHOW_EX && s.ex) continue;
     if(isHidden(s)) continue;
     if(s.px<-20||s.px>W+20||s.py<-20||s.py>H+20) continue;
-    var r=Math.min(4.5,1.5*s.pf*zf);   /* 全銘柄おなじ・小さめの点 */
+    var r=R_DOT;
     var a=fogA(s)*(s.ex?0.45:1);
     if(focused) a*= fset[idx]? 1 : (fset2[idx]? 0.34 : 0.07);
     if(a<0.02) continue;
-    if(fset&&fset[idx]){ r*=1.35; }
-    if(r>glowMin && a>0.25){
-      ctx.globalAlpha=a*0.22;
-      ctx.fillStyle=s.col;
-      ctx.beginPath(); ctx.arc(s.px,s.py,r*2.4,0,Math.PI*2); ctx.fill();
-    }
+    if(focused&&fset&&fset[idx]){ r=R_DOT*1.4; }  /* フォーカス時の関連銘柄のみ僅かに強調 */
     ctx.globalAlpha=a;
     ctx.fillStyle=s.col;
     ctx.beginPath(); ctx.arc(s.px,s.py,r,0,Math.PI*2); ctx.fill();
@@ -2041,14 +2107,14 @@ function draw(ts){
     var hs=ST[hoverI];
     if(!(focused && !fset[hoverI] && !fset2[hoverI])){
       ctx.strokeStyle=CAM.theme==='light'?'rgba(20,40,70,.7)':'rgba(255,255,255,.75)'; ctx.lineWidth=1.2;
-      ctx.beginPath(); ctx.arc(hs.px,hs.py,Math.min(4.5,1.5*hs.pf*Math.pow(zoom,0.22))+3,0,Math.PI*2); ctx.stroke();
+      ctx.beginPath(); ctx.arc(hs.px,hs.py,5.2,0,Math.PI*2); ctx.stroke();
       labelFor(hs,hs.name,11.5,themeC().focusLabel);
     }
   }
   /* focus label */
   if(focused){
     var FS=ST[focusI];
-    var lr=Math.min(4.5,1.5*FS.pf*Math.pow(zoom,0.22))*1.6;
+    var lr=3.4;
     ctx.strokeStyle=rgbaOf(colAdj('#4dd7ff'),0.9); ctx.lineWidth=1.4;
     ctx.beginPath(); ctx.arc(FS.px,FS.py,lr+3.5+Math.sin(ts*0.004)*1.2,0,Math.PI*2); ctx.stroke();
     labelFor(FS,FS.name,15,themeC().focusLabel);
@@ -2257,6 +2323,8 @@ function focusOn(i, fly){
   TRAIL.push(i);
   if(TRAIL.length>8) TRAIL.shift();
   var s=ST[i];
+  /* 最後に見た銘柄を記憶 → 次にタブへ戻ってきたとき同じ銘柄から再開できる */
+  try{ localStorage.setItem('kabuobaa_map_last', s.code); }catch(e){}
   /* どの経路でも: カメラはその銘柄が中央に来るよう寄って拡大。
      ✕で外してもこのカメラ位置に留まる（clearFocusはカメラに触れない） */
   if(fly){
@@ -2318,7 +2386,7 @@ function focusOn(i, fly){
       +'</div>';
   }
   h+='<div class="plinks">'
-    +'<a class="plink" href="universe.html?q='+s.code+'">台帳で判定</a>'
+    +'<a class="plink" href="universe.html?q='+s.code+'">全銘柄台帳で見る</a>'
     +'<a class="plink" href="caps.html?c='+s.code+'">時価総額マップ</a>'
     +'<a class="plink y" href="https://finance.yahoo.co.jp/quote/'+s.code+'.T" target="_blank" rel="noopener">Yahoo! →</a>'
     +'</div>';
@@ -2509,7 +2577,13 @@ fetch('map.json').then(function(r){
   resize();
   var mq=new URLSearchParams(location.search).get('c');
   if(mq&&byCode[mq]!=null){ focusOn(byCode[mq]); }
-  else { maybeIntro(); }
+  else {
+    /* URL指定がなければ、前回フォーカスしていた銘柄を初期表示として復元 */
+    var last=null;
+    try{ last=localStorage.getItem('kabuobaa_map_last'); }catch(e){}
+    if(last&&byCode[last]!=null){ focusOn(byCode[last]); }
+    else { maybeIntro(); }
+  }
 }).catch(function(e){
   document.getElementById('loading').textContent='⚠ '+e.message;
 });
@@ -3063,6 +3137,16 @@ def run_screening():
     def task(stock):
         days = fetch_daily(_get_session(), stock["code"], stock["suffix"])
         time.sleep(CONFIG["THROTTLE_SEC"])
+        # 上場約10年以上の銘柄のみ、全期間チャート用の月足を追加取得
+        # （10年未満なら10年チャートが全期間を兼ねるため不要）
+        if days and len(days) >= 2350:
+            try:
+                ah = fetch_all_history(_get_session(), stock["code"], stock["suffix"])
+                if ah:
+                    _ALLHIST_CACHE[stock["code"]] = ah
+            except Exception:
+                pass
+            time.sleep(CONFIG["THROTTLE_SEC"])
         return stock, days
 
     candidates, dead_count, skip_count, fail_count = [], 0, 0, 0
@@ -3090,7 +3174,7 @@ def run_screening():
             status, reason = classify(m)
             base["close"] = round(m["close"], 1)
             base["drop_pct"] = round(m["drop_pct"], 2)
-            long_m = compute_long_metrics(days_full)
+            long_m = compute_long_metrics(days_full, code=stock["code"])
             detail_map[stock["code"]] = {
                 **stock, **m, "status": status, "reason": reason,
                 "days": days[-10:], "long": long_m,
@@ -4346,150 +4430,13 @@ function openSBI(code, e){
 # ページ内から夜間バッチ(GitHub Actions)を起動する「いま更新」ボタン
 _REPO_SLUG = os.environ.get("GITHUB_REPOSITORY", "").strip() or "hashimotokannna/kabuobaa"
 
-UPDATE_JS = '''<script>
-(function(){
-  var REPO = "__REPO__";
-  var API = "https://api.github.com/repos/" + REPO + "/actions/workflows/nightly.yml";
-  var TKEY = "kabuobaa_ghtoken";
-
-  function el(tag, cls, htmlStr){
-    var d = document.createElement(tag);
-    if (cls) d.className = cls;
-    if (htmlStr !== undefined) d.innerHTML = htmlStr;
-    return d;
-  }
-
-  function fmtTime(iso){
-    try {
-      var d = new Date(iso);
-      return (d.getMonth() + 1) + "/" + d.getDate() + " " +
-             ("0" + d.getHours()).slice(-2) + ":" + ("0" + d.getMinutes()).slice(-2);
-    } catch (e) { return iso; }
-  }
-
-  function fetchStatus(box){
-    box.textContent = "実行状況を確認中…";
-    fetch(API + "/runs?per_page=1", {headers: {"Accept": "application/vnd.github+json"}})
-      .then(function(r){ return r.ok ? r.json() : null; })
-      .then(function(j){
-        var run = j && j.workflow_runs && j.workflow_runs[0];
-        if (!run){ box.textContent = "実行状況を取得できませんでした"; return; }
-        var st = run.status, cc = run.conclusion;
-        var label = st === "completed"
-          ? (cc === "success" ? "✅ 前回の更新は成功" : "⚠ 前回の更新は失敗（" + (cc || "不明") + "）")
-          : "⏳ いま更新が実行中です";
-        box.innerHTML = label + " <small>開始 " + fmtTime(run.created_at) + "</small>";
-      })
-      .catch(function(){ box.textContent = "実行状況を取得できませんでした（通信エラー）"; });
-  }
-
-  function runDispatch(msg){
-    var token = localStorage.getItem(TKEY) || "";
-    if (!token){ msg.textContent = "先に下でトークンを保存してください"; return; }
-    msg.textContent = "更新を依頼しています…";
-    fetch(API + "/dispatches", {
-      method: "POST",
-      headers: {"Accept": "application/vnd.github+json",
-                "Authorization": "Bearer " + token,
-                "Content-Type": "application/json"},
-      body: JSON.stringify({ref: "main"})
-    }).then(function(r){
-      if (r.status === 204){
-        msg.innerHTML = "✅ 更新を開始しました。全銘柄の取得に<b>30〜60分</b>ほどかかります。"
-          + "終わった頃にページを再読み込みしてください（このボタンの「状況を確認」でも見られます）。";
-      } else if (r.status === 401){
-        msg.textContent = "⚠ トークンが無効です（期限切れの可能性）。作り直して保存し直してください。";
-      } else if (r.status === 403 || r.status === 404){
-        msg.textContent = "⚠ 権限がありません。トークンの対象リポジトリと Actions(Read and write) 権限を確認してください。";
-      } else {
-        msg.textContent = "⚠ 失敗しました（HTTP " + r.status + "）";
-      }
-    }).catch(function(){ msg.textContent = "⚠ 通信エラーで依頼できませんでした"; });
-  }
-
-  window.updOpen = function(){
-    var old = document.getElementById("updmodal");
-    if (old){ old.remove(); return; }
-    var wrap = el("div", "", "");
-    wrap.id = "updmodal";
-    var hasToken = !!localStorage.getItem(TKEY);
-    var card = el("div", "updcard",
-      '<div class="updh">データを今すぐ更新 <button type="button" class="updx" id="updclose">✕</button></div>'
-      + '<div class="updstat" id="updstat"></div>'
-      + '<div class="updrow"><button type="button" class="updgo" id="updgo">🔄 更新を開始する</button>'
-      + '<button type="button" class="updchk" id="updchk">状況を確認</button></div>'
-      + '<div class="updmsg" id="updmsg"></div>'
-      + '<details class="updtok"' + (hasToken ? "" : " open") + '><summary>'
-      + (hasToken ? "🔑 トークン設定済み（変更はこちら）" : "🔑 初回のみ: 更新用トークンの設定") + '</summary>'
-      + '<div class="updtokbody">'
-      + '<div class="updnote">GitHubの「実行ボタン」をこのページから押すための鍵です。'
-      + '<b>この端末の中にだけ保存され、GitHub以外には送信されません。</b></div>'
-      + '<ol class="updsteps">'
-      + '<li>GitHubにログインし <a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noopener">トークン作成ページ</a> を開く</li>'
-      + '<li>Token name: <b>kabuobaa-update</b> ／ Expiration: 1年など長めに</li>'
-      + '<li>Repository access: <b>Only select repositories</b> → <b>' + REPO + '</b> を選ぶ</li>'
-      + '<li>Permissions → Repository permissions → <b>Actions</b> を <b>Read and write</b> に</li>'
-      + '<li>Generate token を押し、表示された github_pat_… を下に貼り付けて保存</li>'
-      + '</ol>'
-      + '<div class="updrow"><input type="password" id="updtoken" class="updin" placeholder="github_pat_… を貼り付け">'
-      + '<button type="button" class="updsave" id="updsave">保存</button></div>'
-      + (hasToken ? '<button type="button" class="upddel" id="upddel">この端末からトークンを削除</button>' : "")
-      + '</div></details>');
-    wrap.appendChild(card);
-    document.body.appendChild(wrap);
-    wrap.addEventListener("click", function(e){ if (e.target === wrap) wrap.remove(); });
-    document.getElementById("updclose").onclick = function(){ wrap.remove(); };
-    var stat = document.getElementById("updstat");
-    var msg = document.getElementById("updmsg");
-    fetchStatus(stat);
-    document.getElementById("updchk").onclick = function(){ fetchStatus(stat); };
-    document.getElementById("updgo").onclick = function(){ runDispatch(msg); };
-    document.getElementById("updsave").onclick = function(){
-      var v = (document.getElementById("updtoken").value || "").trim();
-      if (!v){ msg.textContent = "トークンを貼り付けてから保存を押してください"; return; }
-      localStorage.setItem(TKEY, v);
-      msg.textContent = "✅ 保存しました。「更新を開始する」を押せます。";
-    };
-    var del = document.getElementById("upddel");
-    if (del) del.onclick = function(){
-      localStorage.removeItem(TKEY);
-      msg.textContent = "トークンを削除しました";
-    };
-  };
-})();
-</script>'''.replace("__REPO__", _REPO_SLUG)
+UPDATE_JS = ""  # 更新ボタンは単純なページ再読み込み（F5相当）に変更済み
 
 UPDATE_CSS = """
   header{position:relative;}
   header .t{padding-right:88px;}
   .updbtn{position:absolute; right:0; top:4px; font-size:11px; font-weight:800; color:#2e4d7b;
     background:#e8eef8; border:none; border-radius:8px; padding:6px 10px; cursor:pointer;}
-  #updmodal{position:fixed; inset:0; background:rgba(0,0,0,.45); z-index:90;
-    display:flex; align-items:center; justify-content:center; padding:16px;}
-  .updcard{background:#fffdf6; border-radius:14px; padding:14px; width:100%; max-width:420px;
-    max-height:85vh; overflow-y:auto; box-shadow:0 8px 30px rgba(0,0,0,.25);}
-  .updh{font-size:14px; font-weight:800; display:flex; justify-content:space-between; align-items:center;}
-  .updx{border:none; background:none; font-size:15px; cursor:pointer; color:#6b6b70;}
-  .updstat{font-size:11.5px; color:#4a4a4f; background:#f4f1e8; border-radius:8px; padding:8px 10px; margin:10px 0;}
-  .updstat small{color:#8e8e93;}
-  .updrow{display:flex; gap:8px; margin:8px 0;}
-  .updgo{flex:1; font-size:13px; font-weight:800; color:#fff; background:#1c1c1e; border:none;
-    border-radius:10px; padding:11px; cursor:pointer;}
-  .updchk{font-size:12px; font-weight:700; color:#2e4d7b; background:#e8eef8; border:none;
-    border-radius:10px; padding:11px; cursor:pointer;}
-  .updmsg{font-size:12px; line-height:1.7; color:#3a5a40; min-height:16px; margin:4px 0;}
-  .updtok{background:#f4f1e8; border-radius:10px; margin-top:8px;}
-  .updtok summary{list-style:none; cursor:pointer; font-size:12px; font-weight:800; color:#7a6a45; padding:9px 12px;}
-  .updtok summary::-webkit-details-marker{display:none;}
-  .updtokbody{padding:0 12px 10px;}
-  .updnote{font-size:11px; color:#4a4a4f; line-height:1.7; margin-bottom:6px;}
-  .updsteps{font-size:11px; color:#4a4a4f; line-height:1.8; padding-left:18px; margin:6px 0;}
-  .updsteps a{color:#2e4d7b; font-weight:700;}
-  .updin{flex:1; font-size:12px; border:1px solid #d8d2c2; border-radius:8px; padding:8px; background:#fff; min-width:0;}
-  .updsave{font-size:12px; font-weight:800; color:#fff; background:#3a5a40; border:none; border-radius:8px;
-    padding:8px 14px; cursor:pointer;}
-  .upddel{border:none; background:none; font-size:10.5px; color:#c62f2f; text-decoration:underline;
-    cursor:pointer; padding:2px 0;}
 """
 
 
@@ -4964,7 +4911,7 @@ __NAVCSS__
 <body>
 __NAV__
 <header>
-  <button type="button" class="updbtn" onclick="updOpen()">🔄 いま更新</button>
+  <button type="button" class="updbtn" onclick="location.reload()">🔄 更新</button>
   <div class="t">今夜の厳選<span id="showncnt">{cfg["TOP_N"]}</span>銘柄</div>
   <div class="s">{date_str} {dt.hour:02d}:{dt.minute:02d} 記帳{"（取引時間中・当日分は途中経過）" if is_intraday else ""} ・ 根拠スコア順{f' ・ ↑↓は {data["prev_date"][5:].replace("-", "/")} 確定記帳との比較' if data.get("prev_date") else ""} ・ 判断はご自身で</div>
 </header>
@@ -5559,7 +5506,7 @@ if (qp){ const qe=document.getElementById('q'); qe.value=qp; apply();
                 "各行に個別の理由を表示。判定は毎回の実行で更新されます。")
     return (SUBPAGE_TEMPLATE
             .replace("__NAVCSS__", NAV_CSS)
-            .replace("__HEADBTN__", '<button type="button" class="updbtn" onclick="updOpen()">🔄 いま更新</button>')
+            .replace("__HEADBTN__", '<button type="button" class="updbtn" onclick="location.reload()">🔄 更新</button>')
             .replace("__NAVJS__", NAV_JS)
             .replace("__NAV__", nav_html("universe"))
             .replace("__TITLE__", "全銘柄台帳 — 約4,000銘柄の判定と根拠")
@@ -5613,8 +5560,7 @@ def render_guide(dt):
 <div class="gt"><b>スワイプ</b>で左右のタブへ移動 ／ 銘柄コード（例 2489 ⧉）を<b>タップでコピー</b> ／
 <b>SBIアプリ連携</b>は1回だけ設定：ショートカットApp →「＋」→「Appを開く」→ SBI証券 株 → 名前を「SBIへ」に</div>
 <div class="gt" style="margin-top:6px"><b>更新タイミング</b> 平日 9:40〜14:40毎時・15:45・20:30（夜が入れ替え基準）。実行に30〜60分かかるため表示は最大1時間前の値です</div>
-<div class="gt" style="margin-top:6px"><b>「🔄 いま更新」ボタン</b>（「今夜の厳選」と「全銘柄台帳」の右上）でページから直接更新を起動できます。
-初回だけGitHubの「更新用トークン」の設定が必要（ボタン内に手順あり・5分）。トークンはこの端末にだけ保存され、GitHub以外には送信されません</div></div>
+<div class="gt" style="margin-top:6px"><b>「🔄 更新」ボタン</b>（「今夜の厳選」と「全銘柄台帳」の右上）はページの再読み込み（F5と同じ）。スマホでも最新の記帳に切り替えられます</div></div>
 """
     extra_css = """
   .gcard{border-radius:14px; padding:13px 15px; margin-bottom:12px; border-left:6px solid;}
@@ -6043,10 +5989,10 @@ function draw(){
     s.px=X(s.lx); s.py=Y(s.ly);
     if(s.px<PAD.l-4||s.px>W-PAD.r+4||s.py<PAD.t-4||s.py>H-PAD.b+4) continue;
     vis.push(i);
-    var r=s.m>=100000?3.2:(s.m>=10000?2.6:(s.m>=1000?2:(s.m>=100?1.5:1.1)));
-    ctx.globalAlpha=s.m>=1000?0.85:0.5;
+    /* 全銘柄おなじ小さな点（大きさは時価総額と無関係。位置だけが情報） */
+    ctx.globalAlpha=0.8;
     ctx.fillStyle=colOf(s);
-    ctx.beginPath(); ctx.arc(s.px,s.py,r,0,Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.arc(s.px,s.py,1.6,0,Math.PI*2); ctx.fill();
   }
   ctx.globalAlpha=1;
   /* ビュー内の時価総額上位にラベル（ズームするほどその場の顔ぶれが見える） */
@@ -7309,7 +7255,9 @@ def render_sim(payload, dt):
   <div class="simrule">③ <b>同じ銘柄を保有中は重ね買いしない</b>（1位が連日同じ銘柄でもスキップ・記録は残す）</div>
   <div class="simrule">④ どちらにも届かないまま残った株は<b>塩漬け株</b>として保有し続け、最新終値で評価。資金は無制限・100株ずつ</div>
   <div class="gt" style="margin-top:6px;"><span class="ssrc">復元</span> = 過去の1位を価格由来の要素（安さ・下げ止まり・トレンド・RSI・流動性）で復元した区間（過去時点の財務は取得不能のため質スコアは現在値で固定）。
-  <span class="ssrc live">実測</span> = システムが毎晩実際に選んだ1位。日が経つほど実測の比率が上がり、検証の信頼度が上がります。</div>
+  <span class="ssrc live">実測</span> = システムが毎晩実際に選んだ1位。日が経つほど実測の比率が上がり、検証の信頼度が上がります。<br>
+  <b>いま「復元」ばかりなのは異常ではありません。</b>実測の蓄積はこの機能を追加した日から始まったばかりで、過去1年の大半はどうしても復元になります。
+  実測期間が始まる前の区間は今後もずっと「復元」のまま残り、これから毎晩1日ずつ「実測」が増えていきます（1年後には全区間が実測になります）。</div>
 </div>
 
 <div class="card">
@@ -7548,6 +7496,8 @@ function renderRec(reset){
       line2='<b>'+md(t.buy_date)+'</b> '+t.buy.toLocaleString()+'円で買付 → 保有中（現在 '+(t.last!=null?t.last.toLocaleString():'−')+'円・'+(t.held||0)+'日目）';
     } else if(t.ev==='nofill'){
       line2='<b>'+md(t.buy_date)+'</b> '+t.buy.toLocaleString()+'円の指値に届かず破棄';
+    } else if(t.n>1){
+      line2='<b>'+md(t.buy_date)+'〜'+md(t.to)+'</b> の'+t.n+'営業日連続で1位だが、同銘柄を保有中のため重ね買いせず（1行に圧縮表示）';
     } else {
       line2='<b>'+md(t.buy_date)+'</b> 同銘柄を保有中のため重ね買いせず';
     }
@@ -7731,6 +7681,7 @@ def _exec_ifdoco(all_dates, bar_at, picks_of, namemap, sim_ohlc,
     date_i = {d: i for i, d in enumerate(all_dates)}
     cum = 0.0
     tp_n = sl_n = fill_n = nofill_n = skip_n = gate_n = 0
+    skip_runs = {}  # code -> (skip行, 最後にスキップした日のindex) 連続スキップの圧縮用
     max_inv = 0.0
     max_pos = 0
     inv_sum = 0.0
@@ -7778,8 +7729,18 @@ def _exec_ifdoco(all_dates, bar_at, picks_of, namemap, sim_ohlc,
             if cand is None:
                 skip_n += 1
                 c0 = pend["cands"][0]
-                trades.append({"code": c0, "name": namemap.get(c0, c0), "src": pend["src"],
-                               "buy_date": d, "buy": round(pend["prices"].get(c0, 0), 1), "ev": "skip"})
+                # 連続する同一銘柄のスキップは1行に圧縮（buy_date=開始日, to=最終日, n=日数）
+                run = skip_runs.get(c0)
+                if run is not None and run[1] == i - 1:
+                    run[0]["to"] = d
+                    run[0]["n"] = run[0].get("n", 1) + 1
+                    skip_runs[c0] = (run[0], i)
+                else:
+                    t_skip = {"code": c0, "name": namemap.get(c0, c0), "src": pend["src"],
+                              "buy_date": d, "buy": round(pend["prices"].get(c0, 0), 1),
+                              "ev": "skip", "n": 1}
+                    trades.append(t_skip)
+                    skip_runs[c0] = (t_skip, i)
             else:
                 price = pend["prices"].get(cand)
                 bar = bar_at(cand, d)
