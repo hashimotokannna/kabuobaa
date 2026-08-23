@@ -1530,6 +1530,20 @@ MAP_TEMPLATE = r"""<!DOCTYPE html>
   --line:#1e293b; --line2:#2b3a52;
   --tx:#dce5f2; --tx2:#8fa0b8; --dim:#6b7a91;
   --cy:#4dd7ff; --gr:#3ddc97; --am:#ffc14d; --rd:#ff5a76; --pu:#b78cff; --bl:#5b8cff;
+  --field:#0a0f18; --card2:#0f1624; --chipbg:#101828; --legbg:rgba(9,13,19,.78); --onink:#06131a;
+}
+html[data-theme="gray"]{
+  --bg:#51565f; --panel:#464b54; --panel2:#4b505a;
+  --line:#5c626e; --line2:#6d7382;
+  --tx:#f0f3f8; --tx2:#ccd2dd; --dim:#a3aab6;
+  --field:#3f444d; --card2:#3f444d; --chipbg:#3a3f48; --legbg:rgba(64,68,76,.82); --onink:#20242b;
+}
+html[data-theme="light"]{
+  --bg:#f2f2f7; --panel:#ffffff; --panel2:#f7f7fa;
+  --line:#e3e2dc; --line2:#cfcec6;
+  --tx:#1c1c1e; --tx2:#4c586a; --dim:#8e8e93;
+  --cy:#0e7ea8;
+  --field:#ffffff; --card2:#f4f5f8; --chipbg:#eef0f4; --legbg:rgba(255,255,255,.88); --onink:#ffffff;
 }
 *{box-sizing:border-box; margin:0; padding:0; -webkit-tap-highlight-color:transparent;}
 html,body{height:100%; overflow:hidden; background:var(--bg);}
@@ -1540,6 +1554,8 @@ body{color:var(--tx); font-family:"Hiragino Sans","Yu Gothic",system-ui,sans-ser
 
 .hdr{flex:none; display:flex; align-items:center; gap:10px; padding:0 12px; height:46px;
   background:linear-gradient(180deg,#0d1219,#080b10); border-bottom:1px solid var(--line);}
+html[data-theme="gray"] .hdr{background:linear-gradient(180deg,#4b505a,#464b54);}
+html[data-theme="light"] .hdr{background:linear-gradient(180deg,#ffffff,#f4f4f7);}
 .hdr .back{color:var(--tx2); text-decoration:none; font-size:12px; font-weight:700; flex:none;}
 .hdr .logo{font-family:ui-monospace,Menlo,monospace; font-size:12px; font-weight:700;
   letter-spacing:.2em; color:var(--cy); text-shadow:0 0 16px rgba(77,215,255,.4); flex:none;}
@@ -1549,8 +1565,8 @@ body{color:var(--tx); font-family:"Hiragino Sans","Yu Gothic",system-ui,sans-ser
   overflow-x:auto; scrollbar-width:none; -webkit-overflow-scrolling:touch;}
 .dnav::-webkit-scrollbar{display:none;}
 .dnav a{flex:none; font-size:11.5px; font-weight:700; color:var(--tx2); text-decoration:none;
-  background:#0a0f18; border:1px solid var(--line); border-radius:14px; padding:5px 12px;}
-.dnav a.act{background:var(--cy); color:#06131a; border-color:var(--cy);}
+  background:var(--field); border:1px solid var(--line); border-radius:14px; padding:5px 12px;}
+.dnav a.act{background:var(--cy); color:var(--onink); border-color:var(--cy);}
 
 .toolrow{flex:none; display:flex; gap:6px; align-items:center; padding:7px 10px;
   background:var(--panel2); border-bottom:1px solid var(--line); overflow-x:auto;
@@ -1558,25 +1574,25 @@ body{color:var(--tx); font-family:"Hiragino Sans","Yu Gothic",system-ui,sans-ser
 .toolrow::-webkit-scrollbar{display:none;}
 .toolwrap{position:relative; flex:none;}
 .toolwrap::after{content:''; position:absolute; right:0; top:0; bottom:0; width:36px;
-  background:linear-gradient(90deg, rgba(11,15,22,0), #0b0f16); pointer-events:none;}
+  background:linear-gradient(90deg, rgba(11,15,22,0), var(--panel2)); pointer-events:none;}
 .srchwrap{position:relative; flex:none;}
-.srch{width:168px; background:#0a0f18; border:1px solid var(--line2); border-radius:6px;
+.srch{width:168px; background:var(--field); border:1px solid var(--line2); border-radius:6px;
   color:var(--tx); font-size:13px; padding:6px 9px; outline:none;}
 .srch:focus{border-color:var(--cy);}
-.sugg{position:absolute; left:0; top:34px; width:238px; background:#0d1420; border:1px solid var(--line2);
+.sugg{position:absolute; left:0; top:34px; width:238px; background:var(--panel); border:1px solid var(--line2);
   border-radius:6px; z-index:40; max-height:250px; overflow-y:auto; display:none;
   box-shadow:0 10px 34px rgba(0,0,0,.5);}
 .sugg.show{display:block;}
-.sugg .it{padding:7px 10px; font-size:12px; cursor:pointer; border-top:1px solid #131a28;}
+.sugg .it{padding:7px 10px; font-size:12px; cursor:pointer; border-top:1px solid var(--line);}
 .sugg .it:first-child{border-top:none;}
-.sugg .it:hover{background:#141d2e;}
+.sugg .it:hover{background:var(--card2);}
 .sugg .it small{color:var(--dim); font-family:ui-monospace,Menlo,monospace; margin-left:5px;}
 .sugg .cnt-it{padding:6px 10px; font-size:10px; color:var(--dim); font-weight:700;
   border-bottom:1px solid #131a28; letter-spacing:.05em;}
 .modes{display:flex; border:1px solid var(--line2); border-radius:6px; overflow:hidden; flex:none;}
 .modes button{border:0; padding:6px 10px; font-size:10.5px; font-weight:700; letter-spacing:.06em;
   background:transparent; color:var(--dim); cursor:pointer; white-space:nowrap;}
-.modes button.on{background:var(--cy); color:#06131a;}
+.modes button.on{background:var(--cy); color:var(--onink);}
 .tbtn{flex:none; border:1px solid var(--line2); border-radius:6px; background:transparent;
   color:var(--tx2); font-size:10.5px; font-weight:700; padding:6px 9px; cursor:pointer; white-space:nowrap;}
 .tbtn.on{border-color:var(--cy); color:var(--cy);}
@@ -1584,11 +1600,13 @@ body{color:var(--tx); font-family:"Hiragino Sans","Yu Gothic",system-ui,sans-ser
 .main{flex:1; display:flex; min-height:0; position:relative;}
 #stage{flex:1; position:relative; min-width:0; overflow:hidden;
   background:radial-gradient(120% 90% at 50% 40%, #0d141f 0%, #080b10 70%);}
+html[data-theme="gray"] #stage{background:radial-gradient(120% 90% at 50% 40%, #5a5f6a 0%, #4b5058 70%);}
+html[data-theme="light"] #stage{background:radial-gradient(120% 90% at 50% 40%, #ffffff 0%, #eceef2 70%);}
 canvas{display:block; width:100%; height:100%; cursor:grab; touch-action:none;}
 canvas.drag{cursor:grabbing;}
 
 .legend{position:absolute; left:10px; bottom:10px; pointer-events:auto; cursor:default;
-  background:rgba(9,13,19,.78); backdrop-filter:blur(6px); border:1px solid var(--line);
+  background:var(--legbg); backdrop-filter:blur(6px); border:1px solid var(--line);
   border-radius:6px; padding:7px 10px; max-width:230px; z-index:5;}
 .legend .t{font-size:9.5px; font-weight:700; color:var(--dim); letter-spacing:.14em; margin-bottom:3px;}
 .legend .row{display:flex; align-items:center; gap:6px; font-size:10.5px; color:var(--tx2); padding:1px 0;}
@@ -1606,7 +1624,7 @@ canvas.drag{cursor:grabbing;}
   font-size:9.5px; color:var(--dim); line-height:1.6;}
 .legend .mean b{color:var(--tx2);}
 .hint{position:absolute; right:10px; top:10px; pointer-events:none; font-size:10px; color:var(--dim);
-  background:rgba(9,13,19,.7); border:1px solid var(--line); border-radius:6px; padding:5px 9px; z-index:5;}
+  background:var(--legbg); border:1px solid var(--line); border-radius:6px; padding:5px 9px; z-index:5;}
 
 .panel{flex:none; width:0; overflow:hidden; background:var(--panel); border-left:1px solid var(--line);
   transition:width .18s ease; display:flex; flex-direction:column;}
@@ -1614,16 +1632,16 @@ canvas.drag{cursor:grabbing;}
 .pbody{flex:1; overflow-y:auto; padding:14px; min-width:290px;}
 .pclose{position:absolute; right:10px; top:10px; border:1px solid var(--line2); background:transparent;
   color:var(--dim); border-radius:5px; font-size:12px; padding:2px 8px; cursor:pointer;}
-.pn{font-size:17px; font-weight:800; color:#eaf3ff; padding-right:40px; line-height:1.4;}
+.pn{font-size:17px; font-weight:800; color:var(--tx); padding-right:40px; line-height:1.4;}
 .pc{font-family:ui-monospace,Menlo,monospace; font-size:11px; color:var(--dim); margin-bottom:8px;}
 .pfacts{display:flex; flex-wrap:wrap; gap:5px; margin-bottom:12px;}
-.pf{font-size:10.5px; color:var(--tx2); background:#101828; border:1px solid var(--line);
+.pf{font-size:10.5px; color:var(--tx2); background:var(--chipbg); border:1px solid var(--line);
   border-radius:5px; padding:3px 8px;}
 .ph{font-size:10px; font-weight:700; color:var(--dim); letter-spacing:.16em; margin:12px 0 6px;}
-.nb{display:block; background:#0f1624; border:1px solid var(--line); border-radius:8px;
+.nb{display:block; background:var(--card2); border:1px solid var(--line); border-radius:8px;
   padding:8px 10px; margin-bottom:6px; cursor:pointer;}
 .nb:hover{border-color:var(--line2);}
-.nb .nbn{font-size:13px; font-weight:700; color:#e8f1ff;}
+.nb .nbn{font-size:13px; font-weight:700; color:var(--tx);}
 .nb .nbn small{font-family:ui-monospace,Menlo,monospace; color:var(--dim); font-weight:400; margin-left:5px;}
 .nb .sim{float:right; font-family:ui-monospace,Menlo,monospace; font-size:12px; font-weight:700; color:var(--cy);}
 .nb .why{margin-top:3px; display:flex; flex-wrap:wrap; gap:4px;}
@@ -1656,9 +1674,10 @@ canvas.drag{cursor:grabbing;}
 .introcard{max-width:430px; background:var(--panel); border:1px solid var(--line2); border-radius:12px;
   padding:20px 22px; box-shadow:0 20px 60px rgba(0,0,0,.5);}
 .introcard h1{font-size:16px; color:var(--cy); margin-bottom:10px; letter-spacing:.04em;}
+html[data-theme="light"] .intro{background:rgba(240,240,245,.82);}
 .introcard p{font-size:12px; color:var(--tx2); line-height:1.9; margin-bottom:8px;}
 .introcard b{color:var(--tx);}
-.gostart{width:100%; margin-top:8px; border:none; border-radius:8px; background:var(--cy); color:#06131a;
+.gostart{width:100%; margin-top:8px; border:none; border-radius:8px; background:var(--cy); color:var(--onink);
   font-size:14px; font-weight:800; padding:11px; cursor:pointer;}
 .nointro{display:block; margin-top:8px; text-align:center; font-size:10.5px; color:var(--dim);
   background:none; border:none; cursor:pointer; width:100%;}
@@ -1667,7 +1686,7 @@ canvas.drag{cursor:grabbing;}
 .seg{display:flex; border:1px solid var(--line2); border-radius:6px; overflow:hidden;}
 .seg button{border:0; padding:5px 11px; font-size:11px; font-weight:700; background:transparent;
   color:var(--dim); cursor:pointer;}
-.seg button.on{background:var(--cy); color:#06131a;}
+.seg button.on{background:var(--cy); color:var(--onink);}
 .setnote{font-size:10.5px; color:var(--dim); line-height:1.7; padding:8px 0 2px;}
 #loading{position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
   color:var(--dim); font-family:ui-monospace,Menlo,monospace; font-size:12px; letter-spacing:.2em; z-index:20;}
@@ -1743,6 +1762,8 @@ canvas.drag{cursor:grabbing;}
       <button data-v="0.5">遅い</button><button data-v="1">標準</button><button data-v="2">速い</button></span></div>
     <div class="setrow"><span>奥行きの霧</span><span class="seg" data-k="fog">
       <button data-v="0">なし</button><button data-v="0.5">弱い</button><button data-v="1">標準</button></span></div>
+    <div class="setrow"><span>配色テーマ</span><span class="seg" data-k="theme">
+      <button data-v="dark">ダーク</button><button data-v="gray">グレー</button><button data-v="light">ホワイト</button></span></div>
     <div class="setrow"><span>座標軸の表示</span><span class="seg" data-k="axes">
       <button data-v="true">表示</button><button data-v="false">非表示</button></span></div>
     <div class="setrow"><span>銘柄名の常時表示</span><span class="seg" data-k="labels">
@@ -1783,11 +1804,29 @@ var EDGES=[], prio=[];
 /* カメラ設定（この端末に保存） */
 var CAM_KEY='kabuobaa_map_cam';
 var CAM={invX:false, invY:false, sens:1, spin:1, fog:1, axes:true, spinOn:true,
-         labels:true, links:true, legendOpen:true};
+         labels:true, links:true, legendOpen:true, theme:'dark'};
 try{ var cs=JSON.parse(localStorage.getItem(CAM_KEY)||'{}');
   for(var ck in CAM){ if(cs[ck]!==undefined) CAM[ck]=cs[ck]; } }catch(e){}
 SPIN=CAM.spinOn!==false;
+if(CAM.theme&&CAM.theme!=='dark'){ document.documentElement.dataset.theme=CAM.theme; }
 function saveCam(){ CAM.spinOn=SPIN; try{ localStorage.setItem(CAM_KEY,JSON.stringify(CAM)); }catch(e){} }
+/* 配色テーマ（ダーク/グレー/ホワイト）: キャンバス側の色もここで切替 */
+var LIGHTMAP={'#4dd7ff':'#0e7ea8','#ff5a76':'#c62f4f','#3ddc97':'#178a5b','#ffc14d':'#b07c10',
+  '#b78cff':'#7d55c7','#ff9c6b':'#c9661f','#5b8cff':'#2f57c9','#ffe066':'#a08a10',
+  '#a8e05f':'#5f9021','#f28ab5':'#c05585','#e8c49a':'#8a6f4d','#66d9c2':'#1d8a78','#33405c':'#c6ccd6'};
+function colAdj(hex){ return CAM.theme==='light' ? (LIGHTMAP[hex]||hex) : hex; }
+function themeC(){
+  if(CAM.theme==='light') return {star:'#c3cddf', label:'#3c485c', labelDim:'#98a2b3',
+    labelBg:'rgba(255,255,255,.75)', edgeRGB:'70,105,160', focusLabel:'#12202f', nbLabel:'#31445c'};
+  if(CAM.theme==='gray') return {star:'#d6dce8', label:'#e6ebf4', labelDim:'#b3bac6',
+    labelBg:'rgba(52,56,63,.72)', edgeRGB:'205,218,240', focusLabel:'#ffffff', nbLabel:'#e8eef8'};
+  return {star:'#9db8e8', label:'#a9bcd6', labelDim:'#7b8ba3',
+    labelBg:'rgba(6,10,16,.72)', edgeRGB:'122,168,228', focusLabel:'#eaf6ff', nbLabel:'#cfe0f5'};
+}
+function applyTheme(){
+  document.documentElement.dataset.theme=CAM.theme;
+  if(ST.length) refreshColors();
+}
 var W=0,H=0,DPR=1;
 var cv=document.getElementById('cv'), ctx=cv.getContext('2d');
 
@@ -1866,7 +1905,9 @@ function refreshColors(){
   for(var i=0;i<ST.length;i++){
     var s=ST[i];
     s.cat=catOf(s);
-    s.col=(cats[s.cat]||cats[0]||{color:'#8fa0b8'}).color;
+    var base=(cats[s.cat]||cats[0]||{color:'#8fa0b8'}).color;
+    s.dimc=(base==='#33405c');
+    s.col=colAdj(base);
   }
   legend();
 }
@@ -1893,7 +1934,7 @@ function legend(){
   h+='<div class="t">'+MODE_TITLE[MODE]+'（タップで表示/非表示）</div>';
   var cats=catsOf();
   for(var i=0;i<cats.length;i++)
-    h+='<div class="row gtog'+(hid[i]?' off':'')+'" data-g="'+i+'"><span class="sw" style="background:'+cats[i].color+'"></span>'+esc(cats[i].label)+'</div>';
+    h+='<div class="row gtog'+(hid[i]?' off':'')+'" data-g="'+i+'"><span class="sw" style="background:'+colAdj(cats[i].color)+'"></span>'+esc(cats[i].label)+'</div>';
   h+='<div class="row lgall"><span class="lgbtn" data-a="show">全て表示</span><span class="lgbtn" data-a="hide">全て非表示</span></div>';
   if(MODE==='mine') h+='<div class="mean">★と持ち株は「今夜の厳選」「全銘柄台帳」で付けた印（この端末に保存）。「その他」を非表示にすると自分の銘柄だけの地図になります。</div>';
   h+='<div class="mean">この空間の見方: <b>近く＝体質と値動きが似ている</b> ・ 中心ほど平均的な銘柄、外側ほど個性が強い ・ 奥にある点は霧で薄く見えます（3D）</div>';
@@ -1936,7 +1977,7 @@ function draw(ts){
     var px=W/2+x*10, py=H/2-st.y*10;
     if(px<-8||px>W+8||py<-8||py>H+8) continue;
     ctx.globalAlpha=0.08+0.08*Math.sin(ts*0.0012+st.tw);
-    ctx.fillStyle='#9db8e8';
+    ctx.fillStyle=themeC().star;
     ctx.beginPath(); ctx.arc(px,py,st.sz,0,Math.PI*2); ctx.fill();
   }
   ctx.globalAlpha=1;
@@ -1960,15 +2001,17 @@ function draw(ts){
       if(isHidden(EA)||isHidden(EBv)) continue;
       if((EA.px<0&&EBv.px<0)||(EA.px>W&&EBv.px>W)||(EA.py<0&&EBv.py<0)||(EA.py>H&&EBv.py>H)) continue;
       var eal=(0.045+0.07*(EDGES[ei][2]-50)/50)*Math.min(fogA(EA),fogA(EBv));
+      if(CAM.theme!=='dark') eal*=1.6;
       if(eal<0.02) continue;
       (eal<0.05?EB0:(eal<0.085?EB1:EB2)).push(EA.px,EA.py,EBv.px,EBv.py);
     }
     ctx.lineWidth=0.7;
     var bAls=[0.035,0.065,0.1], bArr=[EB0,EB1,EB2];
+    var thEdge=themeC().edgeRGB;
     for(var bi=0;bi<3;bi++){
       var arr2=bArr[bi];
       if(!arr2.length) continue;
-      ctx.strokeStyle='rgba(122,168,228,'+bAls[bi]+')';
+      ctx.strokeStyle='rgba('+thEdge+','+(bAls[bi]*(CAM.theme!=='dark'?1.7:1)).toFixed(3)+')';
       ctx.beginPath();
       for(var pi3=0;pi3<arr2.length;pi3+=4){
         ctx.moveTo(arr2[pi3],arr2[pi3+1]); ctx.lineTo(arr2[pi3+2],arr2[pi3+3]);
@@ -1981,7 +2024,7 @@ function draw(ts){
     var F=ST[focusI];
     /* 2ホップ（連想の連鎖）の薄い糸 */
     ctx.lineWidth=0.8;
-    ctx.strokeStyle='rgba(140,180,235,0.16)';
+    ctx.strokeStyle='rgba('+themeC().edgeRGB+',0.16)';
     ctx.beginPath();
     for(var e9=0;e9<f2Edges.length;e9++){
       var A9=ST[f2Edges[e9].a], B9=ST[f2Edges[e9].b];
@@ -1994,13 +2037,13 @@ function draw(ts){
       if(!SHOW_EX && T.ex) continue;
       if(isHidden(T)) continue;
       var g=ctx.createLinearGradient(F.px,F.py,T.px,T.py);
-      g.addColorStop(0,rgbaOf('#4dd7ff',0.55));
+      g.addColorStop(0,rgbaOf(colAdj('#4dd7ff'),0.55));
       g.addColorStop(1,rgbaOf(T.col,0.75));
       ctx.strokeStyle=g; ctx.lineWidth=1+ed.sim/60;
       ctx.beginPath(); ctx.moveTo(F.px,F.py); ctx.lineTo(T.px,T.py); ctx.stroke();
       var t=(ts*0.0006+e2*0.17)%1;
       var mx=F.px+(T.px-F.px)*t, my=F.py+(T.py-F.py)*t;
-      ctx.fillStyle='rgba(200,235,255,0.85)';
+      ctx.fillStyle=CAM.theme==='light'?'rgba(30,80,140,0.85)':'rgba(200,235,255,0.85)';
       ctx.beginPath(); ctx.arc(mx,my,1.6,0,Math.PI*2); ctx.fill();
     }
   }
@@ -2012,7 +2055,7 @@ function draw(ts){
     if(!SHOW_EX && s.ex) continue;
     if(isHidden(s)) continue;
     if(s.px<-20||s.px>W+20||s.py<-20||s.py>H+20) continue;
-    var r=Math.min(8.5,(1.1+s.size)*s.pf*zf);
+    var r=Math.min(7,2.4*s.pf*zf);   /* 全銘柄おなじ大きさ（有名・無名で差を付けない） */
     var a=fogA(s)*(s.ex?0.45:1);
     if(focused) a*= fset[idx]? 1 : (fset2[idx]? 0.34 : 0.07);
     if(a<0.02) continue;
@@ -2025,27 +2068,28 @@ function draw(ts){
     ctx.globalAlpha=a;
     ctx.fillStyle=s.col;
     ctx.beginPath(); ctx.arc(s.px,s.py,r,0,Math.PI*2); ctx.fill();
-    if(s.tri && MODE!=='pick' && r>1.6){
-      ctx.globalAlpha=a*0.9; ctx.strokeStyle='rgba(255,255,255,.7)'; ctx.lineWidth=0.8;
-      ctx.beginPath(); ctx.arc(s.px,s.py,r+1.6,0,Math.PI*2); ctx.stroke();
-    }
   }
   ctx.globalAlpha=1;
   /* 常時銘柄名: 大型・厳選銘柄から優先し、重なる場所には出さない */
   if(CAM.labels && !focused && prio.length){
     var cells={}, placed=0, maxL=((W<520)?30:60)+(zoom>3?30:0);
     ctx.font='600 9.5px "Hiragino Sans",sans-serif';
-    for(var pi2=0;pi2<prio.length && placed<maxL;pi2++){
-      var ls=ST[prio[pi2]];
-      if((!SHOW_EX&&ls.ex)||isHidden(ls)) continue;
-      if(ls.px<8||ls.px>W-8||ls.py<14||ls.py>H-6) continue;
-      if(ls.pz<-1.7) continue;
-      var gx=Math.floor(ls.px/94), gy=Math.floor(ls.py/26);
-      if(cells[gx+'_'+gy]||cells[(gx+1)+'_'+gy]||cells[(gx-1)+'_'+gy]) continue;
-      cells[gx+'_'+gy]=1; placed++;
-      ctx.globalAlpha=Math.min(0.8, fogA(ls)*0.85+0.05);
-      ctx.fillStyle=ls.tri?'#d9ffe8':'#a9bcd6';
-      ctx.fillText(ls.sn, ls.px+6, ls.py+3.5);
+    /* 1周目=いまの色分けで強調されている銘柄、2周目=灰色カテゴリ（後回し） */
+    for(var sweep=0;sweep<2&&placed<maxL;sweep++){
+      for(var pi2=0;pi2<prio.length && placed<maxL;pi2++){
+        var ls=ST[prio[pi2]];
+        var dimc=!!ls.dimc;
+        if(sweep===0?dimc:!dimc) continue;
+        if((!SHOW_EX&&ls.ex)||isHidden(ls)) continue;
+        if(ls.px<8||ls.px>W-8||ls.py<14||ls.py>H-6) continue;
+        if(ls.pz<-1.7) continue;
+        var gx=Math.floor(ls.px/94), gy=Math.floor(ls.py/26);
+        if(cells[gx+'_'+gy]||cells[(gx+1)+'_'+gy]||cells[(gx-1)+'_'+gy]) continue;
+        cells[gx+'_'+gy]=1; placed++;
+        ctx.globalAlpha=Math.min(0.8, fogA(ls)*0.85+0.05)*(dimc?0.65:1);
+        ctx.fillStyle=dimc?themeC().labelDim:themeC().label;
+        ctx.fillText(ls.sn, ls.px+6, ls.py+3.5);
+      }
     }
     ctx.globalAlpha=1;
   }
@@ -2053,23 +2097,23 @@ function draw(ts){
   if(hoverI>=0 && hoverI!==focusI && ST[hoverI]){
     var hs=ST[hoverI];
     if(!(focused && !fset[hoverI] && !fset2[hoverI])){
-      ctx.strokeStyle='rgba(255,255,255,.75)'; ctx.lineWidth=1.2;
-      ctx.beginPath(); ctx.arc(hs.px,hs.py,Math.min(8.5,(1.1+hs.size)*hs.pf*Math.pow(zoom,0.22))+3,0,Math.PI*2); ctx.stroke();
-      labelFor(hs,hs.name,11.5,'#e8f2ff');
+      ctx.strokeStyle=CAM.theme==='light'?'rgba(20,40,70,.7)':'rgba(255,255,255,.75)'; ctx.lineWidth=1.2;
+      ctx.beginPath(); ctx.arc(hs.px,hs.py,Math.min(7,2.4*hs.pf*Math.pow(zoom,0.22))+3,0,Math.PI*2); ctx.stroke();
+      labelFor(hs,hs.name,11.5,themeC().focusLabel);
     }
   }
   /* focus label */
   if(focused){
     var FS=ST[focusI];
-    var lr=Math.min(8.5,(1.1+FS.size)*FS.pf*Math.pow(zoom,0.22))*1.35;
-    ctx.strokeStyle='rgba(77,215,255,.9)'; ctx.lineWidth=1.4;
+    var lr=Math.min(7,2.4*FS.pf*Math.pow(zoom,0.22))*1.35;
+    ctx.strokeStyle=rgbaOf(colAdj('#4dd7ff'),0.9); ctx.lineWidth=1.4;
     ctx.beginPath(); ctx.arc(FS.px,FS.py,lr+3.5+Math.sin(ts*0.004)*1.2,0,Math.PI*2); ctx.stroke();
-    labelFor(FS,FS.name,15,'#eaf6ff');
+    labelFor(FS,FS.name,15,themeC().focusLabel);
     for(var e3=0;e3<fEdges.length;e3++){
       var TT=ST[fEdges[e3].j];
       if(!SHOW_EX && TT.ex) continue;
       if(isHidden(TT)) continue;
-      labelFor(TT,TT.name,11.5,'#cfe0f5');
+      labelFor(TT,TT.name,11.5,themeC().nbLabel);
     }
   }
 }
@@ -2096,7 +2140,7 @@ function drawAxes(){
 function labelFor(s,txt,fs,colr){
   ctx.font='700 '+fs+'px "Hiragino Sans",sans-serif';
   var w=ctx.measureText(txt).width;
-  ctx.fillStyle='rgba(6,10,16,.72)';
+  ctx.fillStyle=themeC().labelBg;
   ctx.fillRect(s.px+8, s.py-fs, w+10, fs+7);
   ctx.fillStyle=colr;
   ctx.fillText(txt, s.px+13, s.py+3);
@@ -2117,7 +2161,7 @@ function loop(ts){
     if(Math.abs(velPx)>0.12||Math.abs(velPy)>0.12){
       ox+=velPx; oy+=velPy; velPx*=0.9; velPy*=0.9;
     } else { velPx=velPy=0; }
-    if(SPIN && Date.now()-lastPointer>1600 && !velY && !velPx){ rotY+=0.0016*CAM.spin; }
+    if(SPIN && zoom<2.2 && Date.now()-lastPointer>1600 && !velY && !velPx){ rotY+=0.0016*CAM.spin; }
   }
   draw(ts||0);
   requestAnimationFrame(loop);
@@ -2245,7 +2289,7 @@ cv.addEventListener('wheel',function(e){
 function tapAt(cx2,cyy){
   var rect=cv.getBoundingClientRect();
   var best=nearestAt(cx2-rect.left, cyy-rect.top, 900);
-  if(best>=0) focusOn(best); else clearFocus();
+  if(best>=0) focusOn(best, false); else clearFocus();
 }
 
 /* ═══ focus & panel ═══ */
@@ -2260,7 +2304,8 @@ function whyTags(flags){
   }
   return out;
 }
-function focusOn(i){
+function focusOn(i, fly){
+  if(fly===undefined) fly=true;
   focusI=i; fEdges=[]; f2Edges=[]; fset2={}; hoverI=-1;
   /* 発想の旅（たどった履歴） */
   var ti=TRAIL.indexOf(i);
@@ -2268,11 +2313,14 @@ function focusOn(i){
   TRAIL.push(i);
   if(TRAIL.length>8) TRAIL.shift();
   var s=ST[i];
-  /* カメラをその銘柄が手前中央に来る向きへ寄せる */
-  var hxz=Math.hypot(s.x,s.z)||1e-6;
-  camGoal={y:Math.atan2(-s.x,s.z),
-           x:Math.max(-1.3,Math.min(1.3,Math.atan2(s.y,hxz))),
-           z:(zoom<1.5?1.5:Math.min(zoom,2.4))};  /* 近すぎると糸の先が画面外に出るため控えめに寄る */
+  /* カメラ移動は検索・リンク経由（画面外にいる可能性がある時）だけ。
+     画面上のタップ選択ではカメラを一切動かさない（見ていた場所を守る） */
+  if(fly){
+    var hxz=Math.hypot(s.x,s.z)||1e-6;
+    camGoal={y:Math.atan2(-s.x,s.z),
+             x:Math.max(-1.3,Math.min(1.3,Math.atan2(s.y,hxz))),
+             z:Math.max(zoom,1.5)};   /* いまの拡大率は維持（勝手に引かない） */
+  }
   for(var k=0;k<s.nb.length;k+=3){
     var j=byCode[s.nb[k]];
     if(j!=null) fEdges.push({j:j, sim:s.nb[k+1], flags:s.nb[k+2]});
@@ -2344,6 +2392,7 @@ function focusOn(i){
 }
 function clearFocus(){
   focusI=-1; fEdges=[]; f2Edges=[]; fset2={};
+  camGoal=null; lastPointer=Date.now();   /* カメラは今の場所のまま（初期視点には戻さない） */
   document.body.classList.remove('focused');
   document.getElementById('panel').classList.remove('show');
   setTimeout(resize,200);
@@ -2430,7 +2479,8 @@ function paintCam(){
 sheet.querySelectorAll('.seg button').forEach(function(b){
   b.addEventListener('click',function(){
     var k=b.closest('.seg').dataset.k, v=b.dataset.v;
-    CAM[k]=(v==='true')?true:(v==='false')?false:parseFloat(v);
+    CAM[k]=(v==='true')?true:(v==='false')?false:(isNaN(parseFloat(v))?v:parseFloat(v));
+    if(k==='theme') applyTheme();
     saveCam(); paintCam();
   });
 });
