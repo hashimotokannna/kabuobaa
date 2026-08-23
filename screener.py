@@ -2225,7 +2225,7 @@ cv.addEventListener('wheel',function(e){
 function tapAt(cx2,cyy){
   var rect=cv.getBoundingClientRect();
   var best=nearestAt(cx2-rect.left, cyy-rect.top, 900);
-  if(best>=0) focusOn(best, false); else clearFocus();
+  if(best>=0) focusOn(best); else clearFocus();
 }
 
 /* ═══ focus & panel ═══ */
@@ -2250,13 +2250,13 @@ function focusOn(i, fly){
   TRAIL.push(i);
   if(TRAIL.length>8) TRAIL.shift();
   var s=ST[i];
-  /* カメラ移動は検索・リンク経由（画面外にいる可能性がある時）だけ。
-     画面上のタップ選択ではカメラを一切動かさない（見ていた場所を守る） */
+  /* どの経路でも: カメラはその銘柄が中央に来るよう寄って拡大。
+     ✕で外してもこのカメラ位置に留まる（clearFocusはカメラに触れない） */
   if(fly){
     var hxz=Math.hypot(s.x,s.z)||1e-6;
     camGoal={y:Math.atan2(-s.x,s.z),
              x:Math.max(-1.3,Math.min(1.3,Math.atan2(s.y,hxz))),
-             z:Math.max(zoom,1.5)};   /* いまの拡大率は維持（勝手に引かない） */
+             z:Math.max(zoom,2.0)};   /* 現在の拡大率より引くことはしない */
   }
   for(var k=0;k<s.nb.length;k+=3){
     var j=byCode[s.nb[k]];
