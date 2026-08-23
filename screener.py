@@ -187,10 +187,10 @@ def fetch_universe():
 # ------------------------------------------------------------
 # 2. 日足データの取得（Yahoo Finance chart API）
 # ------------------------------------------------------------
-def fetch_daily(session, code, suffix=".T"):
-    """日足1年分を [{date, open, high, low, close, volume}] (古い順) で返す"""
+def fetch_daily(session, code, suffix=".T", range_="max"):
+    """日足を [{date, open, high, low, close, volume}] (古い順) で返す。range_="max"で上場以来すべて"""
     url = f"https://query1.finance.yahoo.com/v8/finance/chart/{code}{suffix}"
-    params = {"range": "10y", "interval": "1d"}
+    params = {"range": range_, "interval": "1d"}
     headers = {"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)"}
 
     last_err = None
@@ -962,15 +962,22 @@ def compute_long_metrics(days_full):
             sd = (sum((x - mu) ** 2 for x in lr) / len(lr)) ** 0.5
             out["hv20"] = round(sd * (250 ** 0.5) * 100, 1)
 
-    # 週足スパークライン用（3年・5日おき）
+    # スパークライン: 1年 / 3年 / 10年 / 全期間（各約50〜160点に間引き）
+    def _spark_slice(n_days, target=150):
+        seg_c = closes[-n_days:] if n_days else closes
+        seg_d = dates[-n_days:] if n_days else dates
+        step = max(1, len(seg_c) // target)
+        sp = [[seg_d[i], round(seg_c[i], 1)] for i in range(0, len(seg_c), step)]
+        if sp and sp[-1][0] != seg_d[-1]:
+            sp.append([seg_d[-1], round(seg_c[-1], 1)])
+        return sp
+    out["spark1"] = _spark_slice(min(len(closes), 245), 60)
     closes3 = closes[-n3:]
     out["spark"] = [[dates3[i], round(closes3[i], 1)] for i in range(0, n3, 5)]
-    # 10年スパークライン用（全期間を約150点に間引き）
-    step10 = max(1, len(closes) // 150)
-    sp10 = [[dates[i], round(closes[i], 1)] for i in range(0, len(closes), step10)]
-    if sp10 and sp10[-1][0] != dates[-1]:
-        sp10.append([dates[-1], round(closes[-1], 1)])
-    out["spark10"] = sp10
+    out["spark10"] = _spark_slice(min(len(closes), 2450), 150)
+    if len(closes) > 2500:
+        out["sparkall"] = _spark_slice(0, 160)
+        out["years_all"] = round(len(closes) / 245)
     return out
 
 
@@ -2653,16 +2660,20 @@ JQ_F = {
     "treasury": ("TrShFY", "TrSh", "TreasuryShares", "NumberOfTreasuryStockAtTheEndOfFiscalYear"),
     "fc_eps":   ("FEPS", "ForecastEPS", "ForecastEarningsPerShare"),
     "period":   ("CurPerEn", "CurrentPeriodEndDate"),
+    "pertype":  ("CurPerTy", "TypeOfCurrentPeriod", "CurrentPeriodType"),
+    "ordp":     ("OrdP", "OrdinaryProfit", "OrdinaryIncome"),
 }
 
 
 def jquants_fetch_materials(session, days_back=100):
-    """V2 /fins/summary を開示日ごとに走査し {code: {eps,bvps,shares,equity,asof}} を返す。
+    """V2 /fins/summary を開示日ごとに走査し {code: {eps,bvps,shares,equity,asof, hist}} を返す。
+    hist = {期末日|期区分: {sales, op, ordp, np, ty, disc}} — 業績チャート用の履歴（蓄積される）。
     同一銘柄は最新の開示を採用。無料プランは12週遅延のため長めに走査する"""
     headers = jquants_headers()
     if not headers:
         return {}
     out = {}
+    hist_out = {}
     today = datetime.now(JST).date()
     n_req = 0
     printed_fields = False
@@ -2732,11 +2743,30 @@ def jquants_fetch_materials(session, days_back=100):
                 if mat:
                     mat["asof"] = disclosed
                     out[code] = mat
+                # 業績履歴（チャート用）: 期末日と期区分ごとに売上・利益を記録
+                per_end = str(_pick(st, *JQ_F["period"]) or "").strip()
+                per_ty = str(_pick(st, *JQ_F["pertype"]) or "").strip()
+                ordp = _to_float(_pick(st, *JQ_F["ordp"]))
+                if per_end and (sales is not None or np_ is not None or op is not None):
+                    if len(per_end) == 8 and per_end.isdigit():
+                        per_end = f"{per_end[:4]}-{per_end[4:6]}-{per_end[6:]}"
+                    hkey = f"{per_end}|{per_ty or '?'}"
+                    hrec = {k: v for k, v in (("sales", sales), ("op", op),
+                                              ("ordp", ordp), ("np", np_)) if v is not None}
+                    if hrec:
+                        hrec["ty"] = per_ty or "?"
+                        hrec["disc"] = disclosed
+                        prev_h = hist_out.setdefault(code, {}).get(hkey)
+                        if not prev_h or prev_h.get("disc", "") <= disclosed:
+                            hist_out[code][hkey] = hrec
             pagination = j.get("pagination_key")
             if not pagination:
                 break
         time.sleep(0.15)
-    print(f"  J-Quants: {n_req}リクエストで {len(out)}銘柄の財務素材を取得")
+    n_hist = sum(len(v) for v in hist_out.values())
+    for code, h in hist_out.items():
+        out.setdefault(code, {"asof": ""})["hist"] = h
+    print(f"  J-Quants: {n_req}リクエストで {len(out)}銘柄の財務素材（業績履歴 {n_hist}期分）を取得")
     return out
 
 
@@ -2771,15 +2801,23 @@ def fetch_fundamentals(session, codes, closes=None):
     # J-Quants（あれば）: 決算開示ベースの素材を取り込み、保存分より新しければ上書き
     # 無料プランは12週遅延のため、直近だけの走査では「早い時期に決算発表した銘柄」（トヨタ等）が
     # 永久に拾えない。素材キャッシュが薄いうちは約1年分をさかのぼって全銘柄を取り込む
-    deep = len(persisted) < 3000
+    n_with_hist = sum(1 for v in persisted.values() if len(v.get("hist") or {}) >= 3)
+    deep = len(persisted) < 3000 or n_with_hist < 1500
     if deep and session is not None:
-        print("  J-Quants: 素材キャッシュが少ないため約1年分の決算開示を取り込みます（初回のみ・数分）")
-    jq = jquants_fetch_materials(session, days_back=(430 if deep else 110)) if session is not None else {}
+        print("  J-Quants: 蓄積が少ないため約2年分の決算開示を取り込みます（初回のみ・十数分）")
+    jq = jquants_fetch_materials(session, days_back=(760 if deep else 110)) if session is not None else {}
     for code, mat in jq.items():
         prev = persisted.get(code) or {}
+        new_hist = {**(prev.get("hist") or {}), **(mat.pop("hist", {}) or {})}
         if not prev or (mat.get("asof", "") >= prev.get("asof", "")):
             merged = {**prev, **mat}
-            persisted[code] = merged
+        else:
+            merged = prev
+        if new_hist:
+            # 業績履歴は消さずに蓄積（古い順に最大24期まで保持）
+            keys = sorted(new_hist.keys())[-24:]
+            merged["hist"] = {k: new_hist[k] for k in keys}
+        persisted[code] = merged
     if jq:
         jq_keys = list(jq.keys())[:5]
         code_keys = list(codes)[:5]
@@ -2868,6 +2906,8 @@ def fetch_fundamentals(session, codes, closes=None):
 
         if entry:
             entry["computed"] = bool(eps is not None or bvps)
+            if prev.get("hist") or mat.get("hist"):
+                entry["hist"] = prev.get("hist") or mat.get("hist")
             out[code] = entry
 
     save_fund_cache(persisted)
@@ -3176,7 +3216,7 @@ def run_screening():
 
     # 地合い（日経平均の200日線と直近20日の変化）+ 市場全体の需給指標
     market = None
-    mkt_days = fetch_daily(_get_session(), "^N225", "")
+    mkt_days = fetch_daily(_get_session(), "^N225", "", range_="10y")
     if mkt_days and len(mkt_days) >= 210:
         mc = [d["close"] for d in mkt_days]
         ma200 = sum(mc[-200:]) / 200
@@ -3184,7 +3224,8 @@ def run_screening():
                   "chg20": round((mc[-1] / mc[-21] - 1) * 100, 1),
                   "nikkei": round(mc[-1], 0)}
         # NT倍率（TOPIXが取れれば）
-        tpx = fetch_daily(_get_session(), "^TPX", "") or fetch_daily(_get_session(), "1306", ".T")
+        tpx = (fetch_daily(_get_session(), "^TPX", "", range_="10y")
+               or fetch_daily(_get_session(), "1306", ".T", range_="10y"))
         if tpx and len(tpx) >= 30:
             tc = tpx[-1]["close"]
             if tc and tc > 0:
@@ -3361,9 +3402,14 @@ def make_demo_data():
                      "touch_dates": [spark[i][0] for i in rng.sample(range(20, 140), 3)],
                      "dist_pct": round(rng.uniform(-1, 6), 1)},
             "spark": spark,
+            "spark1": spark[-52:],
             "spark10": ([[(d0 - _td(days=(150 - k) * 17)).isoformat(),
                           round(max(close * 0.4, base3 * (0.6 + 0.4 * k / 150) * rng.uniform(0.95, 1.05)), 1)]
                          for k in range(150)] + spark[::5]),
+            "sparkall": ([[(d0 - _td(days=(160 - k) * 60)).isoformat(),
+                           round(max(close * 0.15, base3 * (0.25 + 0.75 * k / 160) * rng.uniform(0.93, 1.07)), 1)]
+                          for k in range(160)] + spark[::5]),
+            "years_all": 28,
         }
         if rng.random() < 0.25:
             s["long"]["w_bottom"] = {"neck": round(close * 1.02, 1)}
@@ -3371,7 +3417,18 @@ def make_demo_data():
             s["long"]["climax"] = {"date": "2026-08-08"}
         _per = round(rng.uniform(6, 35), 1)
         _pbr = round(rng.uniform(0.5, 4.0), 2)
-        s["fund"] = {"per": _per, "pbr": _pbr,
+        _sales0 = rng.uniform(3e10, 3e12)
+        _hist = {}
+        for yy in range(2022, 2027):
+            _sales0 *= rng.uniform(0.98, 1.15)
+            _opv = _sales0 * rng.uniform(0.03, 0.14)
+            _hist[f"{yy}-03-31|FY"] = {"sales": round(_sales0), "op": round(_opv),
+                                       "ordp": round(_opv * rng.uniform(0.9, 1.1)),
+                                       "np": round(_opv * rng.uniform(0.55, 0.85) * (1 if rng.random() > 0.08 else -0.4)),
+                                       "ty": "FY", "disc": f"{yy}-05-10"}
+        _hist["2026-06-30|1Q"] = {"sales": round(_sales0 * 0.26), "op": round(_sales0 * 0.02),
+                                  "np": round(_sales0 * 0.013), "ty": "1Q", "disc": "2026-08-05"}
+        s["fund"] = {"per": _per, "pbr": _pbr, "hist": _hist,
                      "roe": round(_pbr / _per * 100, 1),
                      "mcap_oku": rng.randint(80, 40000),
                      "div_yield": round(rng.uniform(0, 4.5), 2),
@@ -3587,9 +3644,13 @@ def build_output(picked, stats):
             "dev25": (round(s["dev25"], 2) if s.get("dev25") is not None else None),
             "disclosures": s.get("disclosures", []),
             "fund": s.get("fund"),
-            "long": {k: v for k, v in (s.get("long") or {}).items() if k not in ("spark", "spark10")},
+            "long": {k: v for k, v in (s.get("long") or {}).items()
+                     if k not in ("spark", "spark10", "spark1", "sparkall")},
             "spark": (s.get("long") or {}).get("spark", []),
             "spark10": (s.get("long") or {}).get("spark10", []),
+            "spark1": (s.get("long") or {}).get("spark1", []),
+            "sparkall": (s.get("long") or {}).get("sparkall", []),
+            "years_all": (s.get("long") or {}).get("years_all"),
             "topics": s.get("topics", []),
             "cost": round(s["close"] * 100),
             "level": level_of(s["drop_pct"]),
@@ -3658,21 +3719,36 @@ def spark_svg(spark, long_info, width=320, height=110):
     return "".join(parts)
 
 
-def spark_block_html(spark3, spark10, long_info):
-    """3年⇔10年を切り替えられる週足ミニチャートのブロック（切替JSは各ページのspSwap）"""
+def spark_block_html(spark3, spark10, long_info, spark1=None, sparkall=None, years_all=None):
+    """1年/3年/10年/全期間を切り替えられる週足ミニチャート（切替JSは各ページのspSwap）"""
     svg3 = spark_svg(spark3, long_info)
     if not svg3:
         return ""
-    svg10 = spark_svg(spark10, long_info) if spark10 and len(spark10 or []) >= 10 else ""
+    variants = []  # (キー, ボタン名, svg)
+    if spark1 and len(spark1) >= 10:
+        variants.append(("1", "1年", spark_svg(spark1, long_info)))
+    variants.append(("3", "3年", svg3))
+    if spark10 and len(spark10) >= 10:
+        variants.append(("10", "10年", spark_svg(spark10, long_info)))
+    if sparkall and len(sparkall) >= 10:
+        lab = f"全期間({years_all}年)" if years_all else "全期間"
+        variants.append(("all", lab, spark_svg(sparkall, long_info)))
     z = (long_info or {}).get("zone")
     zline = (f'赤い帯=長期支持帯 {z["zone_low"]:,.0f}〜{z["zone_top"]:,.0f}円'
              f'（▲=過去の反発地点 ・ ●=いま）' if z else "●=いま")
-    btns = (f'<span class="spbtns"><button type="button" class="spbtn on" onclick="spSwap(this, 3)">3年</button>'
-            f'<button type="button" class="spbtn" onclick="spSwap(this, 10)">10年</button></span>') if svg10 else ""
-    sv10 = f'<div class="spark sp10" style="display:none">{svg10}</div>' if svg10 else ""
+    btns = ""
+    if len(variants) > 1:
+        btns = ('<span class="spbtns">'
+                + "".join(f'<button type="button" class="spbtn{" on" if k == "3" else ""}" '
+                          f'onclick="spSwap(this, \'{k}\')">{lab}</button>'
+                          for k, lab, _s in variants)
+                + '</span>')
+    charts = "".join(
+        f'<div class="spark spv" data-sp="{k}" style="display:{"" if k == "3" else "none"}">{s}</div>'
+        for k, _lab, s in variants)
     return (f'<div class="spwrap"><div class="nhead">値動きと長期支持帯{btns}</div>'
-            f'<div class="spark sp3">{svg3}</div>{sv10}'
-            f'<div class="discnote">{zline}。支持帯は直近3年の谷から自動検出（10年表示でも同じ帯）。</div></div>')
+            f'{charts}'
+            f'<div class="discnote">{zline}。支持帯は直近3年の谷から自動検出（どの期間表示でも同じ帯）。</div></div>')
 
 
 SPARK_JS = """<script>
@@ -3681,9 +3757,9 @@ function spSwap(btn, mode){
   if (!w) return;
   w.querySelectorAll('.spbtn').forEach(function(b){ b.classList.remove('on'); });
   btn.classList.add('on');
-  var s3 = w.querySelector('.sp3'), s10 = w.querySelector('.sp10');
-  if (s3) s3.style.display = (mode === 3) ? '' : 'none';
-  if (s10) s10.style.display = (mode === 10) ? '' : 'none';
+  w.querySelectorAll('.spv').forEach(function(el){
+    el.style.display = (el.dataset.sp === String(mode)) ? '' : 'none';
+  });
 }
 </script>"""
 
@@ -3692,6 +3768,141 @@ SPARK_CSS = """
   .spbtn{font-size:10px; font-weight:800; border:1px solid #d8d2c2; background:#fff; color:#6b6b70;
     border-radius:6px; padding:2px 8px; cursor:pointer;}
   .spbtn.on{background:#1c1c1e; color:#fff; border-color:#1c1c1e;}
+"""
+
+
+def _fin_fmt(v):
+    """円→読みやすい表記（兆/億）。百万円単位らしき小さい値は円に換算"""
+    av = abs(v)
+    sign = "-" if v < 0 else ""
+    if av >= 1e12:
+        return f"{sign}{av / 1e12:,.2f}兆"
+    if av >= 1e8:
+        return f"{sign}{av / 1e8:,.0f}億"
+    return f"{sign}{av / 1e4:,.0f}万"
+
+
+def fin_chart_html(hist):
+    """決算履歴 {期末日|区分: {sales,op,ordp,np,ty}} → 売上棒＋利益折れ線のSVGと期別テーブル"""
+    if not hist:
+        return ""
+    recs = []
+    for key, r in hist.items():
+        pe = key.split("|")[0]
+        if len(pe) >= 7:
+            recs.append({"pe": pe, **r})
+    if not recs:
+        return ""
+    recs.sort(key=lambda r: r["pe"])
+    # 百万円単位らしき場合は円へ（売上の最大値で判定）
+    mx = max((abs(r.get("sales") or 0) for r in recs), default=0)
+    scale = 1e6 if 0 < mx < 1e7 else 1.0
+    if scale != 1.0:
+        for r in recs:
+            for k in ("sales", "op", "ordp", "np"):
+                if r.get(k) is not None:
+                    r[k] = r[k] * scale
+    fy = [r for r in recs if (r.get("ty") or "").upper() in ("FY", "4Q", "Y")]
+    use = fy if len(fy) >= 2 else recs[-8:]
+    use = use[-10:]
+    if not use:
+        return ""
+    annual = use is fy or len(fy) >= 2
+
+    def _plabel(r):
+        y, m = r["pe"][2:4], r["pe"][5:7].lstrip("0")
+        ty = (r.get("ty") or "").upper()
+        if annual or ty in ("FY", "4Q", "Y"):
+            return f"{y}/{m}期"
+        q = {"1Q": "Q1", "2Q": "Q2", "3Q": "Q3"}.get(ty, "")
+        return f"{y}/{m}{q}" if q else f"{y}/{m}"
+
+    W, H = 340, 150
+    PL, PR, PT, PB = 40, 40, 10, 20
+    n = len(use)
+    bw = min(34, (W - PL - PR) / n * 0.55)
+    smax = max((r.get("sales") or 0) for r in use) or 1
+    pvals = [v for r in use for v in (r.get("op"), r.get("ordp"), r.get("np")) if v is not None]
+    pmin = min(0, min(pvals)) if pvals else 0
+    pmax = max(pvals) if pvals else 1
+    if pmax - pmin < 1:
+        pmax = pmin + 1
+
+    def X(i):
+        return PL + (i + 0.5) * (W - PL - PR) / n
+
+    def Ys(v):
+        return H - PB - v / smax * (H - PT - PB) * 0.94
+
+    def Yp(v):
+        return H - PB - (v - pmin) / (pmax - pmin) * (H - PT - PB) * 0.94
+
+    parts = [f'<svg viewBox="0 0 {W} {H}" xmlns="http://www.w3.org/2000/svg" '
+             f'style="width:100%; height:auto; background:#fffdf6; border-radius:8px;">']
+    if pmin < 0:
+        parts.append(f'<line x1="{PL}" y1="{Yp(0):.1f}" x2="{W - PR}" y2="{Yp(0):.1f}" '
+                     f'stroke="#e0d8c4" stroke-width="1" stroke-dasharray="3,3"/>')
+    # 売上の棒
+    for i, r in enumerate(use):
+        s = r.get("sales")
+        if s is None:
+            continue
+        parts.append(f'<rect x="{X(i) - bw / 2:.1f}" y="{Ys(s):.1f}" width="{bw:.1f}" '
+                     f'height="{max(1, H - PB - Ys(s)):.1f}" rx="2" fill="#cfe0f5">'
+                     f'<title>{_plabel(r)} 売上高 {_fin_fmt(s)}円</title></rect>')
+    # 利益の折れ線
+    lines = [("op", "#c9661f", "営業利益"), ("ordp", "#178a5b", "経常利益"), ("np", "#7d55c7", "純利益")]
+    used_lines = []
+    for k, col, lab in lines:
+        pts = [(X(i), Yp(r[k])) for i, r in enumerate(use) if r.get(k) is not None]
+        if len(pts) < 2:
+            continue
+        used_lines.append((k, col, lab))
+        parts.append('<polyline points="' + " ".join(f"{x:.1f},{y:.1f}" for x, y in pts)
+                     + f'" fill="none" stroke="{col}" stroke-width="1.8"/>')
+        for (x, y), r in zip(pts, [r for r in use if r.get(k) is not None]):
+            parts.append(f'<circle cx="{x:.1f}" cy="{y:.1f}" r="2.4" fill="{col}">'
+                         f'<title>{_plabel(r)} {lab} {_fin_fmt(r[k])}円</title></circle>')
+    # x軸ラベル（重なる場合は間引き）
+    step = max(1, n // 5)
+    for i in range(0, n, step):
+        parts.append(f'<text x="{X(i):.1f}" y="{H - 6}" font-size="8.5" fill="#a99a76" '
+                     f'text-anchor="middle">{_plabel(use[i])}</text>')
+    # 軸の目安
+    parts.append(f'<text x="{W - PR + 3}" y="{Ys(smax) + 8:.1f}" font-size="8" fill="#7ba0cc">'
+                 f'{_fin_fmt(smax)}</text>')
+    parts.append(f'<text x="{W - PR + 3}" y="{H - PB + 2}" font-size="8" fill="#7ba0cc">売上</text>')
+    parts.append(f'<text x="4" y="{Yp(pmax) + 8:.1f}" font-size="8" fill="#8a6f4d">{_fin_fmt(pmax)}</text>')
+    parts.append(f'<text x="4" y="{H - PB + 2}" font-size="8" fill="#8a6f4d">利益</text>')
+    parts.append('</svg>')
+    legend = ('<div class="finlg"><span><i style="background:#cfe0f5"></i>売上高（右軸）</span>'
+              + "".join(f'<span><i style="background:{col}"></i>{lab}</span>'
+                        for _k, col, lab in used_lines) + '</div>')
+    # 期別テーブル（直近5期・タップ不要で数字が見える）
+    rows = []
+    for r in reversed(use[-5:]):
+        cells = "".join(
+            f'<span class="fc">{_fin_fmt(r[k]) + "円" if r.get(k) is not None else "−"}</span>'
+            for k in ("sales", "op", "np"))
+        rows.append(f'<div class="finrow"><span class="fp">{_plabel(r)}</span>{cells}</div>')
+    head = ('<div class="finrow finhead"><span class="fp"></span>'
+            '<span class="fc">売上高</span><span class="fc">営業利益</span><span class="fc">純利益</span></div>')
+    note = ("通期実績の推移" if annual else "四半期開示の推移（累計ベース）")
+    return (f'<div class="nhead">業績の推移（{note}・決算短信より）</div>'
+            f'<div class="finchart">{"".join(parts)}</div>{legend}{head}{"".join(rows)}'
+            f'<div class="discnote">グラフの棒・点にカーソルを合わせると数値が出ます。'
+            f'決算履歴は毎晩の実行で自動蓄積され、期間は時間とともに伸びていきます（初期は約2年分）。</div>')
+
+
+FIN_CSS = """
+  .finchart{margin:4px 0 2px;}
+  .finlg{display:flex; gap:10px; flex-wrap:wrap; padding:4px 2px;}
+  .finlg span{display:flex; align-items:center; gap:4px; font-size:9.5px; color:#6e6e73; font-weight:700;}
+  .finlg i{width:10px; height:6px; display:inline-block; border-radius:2px;}
+  .finrow{display:flex; gap:6px; font-size:10.5px; padding:3px 0; border-bottom:1px dashed #f0ead9;}
+  .finrow .fp{flex:none; width:64px; font-weight:800; color:#7a6a45;}
+  .finrow .fc{flex:1; text-align:right; font-family:ui-monospace,Menlo,monospace;}
+  .finhead .fc{color:#a99a76; font-weight:700; font-family:inherit;}
 """
 
 
@@ -4503,7 +4714,9 @@ def render_html(data):
                 fund_html = ('<div class="nhead">ファンダメンタル指標</div>' + "".join(frows)
                              + f'<div class="discnote">{src_note}。読み方は「指標の読み方」ページ参照。低PER・低PBRには'
                                '業績悪化を織り込んだ「割安の罠」もあるため、単独では判断しないこと。</div>')
-        tech_html = spark_block_html(s.get("spark"), s.get("spark10"), s.get("long"))
+        tech_html = spark_block_html(s.get("spark"), s.get("spark10"), s.get("long"),
+                                     spark1=s.get("spark1"), sparkall=s.get("sparkall"),
+                                     years_all=s.get("years_all"))
         disc_html = ""
         if s.get("disclosures"):
             rows_d = "".join(
@@ -4542,6 +4755,7 @@ def render_html(data):
         {trades_html(s)}
         {tech_html}
         {fund_html}
+        {fin_chart_html((s.get("fund") or {}).get("hist"))}
         {disc_html}
         {latest_block(s)}
         <div class="fact"><span>100株の必要資金</span><span class="num">{s["cost"] / 10000:,.1f}万円</span></div>
@@ -4796,7 +5010,7 @@ __CAPJS__
 """.replace("__CAPJS__", CAP_JS.replace("__TOPN__", str(cfg["TOP_N"])) + SHARED_FN_JS + SPARK_JS + UPDATE_JS + NAV_JS) \
        .replace("__NAVCSS__", NAV_CSS) \
        .replace("__METERCSS__", METER_CSS) \
-       .replace("__EXECCSS__", EXEC_CSS + SPARK_CSS + UPDATE_CSS) \
+       .replace("__EXECCSS__", EXEC_CSS + SPARK_CSS + UPDATE_CSS + FIN_CSS) \
        .replace("__NAV__", nav_html("index"))
 
 
@@ -5149,7 +5363,7 @@ def render_universe(all_results, stats, dt):
   .simrow .simp{flex:none; font-weight:800; color:#2e4d7b;}
   .simex{flex:none; font-size:9px; font-weight:800; color:#b06a00; background:#fdf3e3;
     border-radius:4px; padding:1px 5px;}
-""" + SPARK_CSS + UPDATE_CSS + """
+""" + SPARK_CSS + UPDATE_CSS + FIN_CSS + """
 """
     script = """<script>
 const rows = Array.from(document.querySelectorAll('details.udet'));
@@ -6142,6 +6356,8 @@ def render_stock_detail(e):
                      '全体像と注意点は「TOB素地ランキング」ページ（使い方 › その他の機能）へ。</div>')
 
     fu = e.get("fund")
+    if fu and fu.get("hist"):
+        parts.append(fin_chart_html(fu["hist"]))
     if fu:
         parts.append('<div class="nhead">ファンダメンタル指標</div>')
         if fu.get("per") is not None:
@@ -6156,7 +6372,9 @@ def render_stock_detail(e):
             parts.append(f'<div class="fact"><span>時価総額</span><span class="num">{fu["mcap_oku"]:,}億円</span></div>')
 
     lg = e.get("long") or {}
-    sb = spark_block_html(lg.get("spark"), lg.get("spark10"), lg)
+    sb = spark_block_html(lg.get("spark"), lg.get("spark10"), lg,
+                          spark1=lg.get("spark1"), sparkall=lg.get("sparkall"),
+                          years_all=lg.get("years_all"))
     if sb:
         parts.append(sb)
 
