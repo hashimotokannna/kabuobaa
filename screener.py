@@ -3240,9 +3240,12 @@ def run_screening():
     for s in picked:
         s["disclosures"] = fetch_tdnet(td_session, s["code"])
         time.sleep(0.25)
+    nikkei_days = ([(d["date"], d["close"]) for d in mkt_days[-470:]]
+                   if mkt_days and len(mkt_days) >= 210 else [])
     extras = {"market": market,
               "fund_available": fund_ok, "detail_map": detail_map,
               "clean_ranked": clean_ranked, "soon": soon_list,
+              "nikkei_days": nikkei_days,
               "map_series": map_series, "sim_ohlc": sim_ohlc,
               "clean_stats": {"screened": len(detail_map),
                               "flawless": sum(1 for e in detail_map.values() if e.get("demerit") == 0)}}
@@ -3501,10 +3504,25 @@ def make_demo_data():
         sim_ohlc[s["code"]] = (_days245,
                                [round(v * scale2, 1) for v in o_], [round(v * scale2, 1) for v in h_],
                                [round(v * scale2, 1) for v in l_], [round(v * scale2, 1) for v in c_], v_)
+    # 日経の疑似系列（465日・序盤に下落局面→地合いフィルタが機能するか確認できる形）
+    _days465 = []
+    _d = _d2(2026, 8, 21)
+    while len(_days465) < 465:
+        if _d.weekday() < 5:
+            _days465.append(_d.isoformat())
+        _d -= _td2(days=1)
+    _days465.reverse()
+    _npx = 38000.0
+    nikkei_days = []
+    for k in range(465):
+        drift = -0.0014 if 280 < k < 360 else 0.0006
+        _npx *= 1 + drift + rng.gauss(0, 0.008)
+        nikkei_days.append((_days465[k], round(_npx, 1)))
     extras = {
         "detail_map": detail_map,
         "map_series": map_series,
         "sim_ohlc": sim_ohlc,
+        "nikkei_days": nikkei_days,
         "clean_ranked": clean_ranked, "soon": soon_list,
         "clean_stats": {"screened": 1480, "flawless": 3},
         "market": {"above200": True, "chg20": 2.4},
@@ -7082,6 +7100,15 @@ def render_sim(payload, dt):
   <div class="note" id="simnote"></div>
 </div>
 
+<div class="card" style="border-left:5px solid #6b4487;">
+  <h2>並走シミュレーション（本線は凍結・影で検証中）</h2>
+  <div class="gt">同じ日々の選定・同じ値動きに対して、ルール違いの変種を裏で同時に走らせています。
+  <b>本線のルールは一切変えていません</b>。実測データが貯まってから（決済30回未満は参考扱い）、勝ち続けた変種だけを採用候補にします。</div>
+  <div id="varstable"></div>
+  <canvas id="vcv" style="width:100%; display:block; background:#fffdf6; border-radius:10px; margin-top:8px;"></canvas>
+  <div class="note" id="varsnote">線=各ルールの累積確定損益。</div>
+</div>
+
 <div class="card">
   <h2>累積損益カーブ と 投下資金</h2>
   <canvas id="scv" style="width:100%; display:block; background:#fffdf6; border-radius:10px;"></canvas>
@@ -7136,6 +7163,13 @@ def render_sim(payload, dt):
   .ssrc.live{color:#1a5c37; background:#e9f3ea;}
   .tr2{font-size:10.5px; color:var(--ink2); padding:3px 0 0 2px; font-family:ui-monospace,Menlo,monospace;}
   .tr2 b{color:#1c1c1e;}
+  .vrow{display:flex; align-items:center; gap:7px; padding:6px 0; border-bottom:1px dashed #f0ead9; font-size:11.5px;}
+  .vdot{flex:none; width:10px; height:10px; border-radius:50%;}
+  .vlab{flex:1; min-width:0; font-weight:700; line-height:1.5;}
+  .vnum{flex:none; text-align:right; font-weight:800; font-size:12px;}
+  .vnum small{display:block; font-weight:600; color:var(--ink3); font-size:9px;}
+  .vnum.plus{color:#2e7d32;} .vnum.minus{color:#c62f2f;}
+  .vsub{font-size:9.5px; color:var(--ink3); font-weight:600;}
   .glg{display:flex; gap:12px; flex-wrap:wrap; padding:8px 2px 0;}
   .glg span{display:flex; align-items:center; gap:5px; font-size:10.5px; color:var(--ink2); font-weight:700;}
   .glg i{width:14px; height:3px; display:inline-block; border-radius:2px;}
@@ -7319,12 +7353,57 @@ document.querySelectorAll('.sfbtn').forEach(function(b){
     b.classList.add('on'); FILT=b.dataset.f; renderRec(true);
   });
 });
-window.addEventListener('resize',function(){ if(D){ curveDraw(); ganttDraw(); } });
+function varsDraw(){
+  if(!D.variants){ return; }
+  var el=document.getElementById('varstable');
+  el.innerHTML=D.variants.map(function(v){
+    var s=v.summary;
+    var tot=s.total_pnl+s.unrealized;
+    if(v.na) return '<div class="vrow"><span class="vdot" style="background:'+v.color+'"></span>'
+      +'<span class="vlab">'+esc(v.label)+'<div class="vsub">日経データ不足のため今回は本線と同一</div></span></div>';
+    return '<div class="vrow"><span class="vdot" style="background:'+v.color+'"></span>'
+      +'<span class="vlab">'+esc(v.label)
+      +'<div class="vsub">勝率'+(s.win_rate==null?'−':s.win_rate+'%')+'（利確'+s.tp+'/損切'+s.sl+'）'
+      +' ・ 塩漬け'+s.open+' ・ 最大資金'+man(s.max_invested)+' ・ 最大DD '+man(s.max_dd)+'</div></span>'
+      +'<span class="vnum '+cls(tot)+'">'+yen(tot)+'<small>確定'+yen(s.total_pnl)+'・含み'+yen(s.unrealized)+'</small></span></div>';
+  }).join('');
+  var cv=document.getElementById('vcv'), ctx=cv.getContext('2d');
+  var W=cv.clientWidth, H=Math.max(160,Math.round(W*0.36));
+  var DPR=Math.min(2.5,window.devicePixelRatio||1);
+  cv.style.height=H+'px'; cv.width=W*DPR; cv.height=H*DPR;
+  ctx.setTransform(DPR,0,0,DPR,0,0);
+  ctx.clearRect(0,0,W,H);
+  var allv=[];
+  D.variants.forEach(function(v){ v.curve.forEach(function(p){ allv.push(p[1]); }); });
+  if(!allv.length) return;
+  var lo=Math.min(0,Math.min.apply(null,allv)), hi=Math.max(0,Math.max.apply(null,allv));
+  if(hi-lo<1) hi=lo+1;
+  var P={l:10,r:56,t:8,b:8};
+  function Y(v){ return H-P.b-(v-lo)/(hi-lo)*(H-P.t-P.b); }
+  ctx.strokeStyle='#e8e1cf'; ctx.lineWidth=1;
+  ctx.beginPath(); ctx.moveTo(P.l,Y(0)); ctx.lineTo(W-P.r,Y(0)); ctx.stroke();
+  ctx.font='10px ui-monospace,Menlo,monospace'; ctx.fillStyle='#a99a76';
+  ctx.fillText('±0', W-P.r+4, Y(0)+3);
+  D.variants.forEach(function(v){
+    var c=v.curve, n=c.length;
+    if(n<2) return;
+    ctx.beginPath();
+    for(var i=0;i<n;i++){
+      var x=P.l+i/(n-1)*(W-P.l-P.r);
+      if(i===0) ctx.moveTo(x,Y(c[i][1])); else ctx.lineTo(x,Y(c[i][1]));
+    }
+    ctx.strokeStyle=v.color; ctx.lineWidth=v.key==='main'?2.2:1.4;
+    ctx.globalAlpha=v.key==='main'?1:0.85;
+    ctx.stroke();
+  });
+  ctx.globalAlpha=1;
+}
+window.addEventListener('resize',function(){ if(D){ curveDraw(); ganttDraw(); varsDraw(); } });
 fetch('sim.json').then(function(r){
   if(!r.ok) throw new Error('sim.jsonがまだ生成されていません（次回の実行で作られます）');
   return r.json();
 }).then(function(j){
-  D=j; stats(); curveDraw(); ganttDraw(); openList(); renderRec(true);
+  D=j; stats(); varsDraw(); curveDraw(); ganttDraw(); openList(); renderRec(true);
 }).catch(function(e){
   document.getElementById('simstats').innerHTML='<div class="note">⚠ '+e.message+'</div>';
 });
@@ -7365,7 +7444,7 @@ SIM_STATE_PATH = DOCS / "history" / "simstate.json"
 
 
 def _sim_reconstruct_picks(sim_ohlc, qmap):
-    """各営業日の「1位」を復元する {date: code}。
+    """各営業日の上位2銘柄を復元する {date: [code1, code2]}。
     価格由来の要素（安さ・下げ止まり・トレンド・RSI・流動性・危険な下げ方の除外）は
     その日時点で再計算し、質スコアは現在値で固定（過去の財務は取得不能のため）"""
     import pandas as pd
@@ -7414,33 +7493,161 @@ def _sim_reconstruct_picks(sim_ohlc, qmap):
             & (drop >= 3.0))
     qv = np.array([float(qmap.get(code, 0.0)) for code in df_c.columns])
     score = np.where(elig.to_numpy() & np.isfinite(t), t + qv[None, :], -1e9)
-    best_j = np.argmax(score, axis=1)
-    best_v = score[np.arange(score.shape[0]), best_j]
+    order2 = np.argsort(-score, axis=1)[:, :2]
     picks = {}
     codes = list(df_c.columns)
     for i, d in enumerate(df_c.index):
-        if i < 60 or best_v[i] < -1e8:
+        if i < 60:
             continue
-        picks[str(d)] = codes[best_j[i]]
+        lst = [codes[j] for j in order2[i] if score[i, j] > -1e8]
+        if lst:
+            picks[str(d)] = lst
     return picks
 
 
-def run_simulation(picked, detail_map, sim_ohlc, dt, demo=False):
-    """状態(実測1位の蓄積)を読み、過去1年ぶんを決定的に再計算して docs/sim.json を書く"""
+def _exec_ifdoco(all_dates, bar_at, picks_of, namemap, sim_ohlc,
+                 use_second=False, allow_day=None):
+    """IFDOCO実行器（全変種で共通）。
+    use_second: 1位を保有中なら2位を買う ／ allow_day: 新規買いを出してよい日の判定関数"""
+    positions, trades, curve = [], [], []
+    date_i = {d: i for i, d in enumerate(all_dates)}
+    cum = 0.0
+    tp_n = sl_n = fill_n = nofill_n = skip_n = gate_n = 0
+    max_inv = 0.0
+    max_pos = 0
+    inv_sum = 0.0
+    peak = 0.0
+    max_dd = 0.0
+    pend = None
+    for i, d in enumerate(all_dates):
+        # 1) OCO判定（同日両到達は損切り優先・窓開けは寄り付き約定）
+        still = []
+        for p in positions:
+            bar = bar_at(p["code"], d)
+            if bar is None:
+                still.append(p)
+                continue
+            op, hi, lo, _c = bar
+            sl_line = p["buy"] * (1 - SIM_SL_PCT / 100)
+            tp_line = p["buy"] * (1 + SIM_TP_PCT / 100)
+            if lo <= sl_line:
+                sell = min(op, sl_line) * (1 - SIM_SLIP)
+                pnl = (sell - p["buy"]) * SIM_SHARES
+                cum += pnl
+                sl_n += 1
+                p["trade"].update({"ev": "sl", "sell_date": d, "sell": round(sell, 1),
+                                   "pnl": round(pnl), "held": max(1, i - p["i"])})
+            elif hi >= tp_line:
+                sell = max(op, tp_line)
+                pnl = (sell - p["buy"]) * SIM_SHARES
+                cum += pnl
+                tp_n += 1
+                p["trade"].update({"ev": "tp", "sell_date": d, "sell": round(sell, 1),
+                                   "pnl": round(pnl), "held": max(1, i - p["i"])})
+            else:
+                still.append(p)
+        positions = still
+        # 2) 買付（保有中の銘柄は重ね買いしない。use_secondなら2位に切替）
+        if pend is not None:
+            held = {p["code"] for p in positions}
+            cand = None
+            for c0 in pend["cands"]:
+                if c0 not in held:
+                    cand = c0
+                    break
+                if not use_second:
+                    break
+            if cand is None:
+                skip_n += 1
+                c0 = pend["cands"][0]
+                trades.append({"code": c0, "name": namemap.get(c0, c0), "src": pend["src"],
+                               "buy_date": d, "buy": round(pend["prices"].get(c0, 0), 1), "ev": "skip"})
+            else:
+                price = pend["prices"].get(cand)
+                bar = bar_at(cand, d)
+                if price and bar is not None and (bar[0] <= price or bar[2] <= price):
+                    fill = min(price, bar[0])
+                    trade = {"code": cand, "name": namemap.get(cand, cand), "src": pend["src"],
+                             "buy_date": d, "buy": round(fill, 1), "ev": "open",
+                             "alt": cand != pend["cands"][0]}
+                    trades.append(trade)
+                    positions.append({"code": cand, "buy": fill, "date": d, "i": i,
+                                      "src": pend["src"], "trade": trade})
+                    fill_n += 1
+                else:
+                    nofill_n += 1
+                    trades.append({"code": cand, "name": namemap.get(cand, cand), "src": pend["src"],
+                                   "buy_date": d, "buy": round(price or 0, 1), "ev": "nofill"})
+            pend = None
+        # 3) 今夜の選定 → 翌営業日の注文（地合いフィルタはここで判定）
+        pk = picks_of(d)
+        if pk:
+            cands, src_ = pk
+            if allow_day is not None and not allow_day(d):
+                gate_n += 1
+            else:
+                prices = {}
+                for c1 in cands:
+                    bar = bar_at(c1, d)
+                    if bar is not None:
+                        prices[c1] = bar[3] * (1 - SIM_SLIP)
+                cands = [c1 for c1 in cands if c1 in prices]
+                if cands:
+                    pend = {"cands": cands, "prices": prices, "src": src_}
+        inv = sum(p["buy"] for p in positions) * SIM_SHARES
+        max_inv = max(max_inv, inv)
+        max_pos = max(max_pos, len(positions))
+        inv_sum += inv
+        peak = max(peak, cum)
+        max_dd = max(max_dd, peak - cum)
+        curve.append([d, round(cum), round(inv)])
+
+    unreal = 0.0
+    pos_out = []
+    for p in positions:
+        last_c = sim_ohlc[p["code"]][4][-1]
+        upnl = (last_c - p["buy"]) * SIM_SHARES
+        unreal += upnl
+        p["trade"]["last"] = round(last_c, 1)
+        p["trade"]["pnl"] = round(upnl)
+        p["trade"]["held"] = max(1, len(all_dates) - 1 - date_i.get(p["date"], 0))
+        pos_out.append({"code": p["code"], "name": namemap.get(p["code"], p["code"]),
+                        "buy": round(p["buy"], 1), "buy_date": p["date"],
+                        "last": round(last_c, 1), "shares": SIM_SHARES,
+                        "pnl": round(upnl), "held": p["trade"]["held"], "src": p["src"]})
+    pos_out.sort(key=lambda x: x["pnl"])
+    closed = tp_n + sl_n
+    summary = {
+        "total_pnl": round(cum), "unrealized": round(unreal),
+        "tp": tp_n, "sl": sl_n, "closed": closed,
+        "win_rate": round(tp_n / closed * 100, 1) if closed else None,
+        "fills": fill_n, "nofills": nofill_n, "skips": skip_n, "gated": gate_n,
+        "open": len(pos_out), "days": len(all_dates),
+        "max_invested": round(max_inv),
+        "avg_invested": round(inv_sum / max(1, len(all_dates))),
+        "max_positions": max_pos,
+        "max_dd": round(max_dd),
+    }
+    return {"summary": summary, "curve": curve, "trades": trades, "positions": pos_out}
+
+
+def run_simulation(picked, detail_map, sim_ohlc, dt, demo=False, nikkei_days=None):
+    """本線＋並走変種（2位買い・地合いフィルタ）を同一データで実行し docs/sim.json を書く。
+    本線ルールは凍結（変種は影の検証のみ）"""
     SIM_STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
     try:
         state = json.loads(SIM_STATE_PATH.read_text(encoding="utf-8"))
     except Exception:  # noqa: BLE001
         state = {"live_picks": {}}
     live_picks = state.get("live_picks") or {}
+    # 旧形式（date→code文字列）→ 新形式（date→[1位,2位]）へ移行
+    live_picks = {d: (v if isinstance(v, list) else [v]) for d, v in live_picks.items()}
 
-    # 今夜の実際の1位を蓄積（確定記帳のみ。デモは常に記録）
+    # 今夜の実際の1位・2位を蓄積（確定記帳のみ。デモは常に記録）
     if picked and (demo or is_final_run(dt)):
-        top = picked[0]
-        top_date = top.get("date")
+        top_date = picked[0].get("date")
         if top_date:
-            live_picks[str(top_date)] = top["code"]
-    # 窓の外に出た古い記録を掃除
+            live_picks[str(top_date)] = [s["code"] for s in picked[:2]]
     all_dates = sorted({d for tup in sim_ohlc.values() for d in tup[0]})
     if all_dates:
         live_picks = {d: c for d, c in live_picks.items() if d >= all_dates[0]}
@@ -7457,20 +7664,21 @@ def run_simulation(picked, detail_map, sim_ohlc, dt, demo=False):
     recon = _sim_reconstruct_picks(sim_ohlc, qmap)
     n_live = 0
 
-    def pick_for(d):
+    def picks_of(d):
         nonlocal n_live
-        if d in live_picks and live_picks[d] in sim_ohlc:
-            n_live += 1
-            return live_picks[d], "live"
+        if d in live_picks:
+            lst = [c for c in live_picks[d] if c in sim_ohlc]
+            if lst:
+                n_live += 1
+                return lst, "live"
         if d in recon:
             return recon[d], "restored"
-        return None, None
+        return None
 
-    # 高速参照用: code -> (date→index, o, h, l, c)  ※タプル辞書よりメモリ効率が良い
     bars = {}
     for code, tup in sim_ohlc.items():
         dates, o, h, l, c, _v = tup
-        bars[code] = ({d: i for i, d in enumerate(dates)}, o, h, l, c)
+        bars[code] = ({dd: i for i, dd in enumerate(dates)}, o, h, l, c)
 
     def bar_at(code, d):
         b = bars.get(code)
@@ -7481,120 +7689,45 @@ def run_simulation(picked, detail_map, sim_ohlc, dt, demo=False):
             return None
         return (b[1][i], b[2][i], b[3][i], b[4][i])
 
-    positions, trades, curve = [], [], []
-    date_i = {d: i for i, d in enumerate(all_dates)}
-    cum = 0.0
-    tp_n = sl_n = fill_n = nofill_n = skip_n = 0
-    max_inv = 0.0
-    max_pos = 0
-    inv_sum = 0.0
-    pend = None  # {"code","price","src"}
-    for i, d in enumerate(all_dates):
-        # 1) 保有ポジションのOCO判定（同日両到達は保守的に損切り優先。
-        #    窓開けで設定値を飛び越えて寄り付いた場合は寄り付き価格で約定＝現実の逆指値/指値の挙動）
-        still = []
-        for p in positions:
-            bar = bar_at(p["code"], d)
-            if bar is None:
-                still.append(p)
-                continue
-            op, hi, lo, _c = bar
-            sl_line = p["buy"] * (1 - SIM_SL_PCT / 100)
-            tp_line = p["buy"] * (1 + SIM_TP_PCT / 100)
-            if lo <= sl_line:
-                base = min(op, sl_line)          # 窓開け下落なら寄りで成行約定
-                sell = base * (1 - SIM_SLIP)
-                pnl = (sell - p["buy"]) * SIM_SHARES
-                cum += pnl
-                sl_n += 1
-                t = p["trade"]
-                t.update({"ev": "sl", "sell_date": d, "sell": round(sell, 1),
-                          "pnl": round(pnl), "held": max(1, i - p["i"])})
-            elif hi >= tp_line:
-                sell = max(op, tp_line)          # 窓開け上昇なら寄りで約定（指値以上で売れる）
-                pnl = (sell - p["buy"]) * SIM_SHARES
-                cum += pnl
-                tp_n += 1
-                t = p["trade"]
-                t.update({"ev": "tp", "sell_date": d, "sell": round(sell, 1),
-                          "pnl": round(pnl), "held": max(1, i - p["i"])})
-            else:
-                still.append(p)
-        positions = still
-        # 2) 昨夜の1位の買付。同一銘柄を保有中なら重ね買いせずスキップ（記録は残す）
-        if pend is not None:
-            nm = namemap.get(pend["code"], pend["code"])
-            if any(p["code"] == pend["code"] for p in positions):
-                skip_n += 1
-                trades.append({"code": pend["code"], "name": nm, "src": pend["src"],
-                               "buy_date": d, "buy": round(pend["price"], 1), "ev": "skip"})
-            else:
-                bar = bar_at(pend["code"], d)
-                # 指値買い: 寄りが指値以下なら寄りで約定、それ以外は当日安値が届けば指値で約定
-                if bar is not None and (bar[0] <= pend["price"] or bar[2] <= pend["price"]):
-                    fill = min(pend["price"], bar[0])
-                    trade = {"code": pend["code"], "name": nm, "src": pend["src"],
-                             "buy_date": d, "buy": round(fill, 1), "ev": "open"}
-                    trades.append(trade)
-                    positions.append({"code": pend["code"], "buy": fill,
-                                      "date": d, "i": i, "src": pend["src"], "trade": trade})
-                    fill_n += 1
-                else:
-                    nofill_n += 1
-                    trades.append({"code": pend["code"], "name": nm, "src": pend["src"],
-                                   "buy_date": d, "buy": round(pend["price"], 1), "ev": "nofill"})
-            pend = None
-        # 3) 今夜の1位 → 翌営業日の注文（終値×(1-0.05%)の指値）
-        code, src_ = pick_for(d)
-        if code:
-            bar = bar_at(code, d)
-            if bar is not None:
-                pend = {"code": code, "price": bar[3] * (1 - SIM_SLIP), "src": src_}
-        # 投下資金の実測（その日の保有ポジションの取得額合計）
-        inv = sum(p["buy"] for p in positions) * SIM_SHARES
-        if inv > max_inv:
-            max_inv = inv
-        if len(positions) > max_pos:
-            max_pos = len(positions)
-        inv_sum += inv
-        curve.append([d, round(cum), round(inv)])
+    # 地合い（日経の200日線）: 日付→線の上かどうか
+    above200 = {}
+    if nikkei_days and len(nikkei_days) >= 210:
+        ncl = [c for _d, c in nikkei_days]
+        ndt = [_d for _d, c in nikkei_days]
+        csum = [0.0]
+        for c in ncl:
+            csum.append(csum[-1] + c)
+        for i in range(len(ncl)):
+            if i >= 199:
+                ma = (csum[i + 1] - csum[i - 199]) / 200
+                above200[ndt[i]] = ncl[i] > ma
 
-    # 塩漬け（未決済）は最新終値で評価
-    unreal = 0.0
-    pos_out = []
-    for p in positions:
-        last_c = sim_ohlc[p["code"]][4][-1]
-        upnl = (last_c - p["buy"]) * SIM_SHARES
-        unreal += upnl
-        p["trade"]["last"] = round(last_c, 1)
-        p["trade"]["pnl"] = round(upnl)
-        p["trade"]["held"] = max(1, len(all_dates) - 1 - date_i.get(p["date"], 0))
-        pos_out.append({"code": p["code"], "name": namemap.get(p["code"], p["code"]),
-                        "buy": round(p["buy"], 1), "buy_date": p["date"],
-                        "last": round(last_c, 1), "shares": SIM_SHARES,
-                        "pnl": round(upnl),
-                        "held": p["trade"]["held"], "src": p["src"]})
-    pos_out.sort(key=lambda x: x["pnl"])
+    def allow_mkt(d):
+        return above200.get(d, True)   # データが無い日は許可（保守的に本線と同じ挙動）
 
-    closed = tp_n + sl_n
+    # ── 本線＋並走変種を同一データで実行 ──
+    main = _exec_ifdoco(all_dates, bar_at, picks_of, namemap, sim_ohlc)
+    v2nd = _exec_ifdoco(all_dates, bar_at, picks_of, namemap, sim_ohlc, use_second=True)
+    vmkt = _exec_ifdoco(all_dates, bar_at, picks_of, namemap, sim_ohlc,
+                        allow_day=(allow_mkt if above200 else None))
+
     payload = {
         "generated_at": datetime.now(JST).isoformat(),
         "rules": {"tp": SIM_TP_PCT, "sl": SIM_SL_PCT, "slip": SIM_SLIP * 100, "shares": SIM_SHARES},
-        "summary": {
-            "total_pnl": round(cum), "unrealized": round(unreal),
-            "tp": tp_n, "sl": sl_n, "closed": closed,
-            "win_rate": round(tp_n / closed * 100, 1) if closed else None,
-            "fills": fill_n, "nofills": nofill_n, "skips": skip_n,
-            "open": len(pos_out),
-            "days": len(all_dates), "live_days": n_live,
-            "max_invested": round(max_inv),
-            "avg_invested": round(inv_sum / max(1, len(all_dates))),
-            "max_positions": max_pos,
-        },
+        "summary": {**main["summary"], "live_days": n_live // 3 if n_live else 0},
         "dates": all_dates,
-        "curve": curve[-260:],
-        "positions": pos_out,
-        "trades": trades[-500:],
+        "curve": main["curve"][-260:],
+        "positions": main["positions"],
+        "trades": main["trades"][-500:],
+        "variants": [
+            {"key": "main", "label": "本線（現行ルール・凍結）", "color": "#2e7d32",
+             "summary": main["summary"], "curve": [[p[0], p[1]] for p in main["curve"][-260:]]},
+            {"key": "v2nd", "label": "変種A: 1位を保有中なら2位を買う", "color": "#2e5fa8",
+             "summary": v2nd["summary"], "curve": [[p[0], p[1]] for p in v2nd["curve"][-260:]]},
+            {"key": "vmkt", "label": "変種B: 日経200日線割れの日は新規買い停止", "color": "#8a5a17",
+             "summary": vmkt["summary"], "curve": [[p[0], p[1]] for p in vmkt["curve"][-260:]],
+             "na": not above200},
+        ],
     }
     (DOCS / "sim.json").write_text(json.dumps(payload, ensure_ascii=False,
                                               separators=(",", ":")), encoding="utf-8")
@@ -7602,9 +7735,11 @@ def run_simulation(picked, detail_map, sim_ohlc, dt, demo=False):
         SIM_STATE_PATH.write_text(json.dumps(state, ensure_ascii=False), encoding="utf-8")
     except Exception:  # noqa: BLE001
         pass
-    print(f"  シミュレーション: {len(all_dates)}営業日 / 成立{fill_n}・不成立{nofill_n}・スキップ{skip_n} / "
-          f"利確{tp_n}・損切{sl_n} / 塩漬け{len(pos_out)} / 最大投下資金 {max_inv/10000:,.0f}万円 / "
-          f"実測1位の蓄積 {len(live_picks)}日")
+    ms = main["summary"]
+    print(f"  シミュレーション: {len(all_dates)}営業日 / 本線: 成立{ms['fills']}・利確{ms['tp']}・損切{ms['sl']}"
+          f"・塩漬け{ms['open']}・損益{ms['total_pnl']:+,}円 / "
+          f"変種A {v2nd['summary']['total_pnl']:+,}円 / 変種B {vmkt['summary']['total_pnl']:+,}円 / "
+          f"実測日 {len(live_picks)}")
     return payload
 
 
@@ -7750,7 +7885,8 @@ def main():
     try:
         sim_summary_out = run_simulation(picked, detail_map_all,
                                          extras.get("sim_ohlc") or {}, dt_now,
-                                         demo=args.demo)
+                                         demo=args.demo,
+                                         nikkei_days=extras.get("nikkei_days") or [])
         (DOCS / "sim.html").write_text(render_sim(sim_summary_out, dt_now), encoding="utf-8")
     except Exception as _sim_ex:  # noqa: BLE001
         import traceback
