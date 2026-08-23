@@ -1729,6 +1729,7 @@ var DATA=null, ST=[], byCode={}, GROUPS=[], WHY={}, AXES=[];
 var MODE='sec', SHOW_EX=true, SPIN=true;
 var rotY=0.6, rotX=0.32, zoom=1, ox=0, oy=0, autoT=0;
 var focusI=-1, fEdges=[], f2Edges=[], fset2={}, hoverI=-1, TRAIL=[], camGoal=null;
+var spinHoldUntil=0;
 var EDGES=[], prio=[];
 /* カメラ設定（この端末に保存） */
 var CAM_KEY='kabuobaa_map_cam';
@@ -1764,7 +1765,13 @@ function resize(){
   var vv=window.visualViewport;
   var pageZoom=vv?Math.max(1,vv.scale):1;   // ページごとピンチ拡大された時も高精細で描き直す
   DPR=Math.min(3.5,(window.devicePixelRatio||1)*pageZoom);
+  var oldSc=(W>0&&H>0)?Math.min(W,H):0;
   W=st.clientWidth; H=st.clientHeight;
+  /* パネル開閉などでキャンバス寸法が変わっても、画面中央に見ていた場所を保つ */
+  if(oldSc>0){
+    var k=Math.min(W,H)/oldSc;
+    ox*=k; oy*=k;
+  }
   cv.width=Math.round(W*DPR); cv.height=Math.round(H*DPR);
   ctx.setTransform(DPR,0,0,DPR,0,0);
 }
@@ -1984,7 +1991,7 @@ function draw(ts){
     if(!SHOW_EX && s.ex) continue;
     if(isHidden(s)) continue;
     if(s.px<-20||s.px>W+20||s.py<-20||s.py>H+20) continue;
-    var r=Math.min(7,2.4*s.pf*zf);   /* 全銘柄おなじ大きさ（有名・無名で差を付けない） */
+    var r=Math.min(4.5,1.5*s.pf*zf);   /* 全銘柄おなじ・小さめの点 */
     var a=fogA(s)*(s.ex?0.45:1);
     if(focused) a*= fset[idx]? 1 : (fset2[idx]? 0.34 : 0.07);
     if(a<0.02) continue;
@@ -2027,14 +2034,14 @@ function draw(ts){
     var hs=ST[hoverI];
     if(!(focused && !fset[hoverI] && !fset2[hoverI])){
       ctx.strokeStyle=CAM.theme==='light'?'rgba(20,40,70,.7)':'rgba(255,255,255,.75)'; ctx.lineWidth=1.2;
-      ctx.beginPath(); ctx.arc(hs.px,hs.py,Math.min(7,2.4*hs.pf*Math.pow(zoom,0.22))+3,0,Math.PI*2); ctx.stroke();
+      ctx.beginPath(); ctx.arc(hs.px,hs.py,Math.min(4.5,1.5*hs.pf*Math.pow(zoom,0.22))+3,0,Math.PI*2); ctx.stroke();
       labelFor(hs,hs.name,11.5,themeC().focusLabel);
     }
   }
   /* focus label */
   if(focused){
     var FS=ST[focusI];
-    var lr=Math.min(7,2.4*FS.pf*Math.pow(zoom,0.22))*1.35;
+    var lr=Math.min(4.5,1.5*FS.pf*Math.pow(zoom,0.22))*1.6;
     ctx.strokeStyle=rgbaOf(colAdj('#4dd7ff'),0.9); ctx.lineWidth=1.4;
     ctx.beginPath(); ctx.arc(FS.px,FS.py,lr+3.5+Math.sin(ts*0.004)*1.2,0,Math.PI*2); ctx.stroke();
     labelFor(FS,FS.name,15,themeC().focusLabel);
@@ -2090,7 +2097,7 @@ function loop(ts){
     if(Math.abs(velPx)>0.12||Math.abs(velPy)>0.12){
       ox+=velPx; oy+=velPy; velPx*=0.9; velPy*=0.9;
     } else { velPx=velPy=0; }
-    if(SPIN && zoom<2.2 && Date.now()-lastPointer>1600 && !velY && !velPx){ rotY+=0.0016*CAM.spin; }
+    if(SPIN && zoom<2.2 && Date.now()-lastPointer>1600 && Date.now()>spinHoldUntil && !velY && !velPx){ rotY+=0.0016*CAM.spin; }
   }
   draw(ts||0);
   requestAnimationFrame(loop);
@@ -2236,6 +2243,7 @@ function whyTags(flags){
 function focusOn(i, fly){
   if(fly===undefined) fly=true;
   focusI=i; fEdges=[]; f2Edges=[]; fset2={}; hoverI=-1;
+  spinHoldUntil=Date.now()+8000;
   /* 発想の旅（たどった履歴） */
   var ti=TRAIL.indexOf(i);
   if(ti>=0) TRAIL.splice(ti,1);
@@ -2321,7 +2329,8 @@ function focusOn(i, fly){
 }
 function clearFocus(){
   focusI=-1; fEdges=[]; f2Edges=[]; fset2={};
-  camGoal=null; lastPointer=Date.now();   /* カメラは今の場所のまま（初期視点には戻さない） */
+  camGoal=null; lastPointer=Date.now();
+  spinHoldUntil=Date.now()+8000;   /* カメラは今の場所のまま・自動回転もしばらく再開しない */
   document.body.classList.remove('focused');
   document.getElementById('panel').classList.remove('show');
   setTimeout(resize,200);
@@ -7059,12 +7068,12 @@ def render_sim(payload, dt):
 <div class="card" style="border-left:5px solid #2e4d7b;">
   <h2>このシミュレーションのルール（毎晩自動で再計算）</h2>
   <div class="gt"><b>毎営業日、「今夜の厳選」1位の銘柄をIFDOCO注文で機械的に売買したら？</b>を過去1年ぶん実行した結果です。</div>
-  <div class="simrule">① 買い: 1位銘柄をその日の終値×(1−0.05%)の指値で翌営業日に発注。翌日の安値が届かなければ<b>不成立→破棄</b>（記録は残す）</div>
-  <div class="simrule">② 売り(OCO): 買値<b>+10%の指値</b> と 買値<b>−5%の逆指値成行</b>（約定は設定値×(1−0.05%)）。同じ日に両方に届いた場合は<b>保守的に損切りを優先</b></div>
-  <div class="simrule">③ どちらにも届かないまま残った株は<b>塩漬け株</b>として保有し続け、最新終値で評価</div>
-  <div class="simrule">④ 資金は無制限（100株ずつ・資金切れなし）。同じ銘柄の重複買いも発生し得ます</div>
-  <div class="gt" style="margin-top:6px; color:#8a5a17;">順位の再現について: 過去分は価格由来の要素（安さ・下げ止まり・トレンド・RSI・流動性）で当時の1位を復元し、
-  財務由来の質スコアは現在値で固定しています（過去時点の財務は取得不能のため）。<b>今夜からは毎晩の実際の1位を蓄積</b>し、時間が経つほど「実測」の比率が上がります。</div>
+  <div class="simrule">① 買い: 1位銘柄をその日の終値×(1−0.05%)の指値で翌営業日に発注。寄り付きが指値以下なら寄りで約定、当日安値が届かなければ<b>不成立→破棄</b>（記録は残す）</div>
+  <div class="simrule">② 売り(OCO): 買値<b>+10%の指値</b> と 買値<b>−5%の逆指値成行</b>。窓開けで設定値を飛び越えた日は<b>寄り付き価格で約定</b>（現実の注文挙動を再現）。同日に両方へ届いた場合は保守的に損切り優先</div>
+  <div class="simrule">③ <b>同じ銘柄を保有中は重ね買いしない</b>（1位が連日同じ銘柄でもスキップ・記録は残す）</div>
+  <div class="simrule">④ どちらにも届かないまま残った株は<b>塩漬け株</b>として保有し続け、最新終値で評価。資金は無制限・100株ずつ</div>
+  <div class="gt" style="margin-top:6px;"><span class="ssrc">復元</span> = 過去の1位を価格由来の要素（安さ・下げ止まり・トレンド・RSI・流動性）で復元した区間（過去時点の財務は取得不能のため質スコアは現在値で固定）。
+  <span class="ssrc live">実測</span> = システムが毎晩実際に選んだ1位。日が経つほど実測の比率が上がり、検証の信頼度が上がります。</div>
 </div>
 
 <div class="card">
@@ -7074,8 +7083,18 @@ def render_sim(payload, dt):
 </div>
 
 <div class="card">
-  <h2>累積損益カーブ</h2>
+  <h2>累積損益カーブ と 投下資金</h2>
   <canvas id="scv" style="width:100%; display:block; background:#fffdf6; border-radius:10px;"></canvas>
+  <div class="note">緑/赤の線=確定損益の累積。うすい茶色の面=その日に市場へ投じていた資金（保有ポジションの取得額合計）。</div>
+</div>
+
+<div class="card">
+  <h2>取引の時系列図（1行=1取引・横線が保有期間）</h2>
+  <canvas id="gcv" style="width:100%; display:block; background:#fffdf6; border-radius:10px;"></canvas>
+  <div class="glg"><span><i style="background:#2e7d32"></i>利確で終了</span>
+  <span><i style="background:#c62f2f"></i>損切りで終了</span>
+  <span><i style="background:#b06a00"></i>保有中（塩漬け）</span></div>
+  <div class="note">下から古い順。線の左端=買った日、右端=売れた日（保有中は右端まで伸び続けます）。線が長い=資金が拘束されていた期間です。</div>
 </div>
 
 <div class="card">
@@ -7084,8 +7103,8 @@ def render_sim(payload, dt):
 </div>
 
 <div class="card">
-  <h2 style="display:flex; justify-content:space-between; align-items:center;">日次の全記録（新しい順）
-    <span class="rsort"><button class="sfbtn on" data-f="all">すべて</button><button class="sfbtn" data-f="trade">売買のみ</button><button class="sfbtn" data-f="nofill">不成立</button></span></h2>
+  <h2 style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:6px;">全取引の記録（新しい順）
+    <span class="rsort"><button class="sfbtn on" data-f="all">すべて</button><button class="sfbtn" data-f="tp">利確</button><button class="sfbtn" data-f="sl">損切</button><button class="sfbtn" data-f="open">保有中</button><button class="sfbtn" data-f="no">不成立/スキップ</button></span></h2>
   <div id="simrec"></div>
   <div class="rmore-row"><button id="smore" class="rmorebtn">さらに表示</button></div>
 </div>
@@ -7097,23 +7116,29 @@ def render_sim(payload, dt):
   .sgrid{display:grid; grid-template-columns:repeat(2,1fr); gap:8px;}
   .sg{background:#fffdf6; border-radius:10px; padding:9px 11px;}
   .sg .k{font-size:10px; color:var(--ink3); font-weight:700;}
-  .sg .v{font-size:17px; font-weight:800;}
+  .sg .v{font-size:16px; font-weight:800;}
   .sg .v small{font-size:10.5px; font-weight:600; color:var(--ink2);}
   .sg .v.plus{color:#2e7d32;} .sg .v.minus{color:#c62f2f;}
   .rsort{display:flex; border:1.5px solid #d9d2bf; border-radius:8px; overflow:hidden;}
-  .sfbtn{border:none; background:#fff; color:var(--ink2); font-size:11px; font-weight:800; padding:5px 10px; cursor:pointer;}
+  .sfbtn{border:none; background:#fff; color:var(--ink2); font-size:10.5px; font-weight:800; padding:5px 9px; cursor:pointer;}
   .sfbtn.on{background:#1c1c1e; color:#fff;}
-  .srow{display:flex; align-items:center; gap:7px; padding:5.5px 0; border-bottom:1px dashed #f0ead9; font-size:12px;}
-  .sdt{flex:none; width:74px; color:var(--ink2); font-size:10.5px;}
+  .trow2{padding:7px 0; border-bottom:1px dashed #f0ead9; font-size:12px;}
+  .tr1{display:flex; align-items:center; gap:7px;}
   .sev{flex:none; font-size:9.5px; font-weight:800; border-radius:4px; padding:2px 7px;}
-  .sev.buy{background:#e8eef8; color:#2e4d7b;} .sev.tp{background:#e9f3ea; color:#1a5c37;}
-  .sev.sl{background:#fdeeee; color:#c62f2f;} .sev.nofill{background:#f0f0f4; color:#6e6e73;}
+  .sev.tp{background:#e9f3ea; color:#1a5c37;} .sev.sl{background:#fdeeee; color:#c62f2f;}
+  .sev.open{background:#fdf3e3; color:#b06a00;} .sev.nofill{background:#f0f0f4; color:#6e6e73;}
+  .sev.skip{background:#f0f0f4; color:#6e6e73;}
   .snm{flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-weight:700;}
   .snm small{color:var(--ink3); font-weight:600;}
-  .spnl{flex:none; font-weight:800; font-size:11.5px;}
+  .spnl{flex:none; font-weight:800; font-size:12px;}
   .spnl.plus{color:#2e7d32;} .spnl.minus{color:#c62f2f;}
-  .ssrc{flex:none; font-size:9px; font-weight:700; color:#8a5a17; background:#fdf6e6; border-radius:4px; padding:1px 5px;}
+  .ssrc{display:inline-block; font-size:9px; font-weight:700; color:#8a5a17; background:#fdf6e6; border-radius:4px; padding:1px 5px;}
   .ssrc.live{color:#1a5c37; background:#e9f3ea;}
+  .tr2{font-size:10.5px; color:var(--ink2); padding:3px 0 0 2px; font-family:ui-monospace,Menlo,monospace;}
+  .tr2 b{color:#1c1c1e;}
+  .glg{display:flex; gap:12px; flex-wrap:wrap; padding:8px 2px 0;}
+  .glg span{display:flex; align-items:center; gap:5px; font-size:10.5px; color:var(--ink2); font-weight:700;}
+  .glg i{width:14px; height:3px; display:inline-block; border-radius:2px;}
   .orow{display:flex; align-items:center; gap:8px; padding:6px 0; border-bottom:1px dashed #f0ead9; font-size:12px;}
   .onm{flex:1; min-width:0; font-weight:700; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
   .onm small{color:var(--ink3); font-weight:600;}
@@ -7127,10 +7152,12 @@ def render_sim(payload, dt):
     script = r"""<script>
 (function(){
 'use strict';
-var D=null, FILT='all', SHOWN=0;
+var D=null, FILT='all', SHOWN=0, DIDX={};
 function yen(v){ return (v<0?'−':'+')+Math.abs(Math.round(v)).toLocaleString()+'円'; }
+function man(v){ return Math.round(v/10000).toLocaleString()+'万円'; }
 function esc(t){return String(t).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});}
 function cls(v){ return v>=0?'plus':'minus'; }
+function md(d){ return d? d.slice(2).replace(/-/g,'/') : ''; }
 function stats(){
   var s=D.summary;
   var total=s.total_pnl+s.unrealized;
@@ -7139,26 +7166,36 @@ function stats(){
     +'<div class="sg"><div class="k">含み損益（塩漬け'+s.open+'銘柄）</div><div class="v '+cls(s.unrealized)+'">'+yen(s.unrealized)+'</div></div>'
     +'<div class="sg"><div class="k">確定+含みの通算</div><div class="v '+cls(total)+'">'+yen(total)+'</div></div>'
     +'<div class="sg"><div class="k">勝率（決済済みのみ）</div><div class="v">'+(s.win_rate==null?'−':s.win_rate+'%')+'<small> 利確'+s.tp+'・損切'+s.sl+'</small></div></div>'
-    +'<div class="sg"><div class="k">売買成立</div><div class="v">'+s.fills+'<small>回 ／ 不成立 '+s.nofills+'回</small></div></div>'
+    +'<div class="sg"><div class="k">この戦略に必要だった資金</div><div class="v">'+man(s.max_invested)+'<small> 最大時（同時'+s.max_positions+'銘柄）</small></div></div>'
+    +'<div class="sg"><div class="k">平均投下資金</div><div class="v">'+man(s.avg_invested)+'<small> / 営業日平均</small></div></div>'
+    +'<div class="sg"><div class="k">売買成立</div><div class="v">'+s.fills+'<small>回 ／ 不成立'+s.nofills+'・保有中スキップ'+s.skips+'</small></div></div>'
     +'<div class="sg"><div class="k">実測1位でのデータ日数</div><div class="v">'+s.live_days+'<small> / '+s.days+'営業日（残りは復元）</small></div></div>';
   document.getElementById('simnote').textContent=
-    '1回の売買は100株。確定損益は売れた時点で計上、塩漬けは最新終値で評価しています。';
+    '1回の売買は100株。「必要だった資金」は保有ポジションの取得額合計のピーク＝この戦略を回すのに実際に要した余力の実測値です。';
 }
 function curveDraw(){
   var cv=document.getElementById('scv'), ctx=cv.getContext('2d');
-  var W=cv.clientWidth, H=Math.max(180,Math.round(W*0.42));
+  var W=cv.clientWidth, H=Math.max(190,Math.round(W*0.44));
   var DPR=Math.min(2.5,window.devicePixelRatio||1);
   cv.style.height=H+'px'; cv.width=W*DPR; cv.height=H*DPR;
   ctx.setTransform(DPR,0,0,DPR,0,0);
   var c=D.curve;
   if(!c.length) return;
   var vals=c.map(function(p){return p[1];});
+  var invs=c.map(function(p){return p[2]||0;});
   var lo=Math.min(0,Math.min.apply(null,vals)), hi=Math.max(0,Math.max.apply(null,vals));
+  var ihi=Math.max.apply(null,invs)||1;
   if(hi-lo<1) hi=lo+1;
-  var P={l:14,r:64,t:12,b:20};
+  var P={l:14,r:66,t:12,b:20};
   function X(i){ return P.l+i/(c.length-1)*(W-P.l-P.r); }
   function Y(v){ return H-P.b-(v-lo)/(hi-lo)*(H-P.t-P.b); }
+  function Yi(v){ return H-P.b-v/ihi*(H-P.t-P.b)*0.85; }
   ctx.clearRect(0,0,W,H);
+  /* 投下資金（面） */
+  ctx.beginPath(); ctx.moveTo(X(0),H-P.b);
+  for(var k=0;k<c.length;k++) ctx.lineTo(X(k),Yi(invs[k]));
+  ctx.lineTo(X(c.length-1),H-P.b); ctx.closePath();
+  ctx.fillStyle='rgba(169,154,118,.18)'; ctx.fill();
   /* 0ライン */
   ctx.strokeStyle='#d9d2bf'; ctx.lineWidth=1;
   ctx.beginPath(); ctx.moveTo(P.l,Y(0)); ctx.lineTo(W-P.r,Y(0)); ctx.stroke();
@@ -7166,57 +7203,108 @@ function curveDraw(){
   ctx.fillText('±0', W-P.r+4, Y(0)+3);
   ctx.fillText(Math.round(hi/10000)+'万円', W-P.r+4, Y(hi)+8);
   ctx.fillText(Math.round(lo/10000)+'万円', W-P.r+4, Y(lo)-2);
-  /* 塗り */
+  ctx.fillText('資金'+Math.round(ihi/10000)+'万円', W-P.r+4, Yi(ihi)+10);
   var last=vals[vals.length-1];
   var col=last>=0?'#2e7d32':'#c62f2f';
   ctx.beginPath();
-  ctx.moveTo(X(0),Y(0));
-  for(var i=0;i<c.length;i++) ctx.lineTo(X(i),Y(vals[i]));
-  ctx.lineTo(X(c.length-1),Y(0)); ctx.closePath();
-  ctx.fillStyle=last>=0?'rgba(46,125,50,.12)':'rgba(198,47,47,.10)';
-  ctx.fill();
-  ctx.beginPath();
   for(var j=0;j<c.length;j++){ if(j===0) ctx.moveTo(X(j),Y(vals[j])); else ctx.lineTo(X(j),Y(vals[j])); }
   ctx.strokeStyle=col; ctx.lineWidth=2; ctx.stroke();
-  /* 端の日付 */
   ctx.fillStyle='#a99a76';
-  ctx.fillText(c[0][0].slice(5).replace('-','/'), P.l, H-6);
+  ctx.fillText(md(c[0][0]), P.l, H-6);
   ctx.textAlign='right';
-  ctx.fillText(c[c.length-1][0].slice(5).replace('-','/')+' ('+yen(last)+')', W-P.r, H-6);
+  ctx.fillText(md(c[c.length-1][0])+' ('+yen(last)+')', W-P.r, H-6);
   ctx.textAlign='left';
+}
+function ganttDraw(){
+  var cv=document.getElementById('gcv'), ctx=cv.getContext('2d');
+  var rows=D.trades.filter(function(t){return t.ev==='tp'||t.ev==='sl'||t.ev==='open';});
+  var W=cv.clientWidth;
+  var rh=Math.max(2.2,Math.min(5,420/Math.max(1,rows.length)));
+  var H=Math.max(200,Math.min(560,Math.round(rows.length*rh)+46));
+  var DPR=Math.min(2.5,window.devicePixelRatio||1);
+  cv.style.height=H+'px'; cv.width=W*DPR; cv.height=H*DPR;
+  ctx.setTransform(DPR,0,0,DPR,0,0);
+  ctx.clearRect(0,0,W,H);
+  var dates=D.dates, N=dates.length;
+  DIDX={}; for(var i=0;i<N;i++) DIDX[dates[i]]=i;
+  var P={l:10,r:10,t:8,b:26};
+  function X(di){ return P.l+di/(N-1)*(W-P.l-P.r); }
+  /* 月の目盛 */
+  ctx.font='9.5px ui-monospace,Menlo,monospace'; ctx.fillStyle='#a99a76';
+  ctx.strokeStyle='#f0ead9'; ctx.lineWidth=1;
+  var lastM='';
+  for(var i2=0;i2<N;i2++){
+    var m=dates[i2].slice(0,7);
+    if(m!==lastM){
+      lastM=m;
+      var gx=X(i2);
+      ctx.beginPath(); ctx.moveTo(gx,P.t); ctx.lineTo(gx,H-P.b); ctx.stroke();
+      ctx.fillText(m.slice(2).replace('-','/'), gx+2, H-12);
+    }
+  }
+  /* 取引の線分（下=古い） */
+  var colmap={tp:'#2e7d32', sl:'#c62f2f', open:'#b06a00'};
+  for(var r=0;r<rows.length;r++){
+    var t=rows[r];
+    var y=H-P.b-(r+0.5)*((H-P.t-P.b)/rows.length);
+    var x1=X(DIDX[t.buy_date]||0);
+    var x2=(t.ev==='open')? X(N-1) : X(DIDX[t.sell_date]||N-1);
+    ctx.strokeStyle=colmap[t.ev]; ctx.lineWidth=Math.max(1.4,rh*0.55);
+    ctx.globalAlpha=0.8;
+    ctx.beginPath(); ctx.moveTo(x1,y); ctx.lineTo(Math.max(x2,x1+2),y); ctx.stroke();
+    if(t.ev!=='open'){
+      ctx.globalAlpha=1; ctx.fillStyle=colmap[t.ev];
+      ctx.beginPath(); ctx.arc(Math.max(x2,x1+2),y,Math.max(1.6,rh*0.45),0,Math.PI*2); ctx.fill();
+    }
+  }
+  ctx.globalAlpha=1;
 }
 function openList(){
   var el=document.getElementById('simopen');
   if(!D.positions.length){ el.innerHTML='<div class="note">塩漬け株はありません（全ポジション決済済み）</div>'; return; }
   el.innerHTML=D.positions.map(function(p){
     return '<div class="orow"><span class="onm">'+esc(p.name)+' <small>'+p.code+'</small></span>'
-      +'<span class="oinfo">'+p.buy_date.slice(5).replace('-','/')+'買 '+p.buy.toLocaleString()+'円<br>'
+      +'<span class="oinfo">'+md(p.buy_date)+'買 '+p.buy.toLocaleString()+'円<br>'
       +'現在 '+p.last.toLocaleString()+'円 ・ '+p.held+'日目</span>'
       +'<span class="opnl '+cls(p.pnl)+'">'+yen(p.pnl)+'</span></div>';
   }).join('');
 }
-var EVL={buy:'買付', tp:'利確', sl:'損切', nofill:'不成立'};
+var EVL={tp:'利確', sl:'損切', open:'保有中', nofill:'不成立', skip:'スキップ'};
 function recRows(){
-  var rows=D.records.filter(function(r){
-    if(FILT==='trade') return r.ev!=='nofill';
-    if(FILT==='nofill') return r.ev==='nofill';
+  var all=D.trades.slice().reverse();
+  return all.filter(function(t){
+    if(FILT==='tp') return t.ev==='tp';
+    if(FILT==='sl') return t.ev==='sl';
+    if(FILT==='open') return t.ev==='open';
+    if(FILT==='no') return t.ev==='nofill'||t.ev==='skip';
     return true;
   });
-  return rows;
 }
 function renderRec(reset){
   var el=document.getElementById('simrec');
   if(reset){ el.innerHTML=''; SHOWN=0; }
   var rows=recRows();
-  var end=Math.min(rows.length, SHOWN+120);
+  var end=Math.min(rows.length, SHOWN+100);
   var h='';
   for(var i=SHOWN;i<end;i++){
-    var r=rows[i];
-    h+='<div class="srow"><span class="sdt num">'+r.d.slice(2).replace(/-/g,'/')+'</span>'
-      +'<span class="sev '+r.ev+'">'+EVL[r.ev]+'</span>'
-      +'<span class="snm">'+esc(r.name)+' <small>'+r.code+'</small></span>'
-      +(r.pnl!=null?'<span class="spnl '+cls(r.pnl)+'">'+yen(r.pnl)+'</span>':'<span class="spnl" style="color:#a99a76">'+r.px.toLocaleString()+'円</span>')
-      +'<span class="ssrc'+(r.src==='live'?' live':'')+'">'+(r.src==='live'?'実測':'復元')+'</span></div>';
+    var t=rows[i];
+    var line2='';
+    if(t.ev==='tp'||t.ev==='sl'){
+      line2='<b>'+md(t.buy_date)+'</b> '+t.buy.toLocaleString()+'円で買付 → <b>'+md(t.sell_date)+'</b> '
+        +t.sell.toLocaleString()+'円で売却 ・ 保有'+t.held+'営業日';
+    } else if(t.ev==='open'){
+      line2='<b>'+md(t.buy_date)+'</b> '+t.buy.toLocaleString()+'円で買付 → 保有中（現在 '+(t.last!=null?t.last.toLocaleString():'−')+'円・'+(t.held||0)+'日目）';
+    } else if(t.ev==='nofill'){
+      line2='<b>'+md(t.buy_date)+'</b> '+t.buy.toLocaleString()+'円の指値に届かず破棄';
+    } else {
+      line2='<b>'+md(t.buy_date)+'</b> 同銘柄を保有中のため重ね買いせず';
+    }
+    h+='<div class="trow2"><div class="tr1">'
+      +'<span class="sev '+t.ev+'">'+EVL[t.ev]+'</span>'
+      +'<span class="snm">'+esc(t.name)+' <small>'+t.code+'</small></span>'
+      +(t.pnl!=null?'<span class="spnl '+cls(t.pnl)+'">'+yen(t.pnl)+'</span>':'')
+      +'<span class="ssrc'+(t.src==='live'?' live':'')+'">'+(t.src==='live'?'実測':'復元')+'</span>'
+      +'</div><div class="tr2">'+line2+'</div></div>';
   }
   el.insertAdjacentHTML('beforeend',h);
   SHOWN=end;
@@ -7231,12 +7319,12 @@ document.querySelectorAll('.sfbtn').forEach(function(b){
     b.classList.add('on'); FILT=b.dataset.f; renderRec(true);
   });
 });
-window.addEventListener('resize',function(){ if(D) curveDraw(); });
+window.addEventListener('resize',function(){ if(D){ curveDraw(); ganttDraw(); } });
 fetch('sim.json').then(function(r){
   if(!r.ok) throw new Error('sim.jsonがまだ生成されていません（次回の実行で作られます）');
   return r.json();
 }).then(function(j){
-  D=j; stats(); curveDraw(); openList(); renderRec(true);
+  D=j; stats(); curveDraw(); ganttDraw(); openList(); renderRec(true);
 }).catch(function(e){
   document.getElementById('simstats').innerHTML='<div class="note">⚠ '+e.message+'</div>';
 });
@@ -7245,9 +7333,10 @@ fetch('sim.json').then(function(r){
     weekdays = "月火水木金土日"
     subtitle = (f"{dt.month}/{dt.day}（{weekdays[dt.weekday()]}）時点 ・ "
                 f"「毎晩の1位をIFDOCOで機械売買したら」の1年検証 ・ "
-                f"決済{sm.get('closed', 0)}回 / 塩漬け{sm.get('open', 0)}銘柄")
-    footnote = ("約定はすべて仮定（買い: 前日終値×(1−0.05%)指値・当日安値到達で成立 ／ 利確: +10%指値 ／ "
-                "損切り: −5%到達で設定値×(1−0.05%)）。出来高・板situationは考慮していません。"
+                f"決済{sm.get('closed', 0)}回 / 塩漬け{sm.get('open', 0)}銘柄 / "
+                f"最大投下資金 {sm.get('max_invested', 0) / 10000:,.0f}万円")
+    footnote = ("約定はすべて仮定（買い: 前日終値×(1−0.05%)指値 ／ 利確: +10%指値 ／ 損切り: −5%逆指値成行。"
+                "窓開け時は寄り付き価格で約定）。出来高・板の厚みは考慮していません。"
                 "同日にTP/SL両方へ到達した場合は損切り優先の保守的計上。手数料・税金は含みません。投資判断はご自身で。")
     return (SUBPAGE_TEMPLATE
             .replace("__NAVCSS__", NAV_CSS)
@@ -7392,78 +7481,99 @@ def run_simulation(picked, detail_map, sim_ohlc, dt, demo=False):
             return None
         return (b[1][i], b[2][i], b[3][i], b[4][i])
 
-    positions, records, curve = [], [], []
+    positions, trades, curve = [], [], []
+    date_i = {d: i for i, d in enumerate(all_dates)}
     cum = 0.0
-    tp_n = sl_n = fill_n = nofill_n = 0
-    pend = None  # {"code","price","decided"}
+    tp_n = sl_n = fill_n = nofill_n = skip_n = 0
+    max_inv = 0.0
+    max_pos = 0
+    inv_sum = 0.0
+    pend = None  # {"code","price","src"}
     for i, d in enumerate(all_dates):
-        # 1) 保有ポジションのOCO判定（同日両到達は保守的に損切り優先）
+        # 1) 保有ポジションのOCO判定（同日両到達は保守的に損切り優先。
+        #    窓開けで設定値を飛び越えて寄り付いた場合は寄り付き価格で約定＝現実の逆指値/指値の挙動）
         still = []
         for p in positions:
             bar = bar_at(p["code"], d)
             if bar is None:
                 still.append(p)
                 continue
-            _o, hi, lo, _c = bar
+            op, hi, lo, _c = bar
             sl_line = p["buy"] * (1 - SIM_SL_PCT / 100)
             tp_line = p["buy"] * (1 + SIM_TP_PCT / 100)
             if lo <= sl_line:
-                sell = sl_line * (1 - SIM_SLIP)
+                base = min(op, sl_line)          # 窓開け下落なら寄りで成行約定
+                sell = base * (1 - SIM_SLIP)
                 pnl = (sell - p["buy"]) * SIM_SHARES
                 cum += pnl
                 sl_n += 1
-                records.append({"d": d, "ev": "sl", "code": p["code"],
-                                "name": namemap.get(p["code"], p["code"]),
-                                "px": round(sell, 1), "pnl": round(pnl),
-                                "held": max(1, i - p["i"]), "src": p["src"]})
+                t = p["trade"]
+                t.update({"ev": "sl", "sell_date": d, "sell": round(sell, 1),
+                          "pnl": round(pnl), "held": max(1, i - p["i"])})
             elif hi >= tp_line:
-                pnl = (tp_line - p["buy"]) * SIM_SHARES
+                sell = max(op, tp_line)          # 窓開け上昇なら寄りで約定（指値以上で売れる）
+                pnl = (sell - p["buy"]) * SIM_SHARES
                 cum += pnl
                 tp_n += 1
-                records.append({"d": d, "ev": "tp", "code": p["code"],
-                                "name": namemap.get(p["code"], p["code"]),
-                                "px": round(tp_line, 1), "pnl": round(pnl),
-                                "held": max(1, i - p["i"]), "src": p["src"]})
+                t = p["trade"]
+                t.update({"ev": "tp", "sell_date": d, "sell": round(sell, 1),
+                          "pnl": round(pnl), "held": max(1, i - p["i"])})
             else:
                 still.append(p)
         positions = still
-        # 2) 昨夜の1位の買付（前日終値×(1-0.05%)の指値。当日安値が届けば成立）
+        # 2) 昨夜の1位の買付。同一銘柄を保有中なら重ね買いせずスキップ（記録は残す）
         if pend is not None:
-            bar = bar_at(pend["code"], d)
-            if bar is not None and bar[2] <= pend["price"]:
-                positions.append({"code": pend["code"], "buy": pend["price"],
-                                  "date": d, "i": i, "src": pend["src"]})
-                fill_n += 1
-                records.append({"d": d, "ev": "buy", "code": pend["code"],
-                                "name": namemap.get(pend["code"], pend["code"]),
-                                "px": round(pend["price"], 1), "pnl": None, "src": pend["src"]})
+            nm = namemap.get(pend["code"], pend["code"])
+            if any(p["code"] == pend["code"] for p in positions):
+                skip_n += 1
+                trades.append({"code": pend["code"], "name": nm, "src": pend["src"],
+                               "buy_date": d, "buy": round(pend["price"], 1), "ev": "skip"})
             else:
-                nofill_n += 1
-                records.append({"d": d, "ev": "nofill", "code": pend["code"],
-                                "name": namemap.get(pend["code"], pend["code"]),
-                                "px": round(pend["price"], 1), "pnl": None, "src": pend["src"]})
+                bar = bar_at(pend["code"], d)
+                # 指値買い: 寄りが指値以下なら寄りで約定、それ以外は当日安値が届けば指値で約定
+                if bar is not None and (bar[0] <= pend["price"] or bar[2] <= pend["price"]):
+                    fill = min(pend["price"], bar[0])
+                    trade = {"code": pend["code"], "name": nm, "src": pend["src"],
+                             "buy_date": d, "buy": round(fill, 1), "ev": "open"}
+                    trades.append(trade)
+                    positions.append({"code": pend["code"], "buy": fill,
+                                      "date": d, "i": i, "src": pend["src"], "trade": trade})
+                    fill_n += 1
+                else:
+                    nofill_n += 1
+                    trades.append({"code": pend["code"], "name": nm, "src": pend["src"],
+                                   "buy_date": d, "buy": round(pend["price"], 1), "ev": "nofill"})
             pend = None
-        # 3) 今夜の1位 → 翌営業日の注文（終値×(1-0.05%)）
-        code, src = pick_for(d)
+        # 3) 今夜の1位 → 翌営業日の注文（終値×(1-0.05%)の指値）
+        code, src_ = pick_for(d)
         if code:
             bar = bar_at(code, d)
             if bar is not None:
-                pend = {"code": code, "price": bar[3] * (1 - SIM_SLIP), "src": src}
-        curve.append([d, round(cum)])
+                pend = {"code": code, "price": bar[3] * (1 - SIM_SLIP), "src": src_}
+        # 投下資金の実測（その日の保有ポジションの取得額合計）
+        inv = sum(p["buy"] for p in positions) * SIM_SHARES
+        if inv > max_inv:
+            max_inv = inv
+        if len(positions) > max_pos:
+            max_pos = len(positions)
+        inv_sum += inv
+        curve.append([d, round(cum), round(inv)])
 
     # 塩漬け（未決済）は最新終値で評価
     unreal = 0.0
     pos_out = []
     for p in positions:
-        dts = sim_ohlc[p["code"]][0]
         last_c = sim_ohlc[p["code"]][4][-1]
         upnl = (last_c - p["buy"]) * SIM_SHARES
         unreal += upnl
+        p["trade"]["last"] = round(last_c, 1)
+        p["trade"]["pnl"] = round(upnl)
+        p["trade"]["held"] = max(1, len(all_dates) - 1 - date_i.get(p["date"], 0))
         pos_out.append({"code": p["code"], "name": namemap.get(p["code"], p["code"]),
                         "buy": round(p["buy"], 1), "buy_date": p["date"],
                         "last": round(last_c, 1), "shares": SIM_SHARES,
-                        "pnl": round(upnl), "held": len([x for x in dts if x >= p["date"]]),
-                        "src": p["src"]})
+                        "pnl": round(upnl),
+                        "held": p["trade"]["held"], "src": p["src"]})
     pos_out.sort(key=lambda x: x["pnl"])
 
     closed = tp_n + sl_n
@@ -7474,13 +7584,17 @@ def run_simulation(picked, detail_map, sim_ohlc, dt, demo=False):
             "total_pnl": round(cum), "unrealized": round(unreal),
             "tp": tp_n, "sl": sl_n, "closed": closed,
             "win_rate": round(tp_n / closed * 100, 1) if closed else None,
-            "fills": fill_n, "nofills": nofill_n,
+            "fills": fill_n, "nofills": nofill_n, "skips": skip_n,
             "open": len(pos_out),
             "days": len(all_dates), "live_days": n_live,
+            "max_invested": round(max_inv),
+            "avg_invested": round(inv_sum / max(1, len(all_dates))),
+            "max_positions": max_pos,
         },
+        "dates": all_dates,
         "curve": curve[-260:],
         "positions": pos_out,
-        "records": list(reversed(records))[:800],
+        "trades": trades[-500:],
     }
     (DOCS / "sim.json").write_text(json.dumps(payload, ensure_ascii=False,
                                               separators=(",", ":")), encoding="utf-8")
@@ -7488,8 +7602,9 @@ def run_simulation(picked, detail_map, sim_ohlc, dt, demo=False):
         SIM_STATE_PATH.write_text(json.dumps(state, ensure_ascii=False), encoding="utf-8")
     except Exception:  # noqa: BLE001
         pass
-    print(f"  シミュレーション: {len(all_dates)}営業日 / 成立{fill_n}・不成立{nofill_n} / "
-          f"利確{tp_n}・損切{sl_n} / 塩漬け{len(pos_out)} / 実測1位の蓄積 {len(live_picks)}日")
+    print(f"  シミュレーション: {len(all_dates)}営業日 / 成立{fill_n}・不成立{nofill_n}・スキップ{skip_n} / "
+          f"利確{tp_n}・損切{sl_n} / 塩漬け{len(pos_out)} / 最大投下資金 {max_inv/10000:,.0f}万円 / "
+          f"実測1位の蓄積 {len(live_picks)}日")
     return payload
 
 
