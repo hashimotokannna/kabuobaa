@@ -1525,10 +1525,17 @@ MAP_TEMPLATE = r"""<!DOCTYPE html>
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
 <meta name="robots" content="noindex, nofollow">
 <link rel="apple-touch-icon" href="icon.png">
 <link rel="icon" type="image/png" href="icon.png">
+<style>html,body{touch-action:pan-x pan-y;}</style>
+<script>
+/* スマホでページ自体が拡大されて操作しづらくなるのを防止（ダブルタップ拡大・ピンチのページ拡大）。
+   マップ内のピンチ操作は独自実装(touch-action:none)なので影響なし */
+document.addEventListener('gesturestart',function(e){e.preventDefault();});
+document.addEventListener('gesturechange',function(e){e.preventDefault();});
+</script>
 <title>関連銘柄マップ ｜ 株ノート</title>
 <style>
 :root{
@@ -1635,6 +1642,11 @@ canvas.drag{cursor:grabbing;}
 .panel{flex:none; width:0; overflow:hidden; background:var(--panel); border-left:1px solid var(--line);
   transition:width .18s ease; display:flex; flex-direction:column;}
 .panel.show{width:320px;}
+/* ✕で閉じたあともパネルの幅は保持して「空間」を残す:
+   閉じるたびにキャンバスの寸法が変わって点が引き伸ばされるバグを根本から断つ */
+.panel.ghost{width:320px; background:transparent; border-left-color:transparent;}
+.panel.ghost .pbody{visibility:hidden;}
+.panel.ghost .pclose{display:none;}
 .pbody{flex:1; overflow-y:auto; padding:14px; min-width:290px;}
 .pclose{position:absolute; right:10px; top:10px; border:1px solid var(--line2); background:transparent;
   color:var(--dim); border-radius:5px; font-size:12px; padding:2px 8px; cursor:pointer;}
@@ -1659,6 +1671,10 @@ canvas.drag{cursor:grabbing;}
 .trlab{font-size:9.5px; color:var(--dim); font-weight:700; letter-spacing:.1em;}
 .tchip{font-size:10px; font-weight:700; color:var(--cy); background:rgba(77,215,255,.08);
   border:1px solid rgba(77,215,255,.3); border-radius:10px; padding:2px 8px; cursor:pointer;}
+.pnav{display:flex; gap:6px; margin-bottom:10px; padding-right:44px;}
+.pnv{flex:1; border:1px solid var(--line2); background:transparent; color:var(--cy);
+  border-radius:6px; font-size:11px; font-weight:700; padding:6px 0; cursor:pointer;}
+.pnv:active{background:rgba(77,215,255,.12);}
 .plinks{display:flex; gap:6px; margin-top:12px;}
 .plink{flex:1; display:block; text-align:center; text-decoration:none; font-size:11.5px; font-weight:700;
   color:var(--cy); border:1px solid var(--line2); border-radius:7px; padding:8px 4px;}
@@ -1671,6 +1687,7 @@ canvas.drag{cursor:grabbing;}
   .panel{width:100%; border-left:none; border-top:1px solid var(--line);
     transition:height .18s ease; height:0;}
   .panel.show{width:100%; height:46%;}
+  .panel.ghost{width:100%; height:46%; border-top-color:transparent;}
   .pbody{min-width:0;}
   .legend{max-width:180px;}
   .srch{width:132px;}
@@ -1877,6 +1894,38 @@ function fogA(s){
   /* 奥(pzがマイナス)ほど薄く＝3Dの遠近感。手前は常にくっきり */
   return Math.max(0.16, Math.min(1, 1 + 0.3*s.pz*CAM.fog));
 }
+/* ═══ 球体スプライト: 色ごとに1回だけ描いてキャッシュ（3D風の点） ═══ */
+var SPRITES={};
+function _hex3(col){
+  var m=/^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.exec(col||'');
+  if(!m) return null;
+  var h=m[1];
+  if(h.length===3) h=h[0]+h[0]+h[1]+h[1]+h[2]+h[2];
+  var v=parseInt(h,16);
+  return [(v>>16)&255,(v>>8)&255,v&255];
+}
+function _mix(c,t,to){ return 'rgb('+c.map(function(x,i){return Math.round(x+(to[i]-x)*t);}).join(',')+')'; }
+function sphereSprite(col){
+  var sp=SPRITES[col];
+  if(sp) return sp;
+  var c=document.createElement('canvas'); c.width=c.height=32;
+  var g=c.getContext('2d');
+  var rgb=_hex3(col);
+  if(rgb){
+    /* 左上からの光: ハイライト → 本来色 → 陰 で球体に見せる */
+    var grad=g.createRadialGradient(11.5,10.5,1.5,16,16,15.5);
+    grad.addColorStop(0,_mix(rgb,0.85,[255,255,255]));
+    grad.addColorStop(0.3,_mix(rgb,0.4,[255,255,255]));
+    grad.addColorStop(0.68,'rgb('+rgb.join(',')+')');
+    grad.addColorStop(1,_mix(rgb,0.55,[0,0,0]));
+    g.fillStyle=grad;
+  } else {
+    g.fillStyle=col;
+  }
+  g.beginPath(); g.arc(16,16,15.5,0,Math.PI*2); g.fill();
+  SPRITES[col]=c;
+  return c;
+}
 function projPt(x,y,z){
   var cy=Math.cos(rotY), sy=Math.sin(rotY), cx=Math.cos(rotX), sx=Math.sin(rotX);
   var sc=Math.min(W,H)*0.19*zoom;
@@ -2018,8 +2067,8 @@ function draw(ts){
       if(eal<0.02) continue;
       (eal<0.05?EB0:(eal<0.085?EB1:EB2)).push(EA.px,EA.py,EBv.px,EBv.py);
     }
-    ctx.lineWidth=0.7;
-    var bAls=[0.035,0.065,0.1], bArr=[EB0,EB1,EB2];
+    ctx.lineWidth=1.3;   /* つながり線は少し太く（ユーザ要望） */
+    var bAls=[0.045,0.08,0.125], bArr=[EB0,EB1,EB2];
     var thEdge=themeC().edgeRGB;
     for(var bi=0;bi<3;bi++){
       var arr2=bArr[bi];
@@ -2036,7 +2085,7 @@ function draw(ts){
   if(focused){
     var F=ST[focusI];
     /* 2ホップ（連想の連鎖）の薄い糸 */
-    ctx.lineWidth=0.8;
+    ctx.lineWidth=1.2;
     ctx.strokeStyle='rgba('+themeC().edgeRGB+',0.16)';
     ctx.beginPath();
     for(var e9=0;e9<f2Edges.length;e9++){
@@ -2052,7 +2101,7 @@ function draw(ts){
       var g=ctx.createLinearGradient(F.px,F.py,T.px,T.py);
       g.addColorStop(0,rgbaOf(colAdj('#4dd7ff'),0.55));
       g.addColorStop(1,rgbaOf(T.col,0.75));
-      ctx.strokeStyle=g; ctx.lineWidth=1+ed.sim/60;
+      ctx.strokeStyle=g; ctx.lineWidth=1.5+ed.sim/55;
       ctx.beginPath(); ctx.moveTo(F.px,F.py); ctx.lineTo(T.px,T.py); ctx.stroke();
       var t=(ts*0.0006+e2*0.17)%1;
       var mx=F.px+(T.px-F.px)*t, my=F.py+(T.py-F.py)*t;
@@ -2060,23 +2109,24 @@ function draw(ts){
       ctx.beginPath(); ctx.arc(mx,my,1.6,0,Math.PI*2); ctx.fill();
     }
   }
-  /* points: 全銘柄まったく同じ小さな点。ズーム・奥行きで大きさを変えない
-     （ユーザ要望: 大きさのばらつき＝差別に見える／拡大でぼやける、の両方を排除）。
-     以前あった光彩（ハロー）描画は「ぼやけ」の正体だったため廃止。 */
-  var R_DOT=2.1;
+  /* points: 全銘柄おなじ大きさの小さな球体（3D風スプライト）。
+     - 拡大しても大きくならない（ぼやけ防止）
+     - 縮小時だけ少し小さくなる（全景で点が潰れて重ならないように）
+     - 球はスプライトに事前描画してdrawImageするので4000銘柄でも60fps */
+  var R_DOT=1.9;
+  var rz=R_DOT*Math.max(0.5,Math.min(1,Math.pow(zoom,0.45)));
   for(var oi=0;oi<order.length;oi++){
     var idx=order[oi], s=ST[idx];
     if(!SHOW_EX && s.ex) continue;
     if(isHidden(s)) continue;
     if(s.px<-20||s.px>W+20||s.py<-20||s.py>H+20) continue;
-    var r=R_DOT;
+    var r=rz;
     var a=fogA(s)*(s.ex?0.45:1);
     if(focused) a*= fset[idx]? 1 : (fset2[idx]? 0.34 : 0.07);
     if(a<0.02) continue;
-    if(focused&&fset&&fset[idx]){ r=R_DOT*1.4; }  /* フォーカス時の関連銘柄のみ僅かに強調 */
+    if(focused&&fset&&fset[idx]){ r=rz*1.5; }  /* フォーカス時の関連銘柄のみ僅かに強調 */
     ctx.globalAlpha=a;
-    ctx.fillStyle=s.col;
-    ctx.beginPath(); ctx.arc(s.px,s.py,r,0,Math.PI*2); ctx.fill();
+    ctx.drawImage(sphereSprite(s.col), s.px-r, s.py-r, r*2, r*2);
   }
   ctx.globalAlpha=1;
   /* 常時銘柄名: 大型・厳選銘柄から優先し、重なる場所には出さない */
@@ -2164,7 +2214,7 @@ function loop(ts){
   } else if(PTRS.size===0){
     /* 指を離した後の慣性（プロ仕様のヌルッと感） */
     if(Math.abs(velY)>0.00004||Math.abs(velX)>0.00004){
-      rotY+=velY; rotX=Math.max(-1.4,Math.min(1.4,rotX+velX));
+      rotY+=velY; rotX+=velX;   /* 上下も制限なし: 一回転できる */
       velY*=0.93; velX*=0.93;
     } else { velY=velX=0; }
     if(Math.abs(velPx)>0.12||Math.abs(velPy)>0.12){
@@ -2242,7 +2292,7 @@ cv.addEventListener('pointermove',function(e){
     var dirX=CAM.invX?1:-1, dirY=CAM.invY?1:-1;
     var fine=1/Math.max(1,Math.pow(zoom,0.35));   /* 拡大中は回転を細かく */
     var ry=dx*0.0058*CAM.sens*dirX*fine, rx=dy*0.0046*CAM.sens*dirY*fine;
-    rotY+=ry; rotX=Math.max(-1.4,Math.min(1.4,rotX+rx));
+    rotY+=ry; rotX+=rx;   /* 上下も制限なし: 一回転できる */
     velY=ry*0.85; velX=rx*0.85;
     lx=xy[0]; ly=xy[1];
   } else if(gMode==='panBtn'&&PTRS.size===1){
@@ -2328,6 +2378,8 @@ function focusOn(i, fly){
   /* どの経路でも: カメラはその銘柄が中央に来るよう寄って拡大。
      ✕で外してもこのカメラ位置に留まる（clearFocusはカメラに触れない） */
   if(fly){
+    /* 一回転後でもまっすぐ最短で飛べるよう、縦回転を±πに正規化してから飛行 */
+    rotX=((rotX%(2*Math.PI))+3*Math.PI)%(2*Math.PI)-Math.PI;
     var hxz=Math.hypot(s.x,s.z)||1e-6;
     camGoal={y:Math.atan2(-s.x,s.z),
              x:Math.max(-1.3,Math.min(1.3,Math.atan2(s.y,hxz))),
@@ -2366,7 +2418,9 @@ function focusOn(i, fly){
       return '<span class="tchip" data-i="'+t2+'">'+esc(ST[t2].sn||ST[t2].name)+'</span>';
     }).join('')+'</div>';
   }
-  var h=trailH+'<div class="pn">'+esc(s.name)+'</div>'
+  var h='<div class="pnav"><button class="pnv" id="pprev">‹ 前の銘柄</button>'
+    +'<button class="pnv" id="pnext">次の銘柄 ›</button></div>'
+    +trailH+'<div class="pn">'+esc(s.name)+'</div>'
     +'<div class="pc">'+s.code+' ・ '+esc(GROUPS[s.g]||'')+'</div>'
     +'<div class="pfacts">'+facts.map(function(f){return '<span class="pf">'+f+'</span>';}).join('')+mchip+exchip+'</div>'
     +'<div class="ph">◈ 発想が繋がる銘柄（似ている順）</div>';
@@ -2398,7 +2452,10 @@ function focusOn(i, fly){
   pc.querySelectorAll('.tchip').forEach(function(el){
     el.addEventListener('click',function(){ focusOn(+el.dataset.i); });
   });
-  document.getElementById('panel').classList.add('show');
+  document.getElementById('pprev').addEventListener('click',function(){ focusStep(-1); });
+  document.getElementById('pnext').addEventListener('click',function(){ focusStep(1); });
+  var pnl=document.getElementById('panel');
+  pnl.classList.remove('ghost'); pnl.classList.add('show');
   document.body.classList.add('focused');
   setTimeout(resize,200);
 }
@@ -2407,10 +2464,32 @@ function clearFocus(){
   camGoal=null; lastPointer=Date.now();
   spinHoldUntil=Date.now()+8000;   /* カメラは今の場所のまま・自動回転もしばらく再開しない */
   document.body.classList.remove('focused');
-  document.getElementById('panel').classList.remove('show');
-  setTimeout(resize,200);
+  /* パネルは閉じずに「空間」として残す（showのまま中身だけ隠す）
+     → キャンバスの寸法が一切変わらないので、点が引き伸ばされるバグが起きない */
+  var pn=document.getElementById('panel');
+  pn.classList.remove('show'); pn.classList.add('ghost');
 }
 document.getElementById('pclose').addEventListener('click',clearFocus);
+/* フォーカスを前後の銘柄へ移す（キーボード矢印 と パネルの前へ/次へボタン） */
+function focusStep(dir){
+  if(!ST.length) return;
+  var n=ST.length, i=(focusI>=0)?focusI:-1;
+  for(var k=1;k<=n;k++){
+    var j=((i+dir*k)%n+n)%n;
+    var s=ST[j];
+    if(isHidden(s)) continue;
+    if(!SHOW_EX && s.ex) continue;
+    focusOn(j);
+    return;
+  }
+}
+document.addEventListener('keydown',function(e){
+  var ae=document.activeElement;
+  if(ae&&(ae.tagName==='INPUT'||ae.tagName==='TEXTAREA')) return;
+  if(e.key==='ArrowRight'||e.key==='ArrowDown'){ e.preventDefault(); focusStep(1); }
+  else if(e.key==='ArrowLeft'||e.key==='ArrowUp'){ e.preventDefault(); focusStep(-1); }
+  else if(e.key==='Escape'&&focusI>=0){ clearFocus(); }
+});
 function esc(t){return String(t).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});}
 
 /* ═══ search ═══ */
@@ -2847,6 +2926,101 @@ def jquants_fetch_materials(session, days_back=100):
 FUND_CACHE_PATH = DOCS / "fund_cache.json"
 
 
+def yahoo_backfill_financials(codes, persisted):
+    """一回限りの過去業績バックフィル（業績チャートの完成用）。
+
+    J-Quants無料プランは約2年分しか遡れないため、それ以前の年次業績を
+    Yahooのfundamentals-timeseries APIから取得して hist に補完する。
+    - 年次の 売上高・営業利益・税引前利益(経常の代用)・純利益 を最大5年分程度
+    - 同じ期のJ-Quants実測があればそちらを優先（上書きしない）
+    - 取得済みの銘柄には yh_ts マーカーを付けて二度と再取得しない（新規上場だけ以後対象）
+    """
+    TYPES = ("annualTotalRevenue", "annualOperatingIncome",
+             "annualPretaxIncome", "annualNetIncome")
+    FMAP = {"annualTotalRevenue": "sales", "annualOperatingIncome": "op",
+            "annualPretaxIncome": "ordp", "annualNetIncome": "np"}
+    need = []
+    for code in codes:
+        prev = persisted.get(code) or {}
+        if prev.get("yh_ts"):
+            continue
+        h = prev.get("hist") or {}
+        n_fy = sum(1 for r in h.values() if (r.get("ty") or "").upper() in ("FY", "4Q", "Y"))
+        if n_fy >= 5:  # 既に十分な年数があればマーカーだけ付けて完了扱い
+            prev2 = dict(prev); prev2["yh_ts"] = "enough"; persisted[code] = prev2
+            continue
+        need.append(code)
+    if not need:
+        return 0
+    print(f"  Yahoo業績バックフィル: {len(need)}銘柄の過去年次業績を取得します（銘柄ごとに一回限り）")
+    import threading
+    from concurrent.futures import ThreadPoolExecutor
+    lock = threading.Lock()
+    today = datetime.now(JST).date().isoformat()
+    n_ok = [0]; n_done = [0]
+
+    def one(code):
+        url = ("https://query1.finance.yahoo.com/ws/fundamentals-timeseries/"
+               f"v1/finance/timeseries/{code}.T")
+        params = {"symbol": f"{code}.T", "type": ",".join(TYPES),
+                  "period1": "946684800", "period2": str(int(time.time())),
+                  "merge": "false", "padTimeSeries": "false"}
+        headers = {"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)"}
+        recs = {}
+        try:
+            for attempt in range(2):
+                resp = _get_session().get(url, params=params, headers=headers, timeout=30)
+                if resp.status_code == 429:
+                    time.sleep(4 * (attempt + 1))
+                    continue
+                resp.raise_for_status()
+                for res in (resp.json().get("timeseries", {}).get("result") or []):
+                    t = (res.get("meta", {}).get("type") or [None])[0]
+                    f = FMAP.get(t)
+                    if not f:
+                        continue
+                    for row in (res.get(t) or []):
+                        if not row:
+                            continue
+                        pe = row.get("asOfDate")
+                        rv = (row.get("reportedValue") or {}).get("raw")
+                        if not pe or rv is None:
+                            continue
+                        recs.setdefault(pe, {})[f] = rv
+                break
+        except Exception:  # noqa: BLE001
+            return  # 失敗した銘柄はマーカーを付けず、次回の実行でまた試す
+        with lock:
+            prev = persisted.get(code) or {}
+            h = dict(prev.get("hist") or {})
+            added = 0
+            for pe, vals in sorted(recs.items()):
+                key = f"{pe}|FY"
+                if key in h:  # J-Quantsの実測を優先
+                    continue
+                if "sales" not in vals and "np" not in vals:
+                    continue
+                h[key] = {**vals, "ty": "FY", "disc": "", "src": "yh"}
+                added += 1
+            prev2 = dict(prev)
+            if h:
+                keys = sorted(h.keys())[-24:]
+                prev2["hist"] = {k: h[k] for k in keys}
+            prev2["yh_ts"] = today
+            persisted[code] = prev2
+            if added:
+                n_ok[0] += 1
+            n_done[0] += 1
+            if n_done[0] % 300 == 0:
+                print(f"    バックフィル進捗 {n_done[0]}/{len(need)}...")
+        time.sleep(0.1)
+
+    with ThreadPoolExecutor(max_workers=6) as pool:
+        list(pool.map(one, need))
+    print(f"  Yahoo業績バックフィル: {n_ok[0]}銘柄に過去年次を追加しました")
+    return n_ok[0]
+
+
 def load_fund_cache():
     """前回までに受け取った財務素材（EPS・BPS・発行株数・配当）を読む。決算ごとにしか変わらないので再利用できる"""
     try:
@@ -2901,6 +3075,14 @@ def fetch_fundamentals(session, codes, closes=None):
         ex = next(iter(jq.values()))
         print(f"  診断: 素材の中身例={ex}")
 
+    # 過去年次業績のバックフィル（各銘柄一回限り・済みマーカーで自動スキップ）
+    if session is not None:
+        try:
+            yahoo_backfill_financials(list(codes), persisted)
+            save_fund_cache(persisted)  # 途中経過も保存（後段で失敗しても消えない）
+        except Exception as e:  # noqa: BLE001
+            print(f"  ! 業績バックフィル失敗（次回再試行）: {e}", file=sys.stderr)
+
     for code in codes:
         fresh = _FUND_CACHE.get(code) or {}
         prev = persisted.get(code) or {}
@@ -2913,6 +3095,11 @@ def fetch_fundamentals(session, codes, closes=None):
                 mat[k] = v
         if mat:
             mat["asof"] = today if any(k in fresh for k in ("eps", "bvps", "shares")) else prev.get("asof", today)
+            # 蓄積データ（業績履歴・バックフィル済マーカー）は素材更新で消さない
+            if prev.get("hist"):
+                mat["hist"] = prev["hist"]
+            if prev.get("yh_ts"):
+                mat["yh_ts"] = prev["yh_ts"]
             persisted[code] = mat
 
         price = closes.get(code)
@@ -3972,10 +4159,14 @@ def fin_chart_html(hist):
     head = ('<div class="finrow finhead"><span class="fp"></span>'
             '<span class="fc">売上高</span><span class="fc">営業利益</span><span class="fc">純利益</span></div>')
     note = ("通期実績の推移" if annual else "四半期開示の推移（累計ベース）")
+    yh_note = ""
+    if any(r.get("src") == "yh" for r in use):
+        yh_note = ("古い年度はYahoo Financeの年次データで補完しています"
+                   "（この区間の経常利益は税引前利益で代用。決算短信の実測が入り次第、自動で置き換わります）。")
     return (f'<div class="nhead">業績の推移（{note}・決算短信より）</div>'
             f'<div class="finchart">{"".join(parts)}</div>{legend}{head}{"".join(rows)}'
             f'<div class="discnote">グラフの棒・点にカーソルを合わせると数値が出ます。'
-            f'決算履歴は毎晩の実行で自動蓄積され、期間は時間とともに伸びていきます（初期は約2年分）。</div>')
+            f'決算履歴は毎晩の実行で自動蓄積され、期間は時間とともに伸びていきます。{yh_note}</div>')
 
 
 FIN_CSS = """
@@ -4728,12 +4919,17 @@ def render_html(data):
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1, user-scalable=no">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="robots" content="noindex, nofollow">
 <link rel="apple-touch-icon" href="icon.png">
 <link rel="icon" type="image/png" href="icon.png">
+<style>html,body{{touch-action:pan-x pan-y;}}</style>
+<script>
+document.addEventListener('gesturestart',function(e){{e.preventDefault();}});
+document.addEventListener('gesturechange',function(e){{e.preventDefault();}});
+</script>
 <title>今夜の厳選{cfg["TOP_N"]}銘柄 ｜ 株ノート</title>
 <style>
   :root{{
@@ -5023,10 +5219,15 @@ SUBPAGE_TEMPLATE = """<!DOCTYPE html>
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1, user-scalable=no">
 <meta name="robots" content="noindex, nofollow">
 <link rel="apple-touch-icon" href="icon.png">
 <link rel="icon" type="image/png" href="icon.png">
+<style>html,body{touch-action:pan-x pan-y;}</style>
+<script>
+document.addEventListener('gesturestart',function(e){e.preventDefault();});
+document.addEventListener('gesturechange',function(e){e.preventDefault();});
+</script>
 <title>__TITLE__ ｜ 株ノート</title>
 <style>
   :root{--ink:#1c1c1e; --ink2:#6e6e73; --ink3:#aeaeb2; --paper:#faf6ec;
@@ -6994,11 +7195,16 @@ LOCK_TEMPLATE = """<!DOCTYPE html>
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1, user-scalable=no">
 <meta name="robots" content="noindex, nofollow">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <link rel="apple-touch-icon" href="icon.png">
 <link rel="icon" type="image/png" href="icon.png">
+<style>html,body{touch-action:pan-x pan-y;}</style>
+<script>
+document.addEventListener('gesturestart',function(e){e.preventDefault();});
+document.addEventListener('gesturechange',function(e){e.preventDefault();});
+</script>
 <title>Kabuobaa</title>
 <style>
   *{box-sizing:border-box; margin:0; padding:0;}
