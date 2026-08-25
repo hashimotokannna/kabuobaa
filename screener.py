@@ -1876,6 +1876,15 @@ if(window.visualViewport){
     clearTimeout(vvT); vvT=setTimeout(resize,120);
   });
 }
+/* 引き伸ばされバグの根治: キャンバス親要素の寸法変化を常時監視して即座に追従する。
+   パネル開閉のCSSトランジション中も毎フレーム追従するため、
+   「タイミング次第で伸びたまま固まる」ことが構造的に起きなくなる */
+if(window.ResizeObserver){
+  var _ro=new ResizeObserver(function(){ resize(); });
+  _ro.observe(document.getElementById('stage'));
+}
+/* パネルのトランジション完了時にも念のため1回合わせる（ResizeObserver非対応環境向け） */
+document.getElementById('panel').addEventListener('transitionend',resize);
 
 /* ═══ projection ═══ */
 function projAll(){
@@ -1912,17 +1921,25 @@ function sphereSprite(col){
   var g=c.getContext('2d');
   var rgb=_hex3(col);
   if(rgb){
-    /* 左上からの光: ハイライト → 本来色 → 陰 で球体に見せる */
-    var grad=g.createRadialGradient(11.5,10.5,1.5,16,16,15.5);
-    grad.addColorStop(0,_mix(rgb,0.85,[255,255,255]));
-    grad.addColorStop(0.3,_mix(rgb,0.4,[255,255,255]));
-    grad.addColorStop(0.68,'rgb('+rgb.join(',')+')');
-    grad.addColorStop(1,_mix(rgb,0.55,[0,0,0]));
+    /* 左上からの光で球体に見せる: 強いハイライト → 本来色 → 濃い陰 ＋ 暗い縁取り */
+    var grad=g.createRadialGradient(10.5,9.5,1,16,16,15.5);
+    grad.addColorStop(0,'#ffffff');
+    grad.addColorStop(0.22,_mix(rgb,0.6,[255,255,255]));
+    grad.addColorStop(0.5,'rgb('+rgb.join(',')+')');
+    grad.addColorStop(0.8,_mix(rgb,0.42,[0,0,0]));
+    grad.addColorStop(1,_mix(rgb,0.72,[0,0,0]));
     g.fillStyle=grad;
+    g.beginPath(); g.arc(16,16,15.5,0,Math.PI*2); g.fill();
+    /* 縁を1周だけ暗く締める: 背景の線とのコントラストが立ち、小さくても球に見える */
+    g.strokeStyle='rgba(0,0,0,0.5)'; g.lineWidth=2;
+    g.beginPath(); g.arc(16,16,14.4,0,Math.PI*2); g.stroke();
+    /* 小さな鏡面ハイライト（縮小時でも球体感が残る決め手） */
+    g.fillStyle='rgba(255,255,255,0.95)';
+    g.beginPath(); g.arc(10.5,9.5,3.2,0,Math.PI*2); g.fill();
   } else {
     g.fillStyle=col;
+    g.beginPath(); g.arc(16,16,15.5,0,Math.PI*2); g.fill();
   }
-  g.beginPath(); g.arc(16,16,15.5,0,Math.PI*2); g.fill();
   SPRITES[col]=c;
   return c;
 }
@@ -2067,8 +2084,8 @@ function draw(ts){
       if(eal<0.02) continue;
       (eal<0.05?EB0:(eal<0.085?EB1:EB2)).push(EA.px,EA.py,EBv.px,EBv.py);
     }
-    ctx.lineWidth=1.3;   /* つながり線は少し太く（ユーザ要望） */
-    var bAls=[0.045,0.08,0.125], bArr=[EB0,EB1,EB2];
+    ctx.lineWidth=1.3;   /* つながり線は少し太く。ただし薄めにして球の主役感を保つ */
+    var bAls=[0.032,0.058,0.088], bArr=[EB0,EB1,EB2];
     var thEdge=themeC().edgeRGB;
     for(var bi=0;bi<3;bi++){
       var arr2=bArr[bi];
@@ -2113,8 +2130,10 @@ function draw(ts){
      - 拡大しても大きくならない（ぼやけ防止）
      - 縮小時だけ少し小さくなる（全景で点が潰れて重ならないように）
      - 球はスプライトに事前描画してdrawImageするので4000銘柄でも60fps */
-  var R_DOT=1.9;
-  var rz=R_DOT*Math.max(0.5,Math.min(1,Math.pow(zoom,0.45)));
+  /* 縮小するほど点をさらに細かく（全景で潰れない）。
+     拡大時はゆるやかに大きく（上限2倍まで）: スプライト描画なのでぼやけず、球体の陰影が見える */
+  var R_DOT=2.2;
+  var rz=R_DOT*Math.max(0.3,Math.min(2.0,Math.pow(zoom,0.5)));
   for(var oi=0;oi<order.length;oi++){
     var idx=order[oi], s=ST[idx];
     if(!SHOW_EX && s.ex) continue;
@@ -2220,7 +2239,8 @@ function loop(ts){
     if(Math.abs(velPx)>0.12||Math.abs(velPy)>0.12){
       ox+=velPx; oy+=velPy; velPx*=0.9; velPy*=0.9;
     } else { velPx=velPy=0; }
-    if(SPIN && zoom<2.2 && Date.now()-lastPointer>1600 && Date.now()>spinHoldUntil && !velY && !velPx){ rotY+=0.0016*CAM.spin; }
+    /* 自動回転はズーム中でも継続（拡大するほどゆっくりにして酔わないように） */
+    if(SPIN && Date.now()-lastPointer>1600 && Date.now()>spinHoldUntil && !velY && !velPx){ rotY+=0.0016*CAM.spin/Math.max(1,Math.pow(zoom,0.5)); }
   }
   draw(ts||0);
   requestAnimationFrame(loop);
@@ -2493,6 +2513,8 @@ document.addEventListener('keydown',function(e){
 function esc(t){return String(t).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});}
 
 /* ═══ search ═══ */
+__SKEL_JS__
+var ALIASES=__STOCK_ALIASES__;
 function normQ(s){
   var t=(s||'').normalize('NFKC').toLowerCase();
   t=t.replace(/[ぁ-ゖ]/g,function(ch){return String.fromCharCode(ch.charCodeAt(0)+0x60);});
@@ -2502,11 +2524,23 @@ function normQ(s){
 }
 var qEl=document.getElementById('q'), sugg=document.getElementById('sugg');
 qEl.addEventListener('input',function(){
-  var v=normQ(qEl.value.trim());
-  if(!v){ sugg.classList.remove('show'); return; }
+  var raw=qEl.value.trim();
+  var v=normQ(raw), vk=skel(raw);
+  if(!v&&vk.length<2){ sugg.classList.remove('show'); return; }
   var hits=[];
   for(var i=0;i<ST.length;i++){
-    if(ST[i].norm.indexOf(v)>=0||ST[i].code.indexOf(v)>=0) hits.push(i);
+    var s0=ST[i];
+    if(s0.srch===undefined){
+      /* 検索見出しを初回だけ構築: 正規化名 + 別名 + 子音スケルトン(~付き) */
+      var al=ALIASES[s0.code]||[];
+      var parts=[s0.norm];
+      for(var a1=0;a1<al.length;a1++) parts.push(normQ(al[a1]));
+      var sks={}; var srcs=[s0.name].concat(al);
+      for(var a2=0;a2<srcs.length;a2++){ var k2=skel(srcs[a2]); if(k2.length>=2) sks['~'+k2]=1; }
+      s0.srch=parts.join(' ')+' '+Object.keys(sks).join(' ');
+    }
+    if((v&&(s0.srch.indexOf(v)>=0||s0.code.indexOf(v)>=0))
+       ||(vk.length>=2&&s0.srch.indexOf('~'+vk)>=0)) hits.push(i);
   }
   if(!hits.length){ sugg.innerHTML='<div class="cnt-it">0件（表記ゆれ・コードでもお試しを）</div>'; sugg.classList.add('show'); return; }
   var CAP=80;
@@ -2677,7 +2711,9 @@ requestAnimationFrame(loop);
 
 def render_map(map_n, dt):
     """関連銘柄マップページ（map.json を読む独立アプリ。ダーク宇宙テーマ）"""
-    return MAP_TEMPLATE
+    return (MAP_TEMPLATE
+            .replace("__SKEL_JS__", SKEL_JS)
+            .replace("__STOCK_ALIASES__", json.dumps(STOCK_ALIASES, ensure_ascii=False)))
 
 
 # ------------------------------------------------------------
@@ -2926,7 +2962,7 @@ def jquants_fetch_materials(session, days_back=100):
 FUND_CACHE_PATH = DOCS / "fund_cache.json"
 
 
-def yahoo_backfill_financials(codes, persisted):
+def yahoo_backfill_financials(codes, persisted, suffixes=None):
     """一回限りの過去業績バックフィル（業績チャートの完成用）。
 
     J-Quants無料プランは約2年分しか遡れないため、それ以前の年次業績を
@@ -2939,13 +2975,16 @@ def yahoo_backfill_financials(codes, persisted):
              "annualPretaxIncome", "annualNetIncome")
     FMAP = {"annualTotalRevenue": "sales", "annualOperatingIncome": "op",
             "annualPretaxIncome": "ordp", "annualNetIncome": "np"}
+    suffixes = suffixes or {}
     need = []
     for code in codes:
         prev = persisted.get(code) or {}
-        if prev.get("yh_ts"):
-            continue
         h = prev.get("hist") or {}
         n_fy = sum(1 for r in h.values() if (r.get("ty") or "").upper() in ("FY", "4Q", "Y"))
+        # 取得済みマーカーがあっても、年次が2期未満なら失敗扱いで再挑戦
+        # （非東証銘柄のサフィックス誤り等で空振りした過去の取得を救済する）
+        if prev.get("yh_ts") and n_fy >= 2:
+            continue
         if n_fy >= 5:  # 既に十分な年数があればマーカーだけ付けて完了扱い
             prev2 = dict(prev); prev2["yh_ts"] = "enough"; persisted[code] = prev2
             continue
@@ -2960,9 +2999,10 @@ def yahoo_backfill_financials(codes, persisted):
     n_ok = [0]; n_done = [0]
 
     def one(code):
+        sfx = suffixes.get(code, ".T")  # 名証/札証/福証は .N/.S/.F（RIZAP等の取りこぼし対策）
         url = ("https://query1.finance.yahoo.com/ws/fundamentals-timeseries/"
-               f"v1/finance/timeseries/{code}.T")
-        params = {"symbol": f"{code}.T", "type": ",".join(TYPES),
+               f"v1/finance/timeseries/{code}{sfx}")
+        params = {"symbol": f"{code}{sfx}", "type": ",".join(TYPES),
                   "period1": "946684800", "period2": str(int(time.time())),
                   "merge": "false", "padTimeSeries": "false"}
         headers = {"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)"}
@@ -3036,7 +3076,7 @@ def save_fund_cache(cache):
         pass
 
 
-def fetch_fundamentals(session, codes, closes=None):
+def fetch_fundamentals(session, codes, closes=None, suffixes=None):
     """財務指標は「素材（EPS・BPS・発行株数・配当）」を受け取り、指標そのものはこちらで計算する。
     - PER = 株価 ÷ EPS、PBR = 株価 ÷ BPS、時価総額 = 株価 × 発行株数、ROE = EPS ÷ BPS
     - 素材は決算ごとにしか変わらないため、今回の応答に無くても前回保存分で計算する
@@ -3078,7 +3118,7 @@ def fetch_fundamentals(session, codes, closes=None):
     # 過去年次業績のバックフィル（各銘柄一回限り・済みマーカーで自動スキップ）
     if session is not None:
         try:
-            yahoo_backfill_financials(list(codes), persisted)
+            yahoo_backfill_financials(list(codes), persisted, suffixes=suffixes)
             save_fund_cache(persisted)  # 途中経過も保存（後段で失敗しても消えない）
         except Exception as e:  # noqa: BLE001
             print(f"  ! 業績バックフィル失敗（次回再試行）: {e}", file=sys.stderr)
@@ -3396,7 +3436,8 @@ def run_screening():
     td_session = _rq.Session()
     fundamentals = fetch_fundamentals(
         td_session, list(detail_map.keys()),
-        closes={code: e.get("close") for code, e in detail_map.items()})
+        closes={code: e.get("close") for code, e in detail_map.items()},
+        suffixes={s["code"]: s.get("suffix", ".T") for s in universe})
     fund_ok = len(fundamentals) > 0
     for c in candidates:
         c["fund"] = fundamentals.get(c["code"])
@@ -4437,6 +4478,155 @@ METER_CSS = """
 """
 
 
+# ------------------------------------------------------------
+# 検索の強化: 別名辞書 と カナ⇔ローマ字の子音スケルトン照合
+# 「NEC→日本電気」「ケイディー→KDDI」「ライザップ→RIZAP」等を引っかける
+# ------------------------------------------------------------
+STOCK_ALIASES = {
+    "6701": ["NEC", "エヌイーシー"],
+    "9432": ["NTT", "ドコモ", "docomo", "エヌティティ"],
+    "9433": ["au", "エーユー", "ケイディーディーアイ"],
+    "9434": ["ソフトバンクモバイル"],
+    "6501": ["hitachi", "ヒタチ"],
+    "6702": ["fujitsu", "フジツウ"],
+    "7203": ["toyota"],
+    "7267": ["honda", "本田"],
+    "7201": ["nissan"],
+    "7751": ["canon", "キャノン"],
+    "5108": ["bridgestone", "ブリジストン"],
+    "8306": ["mufg", "ミツビシユーエフジェイ"],
+    "8316": ["smbc", "smfg"],
+    "8411": ["mizuho"],
+    "4689": ["yahoo", "ヤフー", "line", "ライン"],
+    "6098": ["recruit", "リクルート"],
+    "9020": ["JR東日本", "JR東"],
+    "9021": ["JR西日本", "JR西"],
+    "9022": ["JR東海"],
+    "9983": ["ユニクロ", "uniqlo"],
+    "3382": ["セブンイレブン", "セブン"],
+    "2914": ["JT", "日本たばこ"],
+    "4502": ["takeda", "タケダ"],
+    "6594": ["日本電産", "nidec"],
+    "6981": ["murata", "ムラタ"],
+    "8035": ["TEL", "トーエレ"],
+    "4661": ["ディズニー", "disney", "TDL"],
+    "7974": ["nintendo", "ニンテンドー", "スイッチ"],
+    "9501": ["東電", "トウデン"],
+    "9503": ["関電", "カンデン"],
+    "5401": ["新日鉄", "シンニッテツ"],
+    "4901": ["fujifilm", "フジフイルム"],
+    "6971": ["kyocera", "キョーセラ"],
+    "4755": ["rakuten", "ラクテン"],
+    "2413": ["m3"],
+    "9684": ["スクエニ", "スクウェアエニックス"],
+    "6460": ["セガ"],
+    "2702": ["マック", "マクド", "mcdonald"],
+    "7550": ["すき家", "スキヤ"],
+    "3197": ["ガスト"],
+    "8604": ["野村證券", "野村証券"],
+    "5020": ["エネオス", "eneos"],
+    "5019": ["idemitsu", "イデミツ"],
+    "8113": ["unicharm", "ユニチャーム"],
+    "6301": ["小松製作所", "komatsu"],
+    "7011": ["三菱重工", "MHI"],
+    "7013": ["石川島播磨"],
+    "6752": ["panasonic", "松下"],
+    "6758": ["sony"],
+    "9984": ["softbank"],
+    "7832": ["バンナム"],
+    "6902": ["denso"],
+    "6861": ["keyence"],
+    "6954": ["fanuc"],
+    "6857": ["advantest"],
+    "7735": ["スクリーン", "screen"],
+    "4063": ["shinetsu", "シンエツ"],
+}
+
+_KANA_ROMA = {
+    "キャ": "kya", "キュ": "kyu", "キョ": "kyo", "ギャ": "gya", "ギュ": "gyu", "ギョ": "gyo",
+    "シャ": "sha", "シュ": "shu", "ショ": "sho", "ジャ": "ja", "ジュ": "ju", "ジョ": "jo",
+    "チャ": "cha", "チュ": "chu", "チョ": "cho", "ニャ": "nya", "ニュ": "nyu", "ニョ": "nyo",
+    "ヒャ": "hya", "ヒュ": "hyu", "ヒョ": "hyo", "ビャ": "bya", "ビュ": "byu", "ビョ": "byo",
+    "ピャ": "pya", "ピュ": "pyu", "ピョ": "pyo", "ミャ": "mya", "ミュ": "myu", "ミョ": "myo",
+    "リャ": "rya", "リュ": "ryu", "リョ": "ryo",
+    "ファ": "fa", "フィ": "fi", "フェ": "fe", "フォ": "fo", "フュ": "fyu",
+    "ヴァ": "va", "ヴィ": "vi", "ヴェ": "ve", "ヴォ": "vo", "ヴ": "vu",
+    "ウィ": "wi", "ウェ": "we", "ウォ": "wo",
+    "ティ": "ti", "ディ": "di", "トゥ": "tu", "ドゥ": "du", "チェ": "che", "シェ": "she", "ジェ": "je",
+    "ア": "a", "イ": "i", "ウ": "u", "エ": "e", "オ": "o",
+    "カ": "ka", "キ": "ki", "ク": "ku", "ケ": "ke", "コ": "ko",
+    "ガ": "ga", "ギ": "gi", "グ": "gu", "ゲ": "ge", "ゴ": "go",
+    "サ": "sa", "シ": "shi", "ス": "su", "セ": "se", "ソ": "so",
+    "ザ": "za", "ジ": "ji", "ズ": "zu", "ゼ": "ze", "ゾ": "zo",
+    "タ": "ta", "チ": "chi", "ツ": "tsu", "テ": "te", "ト": "to",
+    "ダ": "da", "ヂ": "ji", "ヅ": "zu", "デ": "de", "ド": "do",
+    "ナ": "na", "ニ": "ni", "ヌ": "nu", "ネ": "ne", "ノ": "no",
+    "ハ": "ha", "ヒ": "hi", "フ": "fu", "ヘ": "he", "ホ": "ho",
+    "バ": "ba", "ビ": "bi", "ブ": "bu", "ベ": "be", "ボ": "bo",
+    "パ": "pa", "ピ": "pi", "プ": "pu", "ペ": "pe", "ポ": "po",
+    "マ": "ma", "ミ": "mi", "ム": "mu", "メ": "me", "モ": "mo",
+    "ヤ": "ya", "ユ": "yu", "ヨ": "yo",
+    "ラ": "ra", "リ": "ri", "ル": "ru", "レ": "re", "ロ": "ro",
+    "ワ": "wa", "ヲ": "o", "ン": "n",
+    "ァ": "a", "ィ": "i", "ゥ": "u", "ェ": "e", "ォ": "o",
+    "ッ": "", "ー": "",
+}
+
+
+def latin_skeleton(s):
+    """文字列→子音スケルトン。カナはローマ字化し、母音を落として連続重複を圧縮。
+    例: ライザップ→rzp / RIZAP→rzp / ケイディー→kd / KDDI→kd / toyota→tyt / トヨタ→tyt"""
+    import unicodedata
+    t = unicodedata.normalize("NFKC", s or "").lower()
+    t = "".join(chr(ord(ch) + 0x60) if "ぁ" <= ch <= "ゖ" else ch for ch in t)
+    roma = []
+    i = 0
+    while i < len(t):
+        two = t[i:i + 2]
+        if two in _KANA_ROMA:
+            roma.append(_KANA_ROMA[two]); i += 2; continue
+        one = t[i]
+        if one in _KANA_ROMA:
+            roma.append(_KANA_ROMA[one])
+        elif "a" <= one <= "z":
+            roma.append(one)
+        i += 1
+    r = "".join(roma).replace("c", "k").replace("l", "r").replace("q", "k")
+    sk = [ch for ch in r if ch not in "aiueo"]
+    out = []
+    for ch in sk:
+        if not out or out[-1] != ch:
+            out.append(ch)
+    return "".join(out)
+
+
+# JSに埋め込む同等実装（台帳・マップの検索欄で使用）
+SKEL_JS = r"""
+var KROMA={'キャ':'kya','キュ':'kyu','キョ':'kyo','ギャ':'gya','ギュ':'gyu','ギョ':'gyo','シャ':'sha','シュ':'shu','ショ':'sho','ジャ':'ja','ジュ':'ju','ジョ':'jo','チャ':'cha','チュ':'chu','チョ':'cho','ニャ':'nya','ニュ':'nyu','ニョ':'nyo','ヒャ':'hya','ヒュ':'hyu','ヒョ':'hyo','ビャ':'bya','ビュ':'byu','ビョ':'byo','ピャ':'pya','ピュ':'pyu','ピョ':'pyo','ミャ':'mya','ミュ':'myu','ミョ':'myo','リャ':'rya','リュ':'ryu','リョ':'ryo','ファ':'fa','フィ':'fi','フェ':'fe','フォ':'fo','フュ':'fyu','ヴァ':'va','ヴィ':'vi','ヴェ':'ve','ヴォ':'vo','ヴ':'vu','ウィ':'wi','ウェ':'we','ウォ':'wo','ティ':'ti','ディ':'di','トゥ':'tu','ドゥ':'du','チェ':'che','シェ':'she','ジェ':'je','ア':'a','イ':'i','ウ':'u','エ':'e','オ':'o','カ':'ka','キ':'ki','ク':'ku','ケ':'ke','コ':'ko','ガ':'ga','ギ':'gi','グ':'gu','ゲ':'ge','ゴ':'go','サ':'sa','シ':'shi','ス':'su','セ':'se','ソ':'so','ザ':'za','ジ':'ji','ズ':'zu','ゼ':'ze','ゾ':'zo','タ':'ta','チ':'chi','ツ':'tsu','テ':'te','ト':'to','ダ':'da','ヂ':'ji','ヅ':'zu','デ':'de','ド':'do','ナ':'na','ニ':'ni','ヌ':'nu','ネ':'ne','ノ':'no','ハ':'ha','ヒ':'hi','フ':'fu','ヘ':'he','ホ':'ho','バ':'ba','ビ':'bi','ブ':'bu','ベ':'be','ボ':'bo','パ':'pa','ピ':'pi','プ':'pu','ペ':'pe','ポ':'po','マ':'ma','ミ':'mi','ム':'mu','メ':'me','モ':'mo','ヤ':'ya','ユ':'yu','ヨ':'yo','ラ':'ra','リ':'ri','ル':'ru','レ':'re','ロ':'ro','ワ':'wa','ヲ':'o','ン':'n','ァ':'a','ィ':'i','ゥ':'u','ェ':'e','ォ':'o','ッ':'','ー':''};
+function skel(s){
+  var t=(s||'').normalize('NFKC').toLowerCase();
+  t=t.replace(/[ぁ-ゖ]/g,function(ch){return String.fromCharCode(ch.charCodeAt(0)+0x60);});
+  var roma='';
+  for(var i=0;i<t.length;){
+    var two=t.substr(i,2);
+    if(KROMA[two]!==undefined){ roma+=KROMA[two]; i+=2; continue; }
+    var one=t[i];
+    if(KROMA[one]!==undefined){ roma+=KROMA[one]; }
+    else if(one>='a'&&one<='z'){ roma+=one; }
+    i++;
+  }
+  roma=roma.replace(/c/g,'k').replace(/l/g,'r').replace(/q/g,'k');
+  var out='';
+  for(var j=0;j<roma.length;j++){
+    var ch=roma[j];
+    if('aiueo'.indexOf(ch)>=0) continue;
+    if(out[out.length-1]!==ch) out+=ch;
+  }
+  return out;
+}
+"""
+
+
 RANK_HIST_PATH = DOCS / "history" / "ranks.json"
 
 
@@ -4535,14 +4725,8 @@ function applyCap(){
   const man = parseFloat(capIn.value) || 0;
   const cap = man * 10000;
   localStorage.setItem(CAP_KEY, capIn.value || '');
-  const ledger = document.querySelector('.ledger');
-  const rows = Array.from(document.querySelectorAll('details.drow'));
-
-  // ★お気に入りを先頭に（スコア順は維持したまま並べ替え）
-  const favRows = rows.filter(r => favs.has(r.querySelector('.fav').dataset.code));
-  const rest = rows.filter(r => !favs.has(r.querySelector('.fav').dataset.code));
-  const ordered = favRows.concat(rest);
-  ordered.forEach(r => ledger.appendChild(r));
+  // ★を付けても順位は動かさない（純粋な今日の順位を保つ・ユーザ要望）
+  const ordered = Array.from(document.querySelectorAll('details.drow'));
 
   let shown = 0;
   ordered.forEach(r => {
@@ -5357,6 +5541,18 @@ def render_universe(all_results, stats, dt):
             t = t.replace(w, "")
         return t
 
+    def _search_text(r):
+        """検索用の見出し文字列: 正規化名 + 原名 + コード + 別名 + 子音スケルトン(~付き)"""
+        name = r["name"]
+        aliases = STOCK_ALIASES.get(r["code"], [])
+        toks = [_norm(name), name.lower(), r["code"]] + [_norm(a) for a in aliases]
+        skels = set()
+        for src in [name] + aliases:
+            sk = latin_skeleton(src)
+            if len(sk) >= 2:
+                skels.add("~" + sk)
+        return " ".join([t for t in toks if t] + sorted(skels))
+
     def row_html(r):
         label, bg, fg, _d = STATUS_DEF[r["status"]]
         mchip = chip_class.get(r.get("market", ""), "local")
@@ -5374,7 +5570,7 @@ def render_universe(all_results, stats, dt):
             return default if v is None else v
         return (
             f'<details class="udet" data-s="{r["status"]}" data-code="{r["code"]}" '
-            f'data-t="{html.escape(_norm(r["name"]))} {html.escape(r["name"].lower())} {r["code"]}" '
+            f'data-t="{html.escape(_search_text(r))}" '
             f'data-name="{html.escape(r["name"])}" '
             f'data-dm="{_n(r.get("demerit"), 9999)}" data-sc="{_n(r.get("score"), -1)}" '
             f'data-q="{_n(r.get("q_score"), -1)}" data-tm="{_n(r.get("t_score"), -1)}" '
@@ -5513,7 +5709,7 @@ def render_universe(all_results, stats, dt):
     border-radius:4px; padding:1px 5px;}
 """ + SPARK_CSS + UPDATE_CSS + FIN_CSS + """
 """
-    script = """<script>
+    script = "<script>" + SKEL_JS + """
 const rows = Array.from(document.querySelectorAll('details.udet'));
 let filter = 'all';
 function normQ(s){
@@ -5525,10 +5721,14 @@ function normQ(s){
 }
 function apply(){
   const raw = document.getElementById('q').value.trim();
-  const terms = raw.split(/[\s　]+/).filter(Boolean).map(normQ).filter(Boolean);
+  const rawTerms = raw.split(/[\s　]+/).filter(Boolean);
+  /* 各語: 正規化での部分一致 か 子音スケルトン一致（NEC⇔日本電気は別名辞書、
+     ライザップ⇔RIZAP・ケイディー⇔KDDIはカナ⇔ローマ字変換で引っかける） */
+  const terms = rawTerms.map(w => ({n: normQ(w), k: skel(w)})).filter(t => t.n || t.k.length >= 2);
   for (const r of rows){
     const hay = r.dataset.t;
-    const okQ = terms.length === 0 || terms.every(t => hay.includes(t));
+    const okQ = terms.length === 0 ||
+      terms.every(t => (t.n && hay.includes(t.n)) || (t.k.length >= 2 && hay.includes('~' + t.k)));
     const okF = (filter === 'all' || r.dataset.s === filter
                  || (filter === '__flaw' && r.dataset.dm === '0')
                  || (filter === '__soon' && r.dataset.soon === '1')
@@ -6313,13 +6513,26 @@ function normQ(s){
   ['ホールディングス','ホールディング','グループ','株式会社','hd'].forEach(function(w){t=t.split(w).join('');});
   return t;
 }
+__SKEL_JS__
+var ALIASES=__STOCK_ALIASES__;
 var cq=document.getElementById('cq'), csugg=document.getElementById('csugg');
 cq.addEventListener('input',function(){
-  var v=normQ(cq.value.trim());
-  if(!v){ csugg.classList.remove('show'); return; }
+  var raw=cq.value.trim();
+  var v=normQ(raw), vk=skel(raw);
+  if(!v&&vk.length<2){ csugg.classList.remove('show'); return; }
   var hits=[];
   for(var i=0;i<STK.length&&hits.length<40;i++){
-    if(STK[i].norm.indexOf(v)>=0||STK[i].code.indexOf(v)>=0) hits.push(i);
+    var s0=STK[i];
+    if(s0.srch===undefined){
+      var al=ALIASES[s0.code]||[];
+      var parts=[s0.norm];
+      for(var a1=0;a1<al.length;a1++) parts.push(normQ(al[a1]));
+      var sks={}; var srcs=[s0.name].concat(al);
+      for(var a2=0;a2<srcs.length;a2++){ var k2=skel(srcs[a2]); if(k2.length>=2) sks['~'+k2]=1; }
+      s0.srch=parts.join(' ')+' '+Object.keys(sks).join(' ');
+    }
+    if((v&&(s0.srch.indexOf(v)>=0||s0.code.indexOf(v)>=0))
+       ||(vk.length>=2&&s0.srch.indexOf('~'+vk)>=0)) hits.push(i);
   }
   if(!hits.length){ csugg.classList.remove('show'); return; }
   csugg.innerHTML=hits.map(function(i){
@@ -6454,7 +6667,9 @@ setTimeout(resize,50);
             .replace("__BODY__", body)
             .replace("__FOOTNOTE__", footnote)
             .replace("__EXTRA_CSS__", extra_css)
-            .replace("__SCRIPT__", script))
+            .replace("__SCRIPT__", script)
+            .replace("__SKEL_JS__", SKEL_JS)
+            .replace("__STOCK_ALIASES__", json.dumps(STOCK_ALIASES, ensure_ascii=False)))
 
 
 STATUS_LABEL = {"picked": "厳選候補", "ok": "候補", "bench": "圏外",
@@ -7133,13 +7348,24 @@ def render_indicators(dt):
     extra_css = f"""
   .lg{{display:flex; gap:6px; flex-wrap:wrap; margin-bottom:8px;}}
   .lg span{{font-size:11px; font-weight:700; border-radius:6px; padding:4px 9px;}}
-  details.ind{{background:#fff; border-radius:14px; margin-bottom:10px; box-shadow:0 1px 3px rgba(0,0,0,.05);}}
-  details.ind summary{{list-style:none; cursor:pointer; display:flex; align-items:center; gap:8px;
-    padding:13px 14px; font-size:14px;}}
+  /* 指標はパネル（タイル）を敷き詰めるグリッド。タップしたパネルだけ全幅に開く */
+  .igrid{{display:grid; grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); gap:8px; margin-bottom:6px;}}
+  details.ind{{background:#fff; border-radius:12px; margin:0; box-shadow:0 1px 3px rgba(0,0,0,.05);}}
+  details.ind summary{{list-style:none; cursor:pointer; display:flex; flex-direction:column;
+    align-items:flex-start; gap:4px; padding:10px 10px 9px; font-size:12.5px; min-height:58px;}}
+  details.ind summary b{{line-height:1.35;}}
   details.ind summary::-webkit-details-marker{{display:none;}}
-  .itag{{flex:none; font-size:9.5px; font-weight:800; color:#4a3f28; background:#f4eedd; border-radius:5px; padding:2px 6px;}}
-  .chev{{margin-left:auto; color:#c9bd9d; font-size:16px; font-weight:700; transition:transform .15s;}}
-  details[open] .chev{{transform:rotate(90deg);}}
+  details.ind[open]{{grid-column:1 / -1;}}
+  details.ind[open] summary{{flex-direction:row; align-items:center; gap:8px; font-size:14px; min-height:0;}}
+  .itag{{flex:none; font-size:9px; font-weight:800; color:#4a3f28; background:#f4eedd; border-radius:5px; padding:2px 6px;}}
+  .chev{{display:none;}}
+  details.ind[open] .chev{{display:block; margin-left:auto; color:#c9bd9d; font-size:16px; font-weight:700; transform:rotate(90deg);}}
+  @media (max-width:760px){{
+    .igrid{{grid-template-columns:repeat(4,minmax(0,1fr)); gap:6px;}}
+    details.ind summary{{padding:8px 6px 7px; font-size:10.5px; min-height:62px; gap:3px;}}
+    .itag{{font-size:8px; padding:1px 4px;}}
+    details.ind[open] summary{{font-size:13px; padding:11px 12px;}}
+  }}
   .ibody{{padding:0 14px 14px; border-top:1px solid #f0ead9;}}
   .one{{font-size:13px; line-height:1.8; padding:10px 0 4px; font-weight:700;}}
   .kid{{font-size:12.5px; line-height:1.8; color:#3a5a40; background:#eef6ef; border-radius:10px; padding:9px 12px; margin:6px 0 10px;}}
@@ -7175,8 +7401,10 @@ def render_indicators(dt):
             .replace("__TITLE__", "指標の読み方 — 数字を判断に変える図解")
             .replace("__SUBTITLE__", subtitle)
             .replace("__BODY__", legend
-                     + '<div class="tierh">主要指標（採点の中心・{}）</div>'.format(len(INDICATORS)) + "".join(cards)
-                     + '<div class="tierh sec">準主要指標（補助的に加点・{}）</div>'.format(len(SECONDARY_INDICATORS)) + "".join(sec_cards)
+                     + '<div class="tierh">主要指標（採点の中心・{}）</div>'.format(len(INDICATORS))
+                     + '<div class="igrid">' + "".join(cards) + '</div>'
+                     + '<div class="tierh sec">準主要指標（補助的に加点・{}）</div>'.format(len(SECONDARY_INDICATORS))
+                     + '<div class="igrid">' + "".join(sec_cards) + '</div>'
                      + glossary)
             .replace("__FOOTNOTE__", footnote)
             .replace("__EXTRA_CSS__", extra_css)
