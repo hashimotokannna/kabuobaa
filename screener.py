@@ -1642,14 +1642,14 @@ canvas.drag{cursor:grabbing;}
 .panel{flex:none; width:0; overflow:hidden; background:var(--panel); border-left:1px solid var(--line);
   transition:width .18s ease; display:flex; flex-direction:column;}
 .panel.show{width:320px;}
-/* ✕で閉じたあともパネルの幅は保持して「空間」を残す:
-   閉じるたびにキャンバスの寸法が変わって点が引き伸ばされるバグを根本から断つ */
-.panel.ghost{width:320px; background:transparent; border-left-color:transparent;}
-.panel.ghost .pbody{visibility:hidden;}
-.panel.ghost .pclose{display:none;}
 .pbody{flex:1; overflow-y:auto; padding:14px; min-width:290px;}
 .pclose{position:absolute; right:10px; top:10px; border:1px solid var(--line2); background:transparent;
   color:var(--dim); border-radius:5px; font-size:12px; padding:2px 8px; cursor:pointer;}
+/* ✕でパネルを閉じた後（フォーカスは維持）に出る再表示チップ */
+#reopen{display:none; position:absolute; right:10px; top:42px; z-index:6; border:1px solid rgba(77,215,255,.4);
+  background:rgba(10,18,28,.75); color:var(--cy); border-radius:8px; font-size:11.5px; font-weight:700;
+  padding:6px 10px; cursor:pointer;}
+body.pnhide #reopen{display:block;}
 .pn{font-size:17px; font-weight:800; color:var(--tx); padding-right:40px; line-height:1.4;}
 .pc{font-family:ui-monospace,Menlo,monospace; font-size:11px; color:var(--dim); margin-bottom:8px;}
 .pfacts{display:flex; flex-wrap:wrap; gap:5px; margin-bottom:12px;}
@@ -1687,7 +1687,6 @@ canvas.drag{cursor:grabbing;}
   .panel{width:100%; border-left:none; border-top:1px solid var(--line);
     transition:height .18s ease; height:0;}
   .panel.show{width:100%; height:46%;}
-  .panel.ghost{width:100%; height:46%; border-top-color:transparent;}
   .pbody{min-width:0;}
   .legend{max-width:180px;}
   .srch{width:132px;}
@@ -1747,6 +1746,7 @@ html[data-theme="light"] .intro{background:rgba(240,240,245,.82);}
       <div id="loading">LOADING MAP…</div>
       <div class="hint" id="hint">1本指=回転 ・ 2本指=移動＆拡大 ・ ダブルタップ=ズーム ・ タップ=銘柄 <span id="hintx" style="pointer-events:auto; cursor:pointer; color:#4dd7ff; font-weight:700; margin-left:4px;">✕</span></div>
       <div class="legend" id="legend"></div>
+      <button id="reopen">◈ 詳細を再表示</button>
     </div>
     <div class="panel" id="panel">
       <div class="pbody" style="position:relative">
@@ -2393,8 +2393,9 @@ function focusOn(i, fly){
   TRAIL.push(i);
   if(TRAIL.length>8) TRAIL.shift();
   var s=ST[i];
-  /* 最後に見た銘柄を記憶 → 次にタブへ戻ってきたとき同じ銘柄から再開できる */
-  try{ localStorage.setItem('kabuobaa_map_last', s.code); }catch(e){}
+  /* 最後に見た銘柄を記憶（このタブ内・30分だけ）:
+     台帳へ飛んで戻ってきた時だけ復元し、翌日や別タブでは通常の俯瞰から始まる */
+  try{ sessionStorage.setItem('kabuobaa_map_last', JSON.stringify({c:s.code,t:Date.now()})); }catch(e){}
   /* どの経路でも: カメラはその銘柄が中央に来るよう寄って拡大。
      ✕で外してもこのカメラ位置に留まる（clearFocusはカメラに触れない） */
   if(fly){
@@ -2474,22 +2475,34 @@ function focusOn(i, fly){
   });
   document.getElementById('pprev').addEventListener('click',function(){ focusStep(-1); });
   document.getElementById('pnext').addEventListener('click',function(){ focusStep(1); });
-  var pnl=document.getElementById('panel');
-  pnl.classList.remove('ghost'); pnl.classList.add('show');
+  document.getElementById('panel').classList.add('show');
   document.body.classList.add('focused');
-  setTimeout(resize,200);
+  document.body.classList.remove('pnhide');
 }
+function hidePanel(){
+  /* ✕ボタン: 「詳細情報が邪魔」なだけなので、閉じるのはパネルだけ。
+     フォーカス（注目銘柄＋繋がりだけのスポットライト表示）とカメラはそのまま維持し、
+     マップが全画面に広がる。ゴチャゴチャした俯瞰には戻らない */
+  var pn=document.getElementById('panel');
+  pn.classList.remove('show');
+  document.body.classList.remove('focused');
+  document.body.classList.add('pnhide');
+  lastPointer=Date.now(); spinHoldUntil=Date.now()+8000;
+}
+document.getElementById('reopen').addEventListener('click',function(){
+  if(focusI>=0){ focusOn(focusI,false); }   /* カメラは動かさずパネルだけ再表示 */
+});
 function clearFocus(){
+  /* 俯瞰に戻る（何もない場所をタップ / Esc）: フォーカス自体を解除 */
   focusI=-1; fEdges=[]; f2Edges=[]; fset2={};
   camGoal=null; lastPointer=Date.now();
   spinHoldUntil=Date.now()+8000;   /* カメラは今の場所のまま・自動回転もしばらく再開しない */
+  try{ sessionStorage.removeItem('kabuobaa_map_last'); }catch(e){}
   document.body.classList.remove('focused');
-  /* パネルは閉じずに「空間」として残す（showのまま中身だけ隠す）
-     → キャンバスの寸法が一切変わらないので、点が引き伸ばされるバグが起きない */
-  var pn=document.getElementById('panel');
-  pn.classList.remove('show'); pn.classList.add('ghost');
+  document.body.classList.remove('pnhide');
+  document.getElementById('panel').classList.remove('show');
 }
-document.getElementById('pclose').addEventListener('click',clearFocus);
+document.getElementById('pclose').addEventListener('click',hidePanel);
 /* フォーカスを前後の銘柄へ移す（キーボード矢印 と パネルの前へ/次へボタン） */
 function focusStep(dir){
   if(!ST.length) return;
@@ -2689,11 +2702,16 @@ fetch('map.json').then(function(r){
   refreshColors();
   resize();
   var mq=new URLSearchParams(location.search).get('c');
+  try{ localStorage.removeItem('kabuobaa_map_last'); }catch(e){}  /* 旧仕様の掃除 */
   if(mq&&byCode[mq]!=null){ focusOn(byCode[mq]); }
   else {
-    /* URL指定がなければ、前回フォーカスしていた銘柄を初期表示として復元 */
+    /* 台帳などへ飛んで「同じタブで・30分以内に」戻ってきた時だけ直前の銘柄を復元。
+       それ以外（翌日・別タブ・普通に開いた時）は通常の俯瞰から始まる */
     var last=null;
-    try{ last=localStorage.getItem('kabuobaa_map_last'); }catch(e){}
+    try{
+      var lj=JSON.parse(sessionStorage.getItem('kabuobaa_map_last')||'null');
+      if(lj&&lj.c&&(Date.now()-lj.t)<30*60*1000) last=lj.c;
+    }catch(e){}
     if(last&&byCode[last]!=null){ focusOn(byCode[last]); }
     else { maybeIntro(); }
   }
