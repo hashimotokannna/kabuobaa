@@ -1264,6 +1264,280 @@ SIM_WHY = [  # 類似の根拠フラグ（ビット順・フロントと共有�
 ]
 
 
+def _map_insights(entries, pos, secs, X, combined, corr, corr_ok,
+                  nb_idx, codes, axes_meta, fu):
+    """埋め込み空間の構造を統計で読み解き、専門家目線のコメント群を生成する。
+    すべて実データから計算した事実に基づく（推測や相場予想は書かない）。
+    返り値: [{tag, title, body, picks:[[code,name],...]}, ...]"""
+    import numpy as np
+    n = len(entries)
+    out = []
+
+    def _f(e, k):
+        v = (fu(e) or {}).get(k)
+        try:
+            v = float(v)
+            return v if math.isfinite(v) else None
+        except (TypeError, ValueError):
+            return None
+
+    def med(vals):
+        vs = [v for v in vals if v is not None]
+        return (sorted(vs)[len(vs) // 2] if vs else None)
+
+    def pick(idx_list, k=6):
+        return [[entries[i]["code"], entries[i]["name"]] for i in idx_list[:k]]
+
+    try:
+        # ============ 1. 業種の凝集度（固まっている業種・散らばる業種） ============
+        rng = np.random.default_rng(7)
+        sec_members = {}
+        for i, s in enumerate(secs):
+            if s:
+                sec_members.setdefault(s, []).append(i)
+        glob_pairs = rng.integers(0, n, (600, 2))
+        glob_d = float(np.mean(np.linalg.norm(pos[glob_pairs[:, 0]] - pos[glob_pairs[:, 1]], axis=1)))
+        coh = []
+        for s, mem in sec_members.items():
+            if len(mem) < 12:
+                continue
+            m = np.array(mem)
+            a = m[rng.integers(0, len(m), 300)]
+            b = m[rng.integers(0, len(m), 300)]
+            d = float(np.mean(np.linalg.norm(pos[a] - pos[b], axis=1)))
+            coh.append((d / max(1e-9, glob_d), s, len(mem)))
+        coh.sort()
+        if len(coh) >= 4:
+            tight = coh[:3]
+            loose = coh[-3:][::-1]
+            body = ("全体の平均距離を1としたとき、"
+                    + "、".join(f"「{s}」は{r:.2f}（{c}社）" for r, s, c in tight)
+                    + " と強く固まっています。固まっている業種は財務体質も値動きも均質＝この中で複数銘柄を持っても分散になりにくく、"
+                    "同業内での乗り換え（同じ体質でより割安な方へ）が効きやすい領域です。逆に "
+                    + "、".join(f"「{s}」は{r:.2f}" for r, s, c in loose)
+                    + " と散らばっており、同じ業種名でもビジネスモデルや財務が別物＝業種でひとくくりにせず1社ずつ選別する価値がある領域です。")
+            out.append({"tag": "業種の地形", "title": "固まる業種・散らばる業種", "body": body, "picks": []})
+
+        # ============ 2. 密集クラスタの正体 ============
+        k = min(14, max(4, n // 250))
+        rng2 = np.random.default_rng(11)
+        cent = pos[rng2.choice(n, k, replace=False)].copy()
+        for _ in range(25):
+            d2 = ((pos[:, None, :] - cent[None, :, :]) ** 2).sum(-1)
+            lab = d2.argmin(1)
+            for c in range(k):
+                m = pos[lab == c]
+                if len(m):
+                    cent[c] = m.mean(0)
+        sizes = [(int((lab == c).sum()), c) for c in range(k)]
+        sizes.sort(reverse=True)
+        clines = []
+        cl_picks = []
+        for size, c in sizes[:4]:
+            mem = np.where(lab == c)[0]
+            if size < 25:
+                continue
+            sc = {}
+            for i in mem:
+                if secs[i]:
+                    sc[secs[i]] = sc.get(secs[i], 0) + 1
+            top_sec, top_cnt = (max(sc.items(), key=lambda kv: kv[1]) if sc else ("", 0))
+            pbr_m = med([_f(entries[i], "pbr") for i in mem])
+            roe_m = med([_f(entries[i], "roe") for i in mem])
+            div_m = med([_f(entries[i], "div_yield") for i in mem])
+            mc_m = med([_f(entries[i], "mcap_oku") for i in mem])
+            # 性格づけ
+            traits = []
+            if pbr_m is not None:
+                traits.append("資産面で割安" if pbr_m < 0.9 else ("標準的な評価" if pbr_m < 2.0 else "成長期待で割高"))
+            if roe_m is not None and roe_m >= 10:
+                traits.append("稼ぐ力が高い")
+            if div_m is not None and div_m >= 3.2:
+                traits.append("高配当")
+            # 代表銘柄: クラスタ中心に近い順
+            cd = np.linalg.norm(pos[mem] - cent[c], axis=1)
+            reps = [int(mem[j]) for j in np.argsort(cd)[:3]]
+            clines.append(
+                f"◆ {size}社の塊: 中心は「{top_sec}」({top_cnt}社)。中央値PBR {pbr_m if pbr_m is not None else '−'}倍"
+                f"・ROE {roe_m if roe_m is not None else '−'}%・配当 {div_m if div_m is not None else '−'}%"
+                f"・時価総額 {int(mc_m) if mc_m else '−'}億円 ── " + ("・".join(traits) if traits else "特徴は中庸")
+                + f"。代表: " + "、".join(entries[i]["name"] for i in reps))
+            cl_picks.extend(reps)
+        if clines:
+            body = ("空間を機械的にクラスタ分割すると、大きな塊の正体はこうなっています。\n" + "\n".join(clines)
+                    + "\n塊の中は互いに代替が効きやすい＝「その塊から1社だけ選ぶ」つもりで見ると効率が良く、"
+                    "ポートフォリオが同じ塊に偏っていたら実質1銘柄に賭けているのと同じ、と読めます。")
+            out.append({"tag": "クラスタ解剖", "title": "大きな塊の正体（自動クラスタ分析）",
+                        "body": body, "picks": pick(cl_picks, 8)})
+
+        # ============ 3. 外縁の個性派 ============
+        cen = pos.mean(0)
+        rad = np.linalg.norm(pos - cen, axis=1)
+        far = list(np.argsort(-rad)[:8])
+        colname = {0: "企業規模", 1: "PBR(割安割高)", 2: "PER", 3: "ROE", 4: "自己資本比率",
+                   5: "営業利益率", 6: "配当利回り", 7: "配当性向", 8: "値動きの荒さ",
+                   9: "1年レンジ位置", 10: "高値からの下落", 11: "売買代金"}
+        far_desc = []
+        for i in far[:6]:
+            j = int(np.argmax(np.abs(X[i])))
+            far_desc.append(f"{entries[i]['name']}（{colname.get(j, '複合要因')}が極端）")
+        body = ("中心＝「平均的な日本株の体質」、外縁ほど個性が強い配置です。いま最も外側にいるのは "
+                + "、".join(far_desc)
+                + " など。外縁の銘柄は市場平均と連動しにくい＝ポートフォリオの分散材料になる一方、"
+                "個別要因で大きく動くリスクの塊でもあります。中心付近ばかり持つと指数を買っているのと大差なく、"
+                "外縁だけ持つと荒れます。中心と外縁の「混ぜ具合」が分散設計の要点です。")
+        out.append({"tag": "外れ値", "title": "外縁にいる個性派たち", "body": body, "picks": pick(far, 8)})
+
+        # ============ 4. 今夜の厳選圏はどこにいるか ============
+        tri_idx = [i for i, e in enumerate(entries) if e.get("tri")]
+        if len(tri_idx) >= 3:
+            t = np.array(tri_idx)
+            td = float(np.mean(np.linalg.norm(pos[t[rng.integers(0, len(t), 200)]]
+                                              - pos[t[rng.integers(0, len(t), 200)]], axis=1)))
+            ratio = td / max(1e-9, glob_d)
+            sec_t = {}
+            for i in tri_idx:
+                if secs[i]:
+                    sec_t[secs[i]] = sec_t.get(secs[i], 0) + 1
+            top2 = sorted(sec_t.items(), key=lambda kv: -kv[1])[:2]
+            # 予備軍: 厳選銘柄の近傍で自身は非厳選・非除外
+            reserve = []
+            seen = set()
+            for i in tri_idx:
+                for j in nb_idx[i][:4]:
+                    j = int(j)
+                    e2 = entries[j]
+                    if e2.get("tri") or e2.get("status") in ("dead", "skip") or j in seen:
+                        continue
+                    seen.add(j)
+                    reserve.append(j)
+            if ratio < 0.8:
+                shape = (f"平均より明確に固まっています（凝集度{ratio:.2f}）。つまり今夜の選定ロジックは"
+                         f"特定の体質──主に「{top2[0][0]}」系──を好んでおり、厳選銘柄を複数買うと体質が重複しがちです。"
+                         "厳選の中から買うのは1〜2銘柄に絞り、残り資金は空間上離れた候補に回す、という読み方ができます。")
+            else:
+                shape = (f"空間全体に散っています（凝集度{ratio:.2f}）。選定が特定の体質に偏っておらず、"
+                         "厳選内で複数買っても体質の重複は起きにくい状態です。")
+            body = (f"今夜の厳選圏 {len(tri_idx)}銘柄の分布は、" + shape
+                    + " また、厳選銘柄のすぐ隣にいるのに今夜は選ばれていない銘柄は「同じ体質でまだ買い場が来ていない予備軍」＝"
+                    "ウォッチリストの有力候補です。下のチップから直接フォーカスできます。")
+            out.append({"tag": "厳選圏", "title": "今夜の厳選はどこに固まっているか",
+                        "body": body, "picks": pick(reserve, 8)})
+
+        # ============ 5. 業種を跨いだ瓜二つペア ============
+        pairs = []
+        pseen = set()
+        for i in range(n):
+            for j in nb_idx[i][:3]:
+                j = int(j)
+                if secs[i] and secs[j] and secs[i] != secs[j]:
+                    key = (min(i, j), max(i, j))
+                    if key in pseen:
+                        continue
+                    pseen.add(key)
+                    pairs.append((float(combined[i, j]), i, j))
+        pairs.sort(reverse=True)
+        if pairs:
+            plines = []
+            ppicks = []
+            for sim, i, j in pairs[:5]:
+                sim01 = round(float(np.clip((sim + 0.2) / 1.2, 0, 1)) * 100)
+                plines.append(f"{entries[i]['name']}（{secs[i]}）×{entries[j]['name']}（{secs[j]}）類似{sim01}%")
+                ppicks.extend([i, j])
+            body = ("業種がまったく違うのに体質と値動きが瓜二つのペアです: " + "、".join(plines)
+                    + "。業種で分散したつもりでも、この空間で近い銘柄同士は実質同じリスクを重ねて持っているのと同じです。"
+                    "逆に、片方が割安に取り残されていれば乗り換え候補にもなります。")
+            out.append({"tag": "隠れた相似", "title": "業種を跨いだ「実質同じ」ペア",
+                        "body": body, "picks": pick(ppicks, 10)})
+
+        # ============ 6. 割安の谷: お宝と万年割安を仕分ける ============
+        cheap = [i for i in range(n) if (_f(entries[i], "pbr") or 99) < 0.7]
+        if len(cheap) >= 10:
+            treasure = [i for i in cheap if (_f(entries[i], "roe") or -9) >= 8]
+            trap = [i for i in cheap if (_f(entries[i], "roe") or -9) < 3]
+            treasure.sort(key=lambda i: -( _f(entries[i], "roe") or 0))
+            body = (f"PBR0.7倍未満の「解散価値割れ」は{len(cheap)}社。ただし割安には2種類あります。"
+                    f"①稼げているのに安い（ROE8%以上）が{len(treasure)}社 ── 市場の見落とし・再評価待ちの筆頭候補で、"
+                    "東証の低PBR是正要請やTOB・MBOの土壌にもなります。"
+                    f"②稼げないから安い（ROE3%未満）が{len(trap)}社 ── 万年割安の可能性が高く、"
+                    "「安いから」だけで買うと塩漬けになりやすい領域です。①の上位を下のチップに出しました。"
+                    "空間上で①と②は近くに混在しているので、見た目の位置だけでなくROEで必ず仕分けるのが定石です。")
+            out.append({"tag": "バリュー仕分け", "title": "割安の谷 ── お宝と万年割安",
+                        "body": body, "picks": pick(treasure, 8)})
+
+        # ============ 7. 高配当ゾーンの落とし穴 ============
+        hidiv = [i for i in range(n) if (_f(entries[i], "div_yield") or 0) >= 4.0]
+        if len(hidiv) >= 8:
+            risky = [i for i in hidiv if (_f(entries[i], "payout") or 0) > 90]
+            sound = [i for i in hidiv if 0 < (_f(entries[i], "payout") or 999) <= 60
+                     and (_f(entries[i], "equity_ratio") or 0) >= 40]
+            sound.sort(key=lambda i: -(_f(entries[i], "div_yield") or 0))
+            body = (f"利回り4%以上の高配当は{len(hidiv)}社。うち{len(risky)}社は配当性向90%超＝利益のほぼ全てを配当に回しており、"
+                    "業績が一段下がると減配リスクが高い状態です（高利回りは「株価が下がった結果」の場合も多い）。"
+                    f"一方、配当性向60%以下かつ自己資本比率40%以上で無理なく払えているのは{len(sound)}社。"
+                    "高配当で選ぶなら後者から、が定石です。下のチップは後者の利回り上位。")
+            out.append({"tag": "インカム", "title": "高配当ゾーン ── 無理のない配当か",
+                        "body": body, "picks": pick(sound, 8)})
+
+        # ============ 8. 値動きの連動グループ（業種を超えた資金フロー） ============
+        if corr_ok:
+            cpairs = []
+            cseen = set()
+            for i in range(n):
+                for j in nb_idx[i][:4]:
+                    j = int(j)
+                    if secs[i] != secs[j] and corr[i, j] >= 0.62:
+                        key = (min(i, j), max(i, j))
+                        if key not in cseen:
+                            cseen.add(key)
+                            cpairs.append((float(corr[i, j]), i, j))
+            cpairs.sort(reverse=True)
+            if len(cpairs) >= 3:
+                clines2 = [f"{entries[i]['name']}×{entries[j]['name']}（相関{c:.2f}）" for c, i, j in cpairs[:4]]
+                cp = []
+                for c, i, j in cpairs[:4]:
+                    cp.extend([i, j])
+                body = ("業種が違うのに日々の値動きが強く連動しているペア: " + "、".join(clines2)
+                        + "。同じ資金フロー（同じテーマ・同じ投資家層）で動いている証拠で、"
+                        "地合いが崩れる時は一緒に崩れます。「業種分散」ではなく「連動分散」で見るのがこの地図の使い方です。")
+                out.append({"tag": "資金フロー", "title": "業種を超えて一緒に動く銘柄",
+                            "body": body, "picks": pick(cp, 8)})
+
+        # ============ 9. 規模の断層 ============
+        mc = np.array([(_f(e, "mcap_oku") or np.nan) for e in entries])
+        okm = np.isfinite(mc)
+        if okm.sum() > 100:
+            big = np.where(okm & (mc >= np.nanpercentile(mc, 90)))[0]
+            small = np.where(okm & (mc <= np.nanpercentile(mc, 10)))[0]
+            rb = float(np.mean(rad[big])); rs = float(np.mean(rad[small]))
+            if rs > rb * 1.1:
+                shape2 = ("大型株は中心寄り・小型株ほど外縁という「規模の断層」がはっきり出ています"
+                          f"（中心からの平均距離: 大型{rb:.2f} vs 小型{rs:.2f}）。"
+                          "大型は体質が平均に収束する＝指数連動的で値動きは穏やか、"
+                          "小型ほど個性とリスクが増す、という教科書どおりの構造です。")
+            else:
+                shape2 = (f"大型と小型で中心からの距離に大差がなく（大型{rb:.2f} vs 小型{rs:.2f}）、"
+                          "規模より業種・体質が配置を決めています。小型でも大型並みに「平均的な体質」の銘柄が多い、ということです。")
+            body = (shape2 + " なお売買代金の少ない小型株は、良い位置にいても実際に買うときの約定しやすさ（流動性）を必ず確認してください。")
+            out.append({"tag": "規模構造", "title": "大型と小型はどう住み分けているか", "body": body, "picks": []})
+
+        # ============ 10. 軸の読み方（この地図の物差し） ============
+        ax_lines = []
+        for a, am in enumerate(axes_meta):
+            if am.get("label") and am.get("plus"):
+                ax_lines.append(f"第{a+1}軸=「{am['label']}」（相関{am['r']}）")
+        if ax_lines:
+            body = ("この配置は人が決めたものではなく、財務・バリュエーション・値動き約45次元から機械が作った空間です。"
+                    "事後的に意味を測ると " + "、".join(ax_lines)
+                    + " が最も強く効いています。つまり近い銘柄は「同じ物差しで同じ値」を持つ会社です。"
+                    "軸の意味は毎晩データから測り直されるため、相場の局面が変わると軸の顔ぶれも変わります"
+                    "──それ自体が「いま市場が何で銘柄を区別しているか」のシグナルです。")
+            out.append({"tag": "地図の物差し", "title": "いまこの空間を支配している軸", "body": body, "picks": []})
+    except Exception as e:  # noqa: BLE001
+        print(f"  ! AI考察の生成に失敗（マップ本体には影響なし）: {e}", file=sys.stderr)
+    return out
+
+
 def build_stock_map(detail_map, series=None, k_neighbors=8):
     """detail_map から docs/map.json を生成し、各銘柄に similar(top5) を付与する。
     返り値: マップに載せた銘柄数（素材不足なら 0）"""
@@ -1505,6 +1779,10 @@ def build_stock_map(detail_map, series=None, k_neighbors=8):
                          "ex": entries[j].get("status") in ("dead", "skip")})
         e["similar"] = sims
 
+    # ---------- AI考察: 空間の構造をデータから読み解く専門家コメント ----------
+    insights = _map_insights(entries, pos, secs, X, combined, corr, corr_ok,
+                             nb_idx, codes, axes_meta, fu)
+
     payload = {
         "generated_at": datetime.now(JST).isoformat(),
         "groups": groups,
@@ -1512,6 +1790,7 @@ def build_stock_map(detail_map, series=None, k_neighbors=8):
         "why": {str(bit): lab for bit, lab in SIM_WHY},
         "axes": axes_meta,
         "dims": int(F.shape[1]),
+        "insights": insights,
         "stocks": stocks_out,
     }
     DOCS.mkdir(exist_ok=True)
@@ -1598,6 +1877,12 @@ html[data-theme="light"] .hdr{background:linear-gradient(180deg,#ffffff,#f4f4f7)
 .sugg.show{display:block;}
 .sugg .it{padding:7px 10px; font-size:12px; cursor:pointer; border-top:1px solid var(--line);}
 .sugg .it:first-child{border-top:none;}
+/* スマホ: 候補はツールバーの下に固定表示（スクロール枠に切られない・タップしやすい大きさ） */
+@media (max-width:760px){
+  .sugg{position:fixed; left:8px; right:8px; width:auto; max-height:52dvh;
+    -webkit-overflow-scrolling:touch; overscroll-behavior:contain;}
+  .sugg .it{padding:12px; font-size:14px;}
+}
 .sugg .it:hover{background:var(--card2);}
 .sugg .it small{color:var(--dim); font-family:ui-monospace,Menlo,monospace; margin-left:5px;}
 .sugg .cnt-it{padding:6px 10px; font-size:10px; color:var(--dim); font-weight:700;
@@ -1650,6 +1935,33 @@ canvas.drag{cursor:grabbing;}
   background:rgba(10,18,28,.75); color:var(--cy); border-radius:8px; font-size:11.5px; font-weight:700;
   padding:6px 10px; cursor:pointer;}
 body.pnhide #reopen{display:block;}
+
+/* ═══ AI考察パネル ═══ */
+#inspanel{display:none; position:absolute; left:10px; top:10px; bottom:10px; width:min(430px,86%);
+  z-index:22; background:var(--panel); border:1px solid var(--line2); border-radius:12px;
+  overflow-y:auto; -webkit-overflow-scrolling:touch; box-shadow:0 18px 50px rgba(0,0,0,.5); padding:12px;}
+body.insopen #inspanel{display:block;}
+body.insopen .legend{display:none;}
+.inshead{display:flex; flex-direction:column; gap:4px; margin-bottom:10px; position:relative; padding-right:64px;}
+.inshead b{font-size:13.5px; color:var(--cy); letter-spacing:.03em;}
+.insnote{font-size:10px; color:var(--dim); line-height:1.6;}
+#insclose{position:absolute; right:0; top:0; border:1px solid var(--line2); background:transparent;
+  color:var(--dim); border-radius:6px; font-size:11px; padding:3px 8px; cursor:pointer;}
+details.insi{background:var(--card2); border:1px solid var(--line); border-radius:10px; margin-bottom:8px;}
+details.insi summary{list-style:none; cursor:pointer; display:flex; align-items:center; gap:7px;
+  padding:9px 11px; font-size:12.5px; font-weight:700; color:var(--tx);}
+details.insi summary::-webkit-details-marker{display:none;}
+.instag{flex:none; font-size:9px; font-weight:800; color:var(--cy); background:rgba(77,215,255,.1);
+  border:1px solid rgba(77,215,255,.3); border-radius:4px; padding:1px 6px;}
+.insichev{margin-left:auto; color:var(--dim); transition:transform .15s;}
+details.insi[open] .insichev{transform:rotate(90deg);}
+.insb{padding:0 12px 10px; font-size:12px; line-height:1.9; color:var(--tx2); white-space:pre-line;}
+.inspicks{display:flex; flex-wrap:wrap; gap:5px; padding:0 12px 11px;}
+.inspick{font-size:10.5px; font-weight:700; color:var(--cy); background:rgba(77,215,255,.08);
+  border:1px solid rgba(77,215,255,.3); border-radius:10px; padding:3px 9px; cursor:pointer;}
+@media (max-width:760px){
+  #inspanel{left:6px; right:6px; width:auto; top:6px; bottom:6px;}
+}
 .pn{font-size:17px; font-weight:800; color:var(--tx); padding-right:40px; line-height:1.4;}
 .pc{font-family:ui-monospace,Menlo,monospace; font-size:11px; color:var(--dim); margin-bottom:8px;}
 .pfacts{display:flex; flex-wrap:wrap; gap:5px; margin-bottom:12px;}
@@ -1737,6 +2049,7 @@ html[data-theme="light"] .intro{background:rgba(240,240,245,.82);}
     <button class="tbtn on" id="spin">自動回転</button>
     <button class="tbtn" id="reset">視点リセット</button>
     <button class="tbtn on" id="showex">除外も表示</button>
+    <button class="tbtn" id="insbtn">🧠 AI考察</button>
     <button class="tbtn" id="camset">⚙ カメラ設定</button>
     <button class="tbtn" id="howbtn">❓ 仕組みと使い道</button>
   </div></div>
@@ -1747,6 +2060,12 @@ html[data-theme="light"] .intro{background:rgba(240,240,245,.82);}
       <div class="hint" id="hint">1本指=回転 ・ 2本指=移動＆拡大 ・ ダブルタップ=ズーム ・ タップ=銘柄 <span id="hintx" style="pointer-events:auto; cursor:pointer; color:#4dd7ff; font-weight:700; margin-left:4px;">✕</span></div>
       <div class="legend" id="legend"></div>
       <button id="reopen">◈ 詳細を再表示</button>
+      <div id="inspanel">
+        <div class="inshead"><b>🧠 AI考察 ── この空間から読み取れること</b>
+          <span class="insnote">毎晩の実データから機械的に計算した観察です。個々のコメントはタップで開閉できます。</span>
+          <button id="insclose">✕ 閉じる</button></div>
+        <div id="insbody"></div>
+      </div>
     </div>
     <div class="panel" id="panel">
       <div class="pbody" style="position:relative">
@@ -2492,6 +2811,44 @@ function hidePanel(){
 document.getElementById('reopen').addEventListener('click',function(){
   if(focusI>=0){ focusOn(focusI,false); }   /* カメラは動かさずパネルだけ再表示 */
 });
+
+/* ═══ AI考察パネル ═══ */
+var INSIGHTS=[];
+var INS_KEY='kabuobaa_map_ins';
+function setupInsights(){
+  var btn=document.getElementById('insbtn');
+  if(!INSIGHTS.length){ btn.style.display='none'; return; }
+  var el=document.getElementById('insbody');
+  el.innerHTML=INSIGHTS.map(function(ins,ix){
+    var picks='';
+    if(ins.picks&&ins.picks.length){
+      picks='<div class="inspicks">'+ins.picks.map(function(p){
+        return '<span class="inspick" data-code="'+esc(p[0])+'">'+esc(p[1])+'</span>';
+      }).join('')+'</div>';
+    }
+    return '<details class="insi"'+(ix===0?' open':'')+'>'
+      +'<summary><span class="instag">'+esc(ins.tag||'考察')+'</span>'+esc(ins.title)
+      +'<span class="insichev">›</span></summary>'
+      +'<div class="insb">'+esc(ins.body)+'</div>'+picks+'</details>';
+  }).join('');
+  el.querySelectorAll('.inspick').forEach(function(ch){
+    ch.addEventListener('click',function(){
+      var i2=byCode[ch.dataset.code];
+      if(i2!=null){ document.body.classList.remove('insopen'); saveIns(); focusOn(i2); }
+    });
+  });
+  try{ if(localStorage.getItem(INS_KEY)==='1'){ document.body.classList.add('insopen'); btn.classList.add('on'); } }catch(e){}
+}
+function saveIns(){
+  try{ localStorage.setItem(INS_KEY, document.body.classList.contains('insopen')?'1':'0'); }catch(e){}
+  document.getElementById('insbtn').classList.toggle('on', document.body.classList.contains('insopen'));
+}
+document.getElementById('insbtn').addEventListener('click',function(){
+  document.body.classList.toggle('insopen'); saveIns();
+});
+document.getElementById('insclose').addEventListener('click',function(){
+  document.body.classList.remove('insopen'); saveIns();
+});
 function clearFocus(){
   /* 俯瞰に戻る（何もない場所をタップ / Esc）: フォーカス自体を解除 */
   focusI=-1; fEdges=[]; f2Edges=[]; fset2={};
@@ -2536,10 +2893,18 @@ function normQ(s){
   return t;
 }
 var qEl=document.getElementById('q'), sugg=document.getElementById('sugg');
+function placeSugg(){
+  /* スマホでは検索欄の直下に固定配置（ツールバーのスクロール枠に切られないように） */
+  if(window.innerWidth<=760){
+    var r=qEl.getBoundingClientRect();
+    sugg.style.top=(r.bottom+6)+'px';
+  } else { sugg.style.top=''; }
+}
 qEl.addEventListener('input',function(){
   var raw=qEl.value.trim();
   var v=normQ(raw), vk=skel(raw);
   if(!v&&vk.length<2){ sugg.classList.remove('show'); return; }
+  placeSugg();
   var hits=[];
   for(var i=0;i<ST.length;i++){
     var s0=ST[i];
@@ -2662,6 +3027,8 @@ fetch('map.json').then(function(r){
   DATA=j; GROUPS=j.groups||[]; WHY=j.why||{}; AXES=j.axes||[]; MARKETS=j.markets||[];
   loadMine();
   if(j.dims){ var dn=document.getElementById('dimN'); if(dn) dn.textContent=j.dims; }
+  INSIGHTS=j.insights||[];
+  setupInsights();
   document.getElementById('spin').classList.toggle('on',SPIN);
   ST=j.stocks.map(function(a,i){
     var szRaw=a[7]; var size=szRaw==null?0.5:Math.max(0.2,(szRaw-1.2)*0.75);
@@ -6250,6 +6617,10 @@ def render_caps(n_stocks, dt):
   .csearch{width:100%; font-size:14px; padding:9px 12px; border:1.5px solid #d9d2bf; border-radius:10px; background:#fff;}
   .csugg{position:absolute; left:8px; top:8px; z-index:5; background:#fff; border:1.5px solid #d9d2bf;
     border-radius:10px; max-height:220px; overflow-y:auto; display:none; box-shadow:0 8px 24px rgba(0,0,0,.12); min-width:220px;}
+  @media (max-width:760px){
+    .csugg{left:8px; right:8px; min-width:0; max-height:46vh; -webkit-overflow-scrolling:touch;}
+    .csugg .it{padding:11px 12px; font-size:13.5px;}
+  }
   .csugg.show{display:block;}
   .csugg .it{padding:7px 12px; font-size:12px; cursor:pointer; border-top:1px solid #f0ead9;}
   .csugg .it:first-child{border-top:none;}
