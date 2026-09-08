@@ -2106,7 +2106,7 @@ html[data-theme="light"] .intro{background:rgba(240,240,245,.82);}
     <div class="cnt mono" id="cnt">…</div>
   </div>
   <nav class="dnav">
-    <a href="guide.html">はじめに</a><a href="indicators.html">指標の読み方</a><a href="universe.html">全銘柄台帳</a><a href="index.html">今夜の厳選</a><a class="act">銘柄マップ</a><a href="caps.html">時価総額マップ</a>
+    <a href="index.html">今夜の厳選</a><a href="universe.html">全銘柄台帳</a><a href="sim.html">シミュレーション</a><a class="act">銘柄マップ</a><a href="caps.html">時価総額マップ</a><a href="tob.html">TOB素地</a><a href="guide.html">❓ 使い方</a><a href="javascript:location.reload()" title="最新結果を読み込み直す">🔄</a>
   </nav>
   <div class="toolwrap"><div class="toolrow">
     <div class="srchwrap">
@@ -5613,7 +5613,7 @@ document.addEventListener('gesturechange',function(e){{e.preventDefault();}});
   .athigh{{color:#2e5fa8; font-weight:800;}}
 __METERCSS__
 __EXECCSS__
-  html, body{{overflow-x:hidden; max-width:100%;}}
+  html, body{{overflow-x:hidden; overflow-x:clip; max-width:100%;}}
   body{{overscroll-behavior-x:none;}}
   *{{min-width:0;}}
   img, svg{{max-width:100%;}}
@@ -5752,7 +5752,6 @@ __NAVCSS__
 <body>
 __NAV__
 <header>
-  <button type="button" class="updbtn" onclick="location.reload()">🔄 更新</button>
   <div class="t">今夜の厳選<span id="showncnt">{cfg["TOP_N"]}</span>銘柄</div>
   <div class="s">{date_str} {dt.hour:02d}:{dt.minute:02d} 記帳{"（取引時間中・当日分は途中経過）" if is_intraday else ""} ・ 根拠スコア順{f' ・ ↑↓は {data["prev_date"][5:].replace("-", "/")} 確定記帳との比較' if data.get("prev_date") else ""} ・ 判断はご自身で</div>
 </header>
@@ -5804,57 +5803,118 @@ __CAPJS__
 
 # 全ページ共通のナビゲーション
 NAV_CSS = """
-  .topnav{display:flex; gap:6px; overflow-x:auto; padding:2px 0 12px;
+  html{scroll-behavior:smooth;}
+  .navwrap{position:sticky; top:0; z-index:40; background:var(--bg);
+    margin:0 -2px; padding:6px 2px 0; box-shadow:0 6px 14px -12px rgba(0,0,0,.35);}
+  .topnav{display:flex; gap:6px; overflow-x:auto; padding:2px 0 10px; align-items:center;
     -webkit-overflow-scrolling:touch;}
+  .topnav::-webkit-scrollbar{display:none;}
   .topnav a{flex:none; font-size:12.5px; font-weight:700; color:#4a3f28;
     text-decoration:none; background:#f4eedd; border-radius:10px; padding:8px 14px;}
   .topnav a.act{background:#1c1c1e; color:#fff;}
-  .topnav a.subtag{background:none; color:#8a5a17; font-weight:800; padding-left:2px;}
+  .navmore{position:relative; flex:none;}
+  .navmore>summary{list-style:none; cursor:pointer; font-size:12.5px; font-weight:700; color:#4a3f28;
+    background:#efe6d0; border-radius:10px; padding:8px 12px; white-space:nowrap;}
+  .navmore>summary::-webkit-details-marker{display:none;}
+  .navmore.suback>summary{background:#1c1c1e; color:#fff;}
+  .navmore[open]>summary{background:#1c1c1e; color:#fff;}
+  .navmore .nmenu{position:absolute; right:0; top:40px; z-index:50; background:#fff;
+    border:1.5px solid #d9d2bf; border-radius:12px; box-shadow:0 14px 40px rgba(0,0,0,.15);
+    min-width:170px; overflow:hidden;}
+  .navmore .nmenu a{display:block; font-size:12.5px; font-weight:700; color:#4a3f28;
+    text-decoration:none; padding:11px 15px; border-top:1px solid #f0ead9;}
+  .navmore .nmenu a:first-child{border-top:none;}
+  .navmore .nmenu a.act{background:#f4eedd;}
+  .navupd{flex:none; border:none; background:#efe6d0; color:#2e4d7b; font-size:12.5px; font-weight:800;
+    border-radius:10px; padding:8px 12px; cursor:pointer; margin-left:auto;}
+  #backtop{position:fixed; right:14px; bottom:18px; z-index:60; width:42px; height:42px; border:none;
+    border-radius:50%; background:rgba(28,28,30,.82); color:#fff; font-size:17px; font-weight:800;
+    cursor:pointer; opacity:0; pointer-events:none; transition:opacity .2s; box-shadow:0 6px 18px rgba(0,0,0,.3);}
+  #backtop.show{opacity:1; pointer-events:auto;}
 """
 
+# 使用頻度順のメインタブ（シミュレーション・TOBをタブに昇格）。
+# 「はじめに」「指標の読み方」は参照ドキュメントなので「その他」に集約
 NAV_ITEMS = [
-    ("guide.html", "はじめに", "guide"),
-    ("indicators.html", "指標の読み方", "indicators"),
-    ("universe.html", "全銘柄台帳", "universe"),
     ("index.html", "今夜の厳選", "index"),
+    ("universe.html", "全銘柄台帳", "universe"),
+    ("sim.html", "シミュレーション", "sim"),
     ("map.html", "銘柄マップ", "map"),
     ("caps.html", "時価総額マップ", "caps"),
+    ("tob.html", "TOB素地", "tob"),
+]
+NAV_SUB_ITEMS = [
+    ("guide.html", "❓ はじめに（使い方）", "guide"),
+    ("indicators.html", "📖 指標の読み方", "indicators"),
 ]
 
 
 NAV_JS = """<script>
 (function(){
-  const order = ['guide.html', 'indicators.html', 'universe.html', 'index.html', 'map.html', 'caps.html'];
+  const order = ['index.html', 'universe.html', 'sim.html', 'map.html', 'caps.html', 'tob.html'];
   let here = location.pathname.split('/').pop();
   if (!here) here = 'index.html';
   const idx = order.indexOf(here);
-  if (idx < 0) return;
-  let sx = 0, sy = 0, st = 0;
-  document.addEventListener('touchstart', e => {
-    const t = e.touches[0]; sx = t.clientX; sy = t.clientY; st = Date.now();
+  if (idx >= 0) {  /* メインタブ間のみスワイプでページ移動 */
+    let sx = 0, sy = 0, st = 0;
+    document.addEventListener('touchstart', e => {
+      const t = e.touches[0]; sx = t.clientX; sy = t.clientY; st = Date.now();
+    }, {passive: true});
+    document.addEventListener('touchend', e => {
+      const t = e.changedTouches[0];
+      const dx = t.clientX - sx, dy = t.clientY - sy;
+      if (Date.now() - st > 600) return;
+      if (Math.abs(dx) < 80 || Math.abs(dy) > 50 || Math.abs(dx) < Math.abs(dy) * 2) return;
+      if (e.target.closest('.topnav, .chips, .filters, input, textarea, .spark')) return;
+      const j = dx < 0 ? idx + 1 : idx - 1;
+      if (j >= 0 && j < order.length) location.href = order[j];
+    }, {passive: true});
+  }
+
+  /* ── 現代的な操作性（全ページ共通） ── */
+  /* トップへ戻るボタン（長いページ用） */
+  const bt = document.createElement('button');
+  bt.id = 'backtop'; bt.textContent = '↑'; bt.setAttribute('aria-label', 'ページの先頭へ');
+  document.body.appendChild(bt);
+  bt.addEventListener('click', () => window.scrollTo({top: 0, behavior: 'smooth'}));
+  let btT = null;
+  window.addEventListener('scroll', () => {
+    if (btT) return;
+    btT = setTimeout(() => { btT = null;
+      bt.classList.toggle('show', window.scrollY > 600); }, 120);
   }, {passive: true});
-  document.addEventListener('touchend', e => {
-    const t = e.changedTouches[0];
-    const dx = t.clientX - sx, dy = t.clientY - sy;
-    if (Date.now() - st > 600) return;
-    if (Math.abs(dx) < 80 || Math.abs(dy) > 50 || Math.abs(dx) < Math.abs(dy) * 2) return;
-    if (e.target.closest('.topnav, .chips, .filters, input, textarea, .spark')) return;
-    const j = dx < 0 ? idx + 1 : idx - 1;
-    if (j >= 0 && j < order.length) location.href = order[j];
-  }, {passive: true});
+  /* 「/」キーで検索欄へフォーカス（検索がある画面のみ） */
+  document.addEventListener('keydown', e => {
+    if (e.key !== '/' ) return;
+    const ae = document.activeElement;
+    if (ae && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA')) return;
+    const q = document.getElementById('q') || document.getElementById('cq');
+    if (q) { e.preventDefault(); q.focus(); }
+  });
+  /* 「その他」メニューは外側タップで閉じる */
+  document.addEventListener('click', e => {
+    const m = document.querySelector('.navmore[open]');
+    if (m && !e.target.closest('.navmore')) m.removeAttribute('open');
+  });
 })();
 </script>"""
 
 
 def nav_html(active):
     parts = []
-    sub = active in ("tob", "sim")  # 銘柄マップ・時価総額マップはメインタブ
     for href, label, key in NAV_ITEMS:
-        cls = ' class="act"' if (key == active or (sub and key == "guide")) else ""
+        cls = ' class="act"' if key == active else ""
         parts.append(f'<a href="{href}"{cls}>{label}</a>')
-    if sub:
-        parts.append('<a class="subtag">› その他の機能</a>')
-    return '<div class="topnav">' + "".join(parts) + "</div>"
+    sub_active = any(key == active for _h, _l, key in NAV_SUB_ITEMS)
+    act_attr = ' class="act"'
+    menu = "".join(
+        f'<a href="{href}"{act_attr if key == active else ""}>{label}</a>'
+        for href, label, key in NAV_SUB_ITEMS)
+    parts.append(f'<details class="navmore{" suback" if sub_active else ""}">'
+                 f'<summary>≡ その他</summary><div class="nmenu">{menu}</div></details>')
+    parts.append('<button type="button" class="navupd" onclick="location.reload()" '
+                 'title="最新の夜間実行結果を読み込み直す">🔄 更新</button>')
+    return '<div class="navwrap"><div class="topnav">' + "".join(parts) + "</div></div>"
 
 
 # ------------------------------------------------------------
@@ -5889,7 +5949,7 @@ document.addEventListener('gesturechange',function(e){e.preventDefault();});
   .back{display:inline-block; font-size:12px; font-weight:700; color:#2e4d7b;
     text-decoration:none; margin-bottom:8px;}
 __NAVCSS__
-  html, body{overflow-x:hidden; max-width:100%;}
+  html, body{overflow-x:hidden; overflow-x:clip; max-width:100%;}
   body{overscroll-behavior-x:none;}
   *{min-width:0;}
   img, svg{max-width:100%;}
@@ -6368,7 +6428,7 @@ if (qp){ const qe=document.getElementById('q'); qe.value=qp; apply();
                 "各行に個別の理由を表示。判定は毎回の実行で更新されます。")
     return (SUBPAGE_TEMPLATE
             .replace("__NAVCSS__", NAV_CSS)
-            .replace("__HEADBTN__", '<button type="button" class="updbtn" onclick="location.reload()">🔄 更新</button>')
+            .replace("__HEADBTN__", "")
             .replace("__NAVJS__", NAV_JS)
             .replace("__NAV__", nav_html("universe"))
             .replace("__TITLE__", "全銘柄台帳 — 約4,000銘柄の判定と根拠")
@@ -6412,9 +6472,8 @@ def render_guide(dt):
 ・データはJPX公式・Yahoo Finance・TDnet。表示は毎時の「写真」で、リアルタイムはYahooリンクで<br>
 ・このサイトは判断材料の表示のみ。投資判断は自己責任で</div></div>
 
-<div class="gcard c-sub"><div class="gh">🧩 その他の機能（サブシステム）</div>
-<div class="gt">メインの4タブとは別に、使いたい人向けの補助機能です。</div>
-<a class="subbtn" href="sim.html"><b>IFDOCOシミュレーション</b><span>「毎晩の厳選1位を前日終値で買い、+10%指値と−5%成行のOCOで売る」を過去1年ぶん再現し、以後は毎晩の実際の1位で自動記帳。合計損益・勝率・塩漬け株・日次の全記録</span></a>
+<div class="gcard c-sub"><div class="gh">🧩 シミュレーションとTOB素地（上のタブから開けます）</div>
+<a class="subbtn" href="sim.html"><b>シミュレーション（パターンA〜G）</b><span>おばあ理論に加え、急落リバウンド・好決算ドリフト・割安×高収益・新高値モメンタム・出来高急増の6戦略を、同じ売買ルール（+10%利確/−5%損切）で過去1年分並走検証。毎晩の実測1位も自動記帳</span></a>
 <a class="subbtn" href="tob.html"><b>TOB素地ランキング</b><span>買収・非公開化されやすい「体質」を診断士の定石（PBR・時価総額・ため込み度など9観点）で全銘柄採点した順位表。確率の予測ではなく、最後の確認は人間の役割</span></a>
 </div>
 
@@ -7180,7 +7239,7 @@ def render_stock_detail(e):
         for label, pts in (e.get("tob_hits") or []):
             parts.append(f'<div class="reason">・{html.escape(label)}（{pts:+d}）</div>')
         parts.append('<div class="discnote">買収・非公開化されやすい「体質」の順位で、発生の予測ではありません。'
-                     '全体像と注意点は「TOB素地ランキング」ページ（使い方 › その他の機能）へ。</div>')
+                     '全体像と注意点は上部タブの「TOB素地」ページへ。</div>')
 
     fu = e.get("fund")
     if fu and fu.get("hist"):
@@ -7901,7 +7960,7 @@ document.addEventListener('gesturechange',function(e){e.preventDefault();});
 <title>Kabuobaa</title>
 <style>
   *{box-sizing:border-box; margin:0; padding:0;}
-  html, body{overflow-x:hidden; max-width:100%;}
+  html, body{overflow-x:hidden; overflow-x:clip; max-width:100%;}
   body{font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans",sans-serif;
     background:#faf6ec; min-height:100vh; display:flex; align-items:center;
     justify-content:center; padding:24px;}
@@ -8147,7 +8206,7 @@ def render_sim(payload, dt):
     pats = payload.get("patterns") or []
     sm = (pats[0].get("summary") if pats else payload.get("summary")) or {}
     body = r"""
-<div class="card" style="border-left:5px solid #1c1c1e; position:sticky; top:0; z-index:9;">
+<div class="card" style="border-left:5px solid #1c1c1e; position:sticky; top:46px; z-index:9;">
   <div class="pattabs" id="pattabs"></div>
   <div class="patcmp" id="patcmp"></div>
 </div>
