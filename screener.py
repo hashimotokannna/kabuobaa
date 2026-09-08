@@ -122,7 +122,13 @@ EXTRA_TICKERS = [
 ]
 
 # JPX公式・全上場銘柄一覧（東証）
-JPX_LIST_URL = "https://www.jpx.co.jp/markets/statistics-equities/misc/tvdivq0000001vg2-att/data_j.xls"
+# 注意: JPXはファイルの拡張子やURLを予告なく変える（2026-09に .xls→.xlsx へ変更され夜間実行が全滅した）。
+# そのため「一覧ページを見て現在のリンクを探す」方式を主とし、既知URLは控えに回す。
+JPX_LIST_PAGE = "https://www.jpx.co.jp/markets/statistics-equities/misc/01.html"
+JPX_LIST_KNOWN = [
+    "https://www.jpx.co.jp/markets/statistics-equities/misc/tvdivq0000001vg2-att/data_j.xlsx",
+    "https://www.jpx.co.jp/markets/statistics-equities/misc/tvdivq0000001vg2-att/data_j.xls",
+]
 
 # 33業種 → 表示用カテゴリ（案A帳簿型のセクション）
 SECTOR_GROUPS = {
@@ -147,16 +153,83 @@ DEFAULT_GROUP = "生活・その他製品"
 # ------------------------------------------------------------
 # 1. 上場銘柄一覧の取得（JPX公式Excel）
 # ------------------------------------------------------------
-def fetch_universe():
-    """JPXの上場銘柄一覧から (code, name, sector, market, suffix) のリストを作る"""
+def _read_jpx_excel(content):
+    """JPXのExcel(.xls/.xlsx)をDataFrameに読む。xlsx用のopenpyxlが無ければ自動導入する
+    （screener.py単体差し替えでも動くようにするための自己修復）"""
     import io
-    import requests
     import pandas as pd
+    try:
+        return pd.read_excel(io.BytesIO(content))
+    except ImportError:
+        import subprocess
+        print("  openpyxlが無いため自動インストールします（.xlsx対応）...")
+        subprocess.run([sys.executable, "-m", "pip", "install", "--quiet", "openpyxl"],
+                       check=False)
+        import importlib
+        importlib.invalidate_caches()
+        return pd.read_excel(io.BytesIO(content))
 
-    resp = requests.get(JPX_LIST_URL, timeout=60,
-                        headers={"User-Agent": "Mozilla/5.0"})
-    resp.raise_for_status()
-    df = pd.read_excel(io.BytesIO(resp.content))
+
+def _universe_from_prev_map():
+    """最終手段: 前回公開の docs/map.json から銘柄一覧を復元する（JPX全滅時の非常用）。
+    業種は大分類までしか復元できないが、夜間実行を止めないことを優先する"""
+    try:
+        j = json.loads((DOCS / "map.json").read_text(encoding="utf-8"))
+        groups = j.get("groups") or []
+        markets = j.get("markets") or []
+        extra_sfx = {t["code"]: t["suffix"] for t in EXTRA_TICKERS}
+        out = []
+        for a in j.get("stocks") or []:
+            out.append({"code": a[0], "name": a[1],
+                        "sector": groups[a[2]] if 0 <= a[2] < len(groups) else "",
+                        "market": markets[a[3]] if 0 <= a[3] < len(markets) else "",
+                        "suffix": extra_sfx.get(a[0], ".T")})
+        return out
+    except Exception:  # noqa: BLE001
+        return []
+
+
+def fetch_universe():
+    """JPXの上場銘柄一覧から (code, name, sector, market, suffix) のリストを作る。
+    ①一覧ページから現在のリンクを自動発見 → ②既知URL群 → ③前回のmap.json復元 の三段構え"""
+    import re as _re
+    import requests
+    from urllib.parse import urljoin
+
+    headers = {"User-Agent": "Mozilla/5.0"}
+    candidates = []
+    # ① 一覧ページを見て、いまの data_j.* のURLを探す（JPXのURL・拡張子変更に自動追随）
+    try:
+        page = requests.get(JPX_LIST_PAGE, timeout=60, headers=headers)
+        page.raise_for_status()
+        for href in _re.findall(r'href="([^"]*data_j[^"]*\.xlsx?)"', page.text):
+            candidates.append(urljoin(JPX_LIST_PAGE, href))
+    except Exception as e:  # noqa: BLE001
+        print(f"  ! JPX一覧ページの取得に失敗（既知URLで続行）: {e}", file=sys.stderr)
+    # ② 既知のURL（新旧両方の拡張子）
+    for u in JPX_LIST_KNOWN:
+        if u not in candidates:
+            candidates.append(u)
+
+    df = None
+    for url in candidates:
+        try:
+            resp = requests.get(url, timeout=60, headers=headers)
+            resp.raise_for_status()
+            df = _read_jpx_excel(resp.content)
+            print(f"  上場銘柄一覧: {url.rsplit('/', 1)[-1]} を取得（{len(df)}行）")
+            break
+        except Exception as e:  # noqa: BLE001
+            print(f"  ! 銘柄一覧の取得失敗 {url}: {e}", file=sys.stderr)
+
+    if df is None:
+        # ③ 非常用: 前回公開分から復元して夜間実行を継続する
+        prev = _universe_from_prev_map()
+        if prev:
+            print(f"  !! JPXから一覧を取得できないため、前回のマップから{len(prev)}銘柄を復元して続行します",
+                  file=sys.stderr)
+            return prev
+        raise RuntimeError("上場銘柄一覧をどの方法でも取得できませんでした")
 
     wanted_markets = {
         "プライム（内国株式）": "プライム",
@@ -6094,7 +6167,7 @@ def render_universe(all_results, stats, dt):
     border-radius:4px; padding:1px 5px;}
 """ + SPARK_CSS + UPDATE_CSS + FIN_CSS + """
 """
-    script = "<script>" + SKEL_JS + """
+    script = "<script>" + SKEL_JS + r"""
 const rows = Array.from(document.querySelectorAll('details.udet'));
 let filter = 'all';
 function normQ(s){
