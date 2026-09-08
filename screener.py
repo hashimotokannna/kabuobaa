@@ -2037,6 +2037,8 @@ details.insi[open] .insichev{transform:rotate(90deg);}
 }
 .pn{font-size:17px; font-weight:800; color:var(--tx); padding-right:40px; line-height:1.4;}
 .pc{font-family:ui-monospace,Menlo,monospace; font-size:11px; color:var(--dim); margin-bottom:8px;}
+.pcpy{font-family:inherit; font-size:inherit; color:var(--cy); background:none; border:none;
+  border-bottom:1px dashed rgba(77,215,255,.5); padding:0 1px; cursor:pointer;}
 .pfacts{display:flex; flex-wrap:wrap; gap:5px; margin-bottom:12px;}
 .pf{font-size:10.5px; color:var(--tx2); background:var(--chipbg); border:1px solid var(--line);
   border-radius:5px; padding:3px 8px;}
@@ -2834,7 +2836,7 @@ function focusOn(i, fly){
   var h='<div class="pnav"><button class="pnv" id="pprev">‹ 前の銘柄</button>'
     +'<button class="pnv" id="pnext">次の銘柄 ›</button></div>'
     +trailH+'<div class="pn">'+esc(s.name)+'</div>'
-    +'<div class="pc">'+s.code+' ・ '+esc(GROUPS[s.g]||'')+'</div>'
+    +'<div class="pc"><button class="pcpy" onclick="mapCopy(this, \''+s.code+'\', event)">'+s.code+' ⧉</button> ・ '+esc(GROUPS[s.g]||'')+'</div>'
     +'<div class="pfacts">'+facts.map(function(f){return '<span class="pf">'+f+'</span>';}).join('')+mchip+exchip+'</div>'
     +'<div class="ph">◈ 発想が繋がる銘柄（似ている順）</div>';
   for(var e=0;e<fEdges.length;e++){
@@ -2954,6 +2956,14 @@ document.addEventListener('keydown',function(e){
   else if(e.key==='Escape'&&focusI>=0){ clearFocus(); }
 });
 function esc(t){return String(t).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});}
+/* 銘柄コードのコピー（タップで確定・1.2秒だけ✓表示） */
+window.mapCopy = function(btn, code, e){
+  if(e){ e.preventDefault(); e.stopPropagation(); }
+  var done=function(){ btn.textContent='コピー済み ✓';
+    setTimeout(function(){ btn.textContent=code+' ⧉'; }, 1200); };
+  if(navigator.clipboard&&navigator.clipboard.writeText){ navigator.clipboard.writeText(code).then(done).catch(done); }
+  else { done(); }
+};
 
 /* ═══ search ═══ */
 __SKEL_JS__
@@ -5263,6 +5273,72 @@ function openSBI(code, e){
 }
 </script>'''
 
+# 今夜の厳選ページ: パターンA〜G切替（B〜Gはsim.jsonの本日ランキング上位10を表示）
+PATSW_CSS = """
+  .patsw{display:flex; gap:5px; overflow-x:auto; margin-bottom:12px; -webkit-overflow-scrolling:touch;}
+  .patsw::-webkit-scrollbar{display:none;}
+  .pswb{flex:none; border:1.5px solid #d9d2bf; background:#fff; border-radius:9px; padding:7px 11px;
+    font-size:11.5px; font-weight:800; color:var(--ink2); cursor:pointer; white-space:nowrap;}
+  .pswb.on{background:#1c1c1e; color:#fff; border-color:#1c1c1e;}
+  .pswb .pdot{display:inline-block; width:8px; height:8px; border-radius:50%; margin-right:5px;}
+  .prow2{display:flex; align-items:center; gap:9px; padding:8px 0; border-bottom:1px dashed #f0ead9; font-size:12.5px;}
+  .prow2 .prk{flex:none; width:24px; text-align:center; font-weight:800; color:#7a6a45;}
+  .prow2:nth-child(-n+2) .prk{color:#fff; background:#1c1c1e; border-radius:6px;}
+  .prow2 .pnm{flex:1; min-width:0; line-height:1.6;}
+  .prow2 .pin2{flex:none; max-width:44%; text-align:right; font-size:10.5px; color:var(--ink2); line-height:1.6;}
+  .prow2 .pgo{flex:none; font-size:11px; font-weight:800; color:#2e4d7b; text-decoration:none;
+    background:#e8eef8; border-radius:8px; padding:6px 9px;}
+"""
+
+PATSW_JS = r"""<script>
+(function(){
+  var SIM=null, CUR='A';
+  var sw=document.getElementById('patsw');
+  if(!sw) return;
+  function esc2(t){return String(t).replace(/[&<>"]/g,function(ch){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[ch];});}
+  function draw(){
+    sw.innerHTML=SIM.patterns.map(function(p){
+      var short=p.label.split(':')[0].replace('パターン','')+' '+p.label.split(':')[1].split('（')[0].trim();
+      return '<button class="pswb'+(p.id===CUR?' on':'')+'" data-p="'+p.id+'">'
+        +'<span class="pdot" style="background:'+p.color+'"></span>'+esc2(short)+'</button>';
+    }).join('');
+    sw.querySelectorAll('.pswb').forEach(function(b){
+      b.addEventListener('click',function(){ sel(b.dataset.p); });
+    });
+  }
+  function sel(id){
+    CUR=id;
+    document.getElementById('patA').style.display=(id==='A')?'':'none';
+    var po=document.getElementById('patother');
+    po.style.display=(id==='A')?'none':'';
+    draw();
+    if(id==='A') return;
+    var p=null;
+    for(var i=0;i<SIM.patterns.length;i++){ if(SIM.patterns[i].id===id) p=SIM.patterns[i]; }
+    if(!p){ po.innerHTML=''; return; }
+    var rows=(p.ranking||[]).slice(0,10).map(function(r,i){
+      return '<div class="prow2"><span class="prk num">'+(i+1)+'</span>'
+        +'<span class="pnm"><b>'+esc2(r.name)+'</b><br>'
+        +'<button class="codebtn" onclick="copyCode(this, \''+esc2(r.code)+'\', event)">'+esc2(r.code)+' ⧉</button>'
+        +(r.close!=null?' <small class="num">'+r.close.toLocaleString()+'円</small>':'')+'</span>'
+        +'<span class="pin2">'+esc2(r.info||'')+'<br><small>スコア '+r.score+'</small></span>'
+        +'<a class="pgo" href="universe.html?q='+esc2(r.code)+'">台帳›</a></div>';
+    }).join('');
+    var c=p.concept||{};
+    po.innerHTML='<div class="capcard" style="border-left:5px solid '+p.color+'">'
+      +'<div style="font-size:13.5px; font-weight:800; margin-bottom:4px;">'+esc2(p.label)+' ── 本日の上位10</div>'
+      +'<div class="capnote" style="padding:0 0 6px;">'+esc2(c.purpose||'')+'</div>'
+      +(rows||'<div class="capnote">本日は条件を満たす銘柄がありません（毎日必ず候補が出るパターンではありません）</div>')
+      +'<div class="capnote" style="padding-top:8px;">1位・2位は毎晩「実測」として自動記帳されます。'
+      +'検証成績・計算式の詳細は <a href="sim.html" style="color:#2e4d7b; font-weight:800;">シミュレーション</a> へ。</div></div>';
+  }
+  fetch('sim.json').then(function(r){ return r.ok? r.json() : null; }).then(function(j){
+    if(!j||!j.patterns){ sw.style.display='none'; return; }
+    SIM=j; draw();
+  }).catch(function(){ sw.style.display='none'; });
+})();
+</script>"""
+
 # ページ内から夜間バッチ(GitHub Actions)を起動する「いま更新」ボタン
 _REPO_SLUG = os.environ.get("GITHUB_REPOSITORY", "").strip() or "hashimotokannna/kabuobaa"
 
@@ -5758,6 +5834,9 @@ __NAV__
 {market_banner}
 {exec_banner}
 {topics_banner}
+<div class="patsw" id="patsw"></div>
+<div id="patother" style="display:none"></div>
+<div id="patA">
 <details class="crit">
   <summary>この厳選{cfg["TOP_N"]}銘柄の選定基準（タップで開閉）<span class="chev">›</span></summary>
   <div class="critbody">
@@ -5786,6 +5865,7 @@ __NAV__
 {body_rows}
 </div>
 {soon_block}
+</div><!-- /patA -->
 <footer>
   対象 {universe:,}銘柄 ／ 右肩下がり・急落直後・荒い値動き等で除外 {excluded:,}銘柄<br>
   ◎=直近{data["config"]["RECENT_DAYS"]}日高値から{data["config"]["CHEAP_PCT"]:.0f}%以上安い ・ ○={data["config"]["MILD_PCT"]:.0f}%以上安い<br>
@@ -5794,8 +5874,8 @@ __NAV__
 __CAPJS__
 </body>
 </html>
-""".replace("__CAPJS__", CAP_JS.replace("__TOPN__", str(cfg["TOP_N"])) + SHARED_FN_JS + SPARK_JS + UPDATE_JS + NAV_JS) \
-       .replace("__NAVCSS__", NAV_CSS) \
+""".replace("__CAPJS__", CAP_JS.replace("__TOPN__", str(cfg["TOP_N"])) + SHARED_FN_JS + SPARK_JS + UPDATE_JS + PATSW_JS + NAV_JS) \
+       .replace("__NAVCSS__", NAV_CSS + PATSW_CSS) \
        .replace("__METERCSS__", METER_CSS) \
        .replace("__EXECCSS__", EXEC_CSS + SPARK_CSS + UPDATE_CSS + FIN_CSS) \
        .replace("__NAV__", nav_html("index"))
@@ -6112,7 +6192,7 @@ def render_universe(all_results, stats, dt):
             + topic_badge(r)
             + ('<span class="mark ag">オールグリーン</span>' if r.get("all_green") else "")
             + f'<button class="uhold" data-code="{r["code"]}" aria-label="持ち株">持</button>'
-            + f'<span class="num uc">{r["code"]}</span>{reason_html}</span>'
+            + f'<button class="codebtn uc" onclick="copyCode(this, \'{r["code"]}\', event)">{r["code"]} ⧉</button>{reason_html}</span>'
             f'<button class="ufav" data-code="{r["code"]}" aria-label="お気に入り">★</button>'
             f'<span class="up num">{close}<small>{drop}</small>'
             + (f'<small class="tri3">'
@@ -6154,6 +6234,9 @@ def render_universe(all_results, stats, dt):
   .st{flex:none; font-size:9.5px; font-weight:800; border-radius:5px; padding:2px 6px;}
   .un{flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
   .uc{color:var(--ink2);}
+  .codebtn{font-family:ui-monospace,Menlo,monospace; font-size:inherit; color:#2e4d7b; background:none;
+    border:none; border-bottom:1px dashed #9db3cc; padding:0 1px; cursor:pointer;}
+  .codebtn.copied{color:#1a5c37; border-bottom-color:#1a5c37;}
   .why{color:#6b4487; font-size:10.5px; margin-left:6px;}
   .up{flex:none; text-align:right; font-weight:700; font-size:12px;}
   .up small{display:block; font-weight:600; color:var(--cheap); font-size:10px;}
@@ -6547,7 +6630,7 @@ def render_tob(tob_ranked, n_total, dt):
 <summary class="tsum">
   <span class="trk num">{e["tob_rank"]}</span>
   <span class="tnm"><b>{html.escape(e["name"])}</b> <span class="chip {mchip}">{html.escape(e.get("market", "") or "−")}</span>
-    <span class="num tuc">{e["code"]}</span>
+    <button class="codebtn tuc" onclick="copyCode(this, '{e["code"]}', event)">{e["code"]} ⧉</button>
     <span class="tfact num">{" ・ ".join(facts)}</span></span>
   <span class="tsc num">{e["tob"]}<small>点</small></span>
   <span class="tchev">›</span>
@@ -6637,6 +6720,9 @@ def render_tob(tob_ranked, n_total, dt):
   .trk{flex:none; width:26px; text-align:center; font-size:13px; font-weight:800; color:#6b4487;}
   .tnm{flex:1; min-width:0; font-size:12.5px; line-height:1.5;}
   .tuc{color:var(--ink2); font-size:11px; margin-left:2px;}
+  .codebtn{font-family:ui-monospace,Menlo,monospace; color:#2e4d7b; background:none;
+    border:none; border-bottom:1px dashed #9db3cc; padding:0 1px; cursor:pointer;}
+  .codebtn.copied{color:#1a5c37; border-bottom-color:#1a5c37;}
   .tfact{display:block; font-size:10px; color:var(--ink2);}
   .tsc{flex:none; font-size:15px; font-weight:800; color:#6b4487;}
   .tsc small{font-size:9px; font-weight:600; color:var(--ink3);}
@@ -6763,6 +6849,9 @@ def render_caps(n_stocks, dt):
   .selcard{margin-top:10px; background:#fffdf6; border:1.5px solid #e0d8c4; border-radius:10px; padding:10px 12px;}
   .selname{font-size:14px; font-weight:800;}
   .selname small{font-weight:600; color:var(--ink2); margin-left:6px;}
+  .codebtn{font-family:ui-monospace,Menlo,monospace; font-size:12px; color:#2e4d7b; background:none;
+    border:none; border-bottom:1px dashed #9db3cc; padding:0 1px; cursor:pointer; margin-left:6px;}
+  .codebtn.copied{color:#1a5c37; border-bottom-color:#1a5c37;}
   .selfacts{display:flex; gap:6px; flex-wrap:wrap; margin:6px 0;}
   .self{font-size:10.5px; font-weight:700; color:var(--ink2); background:#f4f1e8; border-radius:6px; padding:3px 8px;}
   .self b{color:#1c1c1e;}
@@ -7016,7 +7105,9 @@ function select(i,scroll){
   var pctS=pct<=50?('上位 '+(pct<1?pct.toFixed(1):Math.round(pct))+'%'):('下位 '+Math.round(100-pct)+'%');
   var el=document.getElementById('selcard');
   el.style.display='block';
-  el.innerHTML='<div class="selname">'+esc(s.name)+'<small>'+s.code+' ・ '+esc(s.mkt||'')+'</small></div>'
+  el.innerHTML='<div class="selname">'+esc(s.name)
+    +'<button class="codebtn" onclick="copyCode(this, \''+s.code+'\', event)">'+s.code+' ⧉</button>'
+    +'<small>'+esc(s.mkt||'')+'</small></div>'
     +'<div class="selfacts">'
     +'<span class="self">時価総額 <b>'+fmtM(s.m)+'</b>（'+(i+1)+'位 / '+STK.length.toLocaleString()+'銘柄・'+pctS+'）</span>'
     +'<span class="self">株価 <b>'+s.c.toLocaleString()+'円</b></span>'
@@ -7191,7 +7282,7 @@ setTimeout(resize,50);
             .replace("__BODY__", body)
             .replace("__FOOTNOTE__", footnote)
             .replace("__EXTRA_CSS__", extra_css)
-            .replace("__SCRIPT__", script)
+            .replace("__SCRIPT__", script + SHARED_FN_JS)
             .replace("__SKEL_JS__", SKEL_JS)
             .replace("__STOCK_ALIASES__", json.dumps(STOCK_ALIASES, ensure_ascii=False)))
 
@@ -8342,6 +8433,9 @@ def render_sim(payload, dt):
   .rknm small{color:var(--ink3); font-weight:600;}
   .rkinfo{flex:none; font-size:10px; color:var(--ink2); text-align:right;}
   .rksc{flex:none; width:56px; text-align:right; font-weight:800; font-family:ui-monospace,Menlo,monospace;}
+  .codebtn{font-family:ui-monospace,Menlo,monospace; font-size:11px; color:#2e4d7b; background:none;
+    border:none; border-bottom:1px dashed #9db3cc; padding:0 1px; cursor:pointer;}
+  .codebtn.copied{color:#1a5c37; border-bottom-color:#1a5c37;}
 """
     script = r"""<script>
 (function(){
@@ -8385,7 +8479,8 @@ function rankDraw(){
   }
   el.innerHTML=PAT.ranking.map(function(r,i){
     return '<div class="rkrow'+(i<2?' top2':'')+'"><span class="rkn">'+(i+1)+'</span>'
-      +'<a class="rknm" href="universe.html?q='+r.code+'" style="color:inherit; text-decoration:none;">'+esc(r.name)+' <small>'+r.code+'</small></a>'
+      +'<a class="rknm" href="universe.html?q='+r.code+'" style="color:inherit; text-decoration:none;">'+esc(r.name)+'</a>'
+      +'<button class="codebtn" onclick="copyCode(this, \''+r.code+'\', event)">'+r.code+' ⧉</button>'
       +'<span class="rkinfo">'+esc(r.info||'')+(r.close!=null?'<br>'+r.close.toLocaleString()+'円':'')+'</span>'
       +'<span class="rksc">'+r.score+'</span></div>';
   }).join('');
@@ -8505,7 +8600,7 @@ function openList(){
   var el=document.getElementById('simopen');
   if(!PAT.positions.length){ el.innerHTML='<div class="note">塩漬け株はありません（全ポジション決済済み）</div>'; return; }
   el.innerHTML=PAT.positions.map(function(p){
-    return '<div class="orow"><span class="onm">'+esc(p.name)+' <small>'+p.code+'</small></span>'
+    return '<div class="orow"><span class="onm">'+esc(p.name)+' <button class="codebtn" onclick="copyCode(this, \''+p.code+'\', event)">'+p.code+' ⧉</button></span>'
       +'<span class="oinfo">'+md(p.buy_date)+'買 '+p.buy.toLocaleString()+'円<br>'
       +'現在 '+p.last.toLocaleString()+'円 ・ '+p.held+'日目</span>'
       +'<span class="opnl '+cls(p.pnl)+'">'+yen(p.pnl)+'</span></div>';
@@ -8545,7 +8640,7 @@ function renderRec(reset){
     }
     h+='<div class="trow2"><div class="tr1">'
       +'<span class="sev '+t.ev+'">'+EVL[t.ev]+'</span>'
-      +'<span class="snm">'+esc(t.name)+' <small>'+t.code+'</small></span>'
+      +'<span class="snm">'+esc(t.name)+' <button class="codebtn" onclick="copyCode(this, \''+t.code+'\', event)">'+t.code+' ⧉</button></span>'
       +(t.pnl!=null?'<span class="spnl '+cls(t.pnl)+'">'+yen(t.pnl)+'</span>':'')
       +'<span class="ssrc'+(t.src==='live'?' live':'')+'">'+(t.src==='live'?'実測':'復元')+'</span>'
       +'</div><div class="tr2">'+line2+'</div></div>';
@@ -8644,7 +8739,7 @@ fetch('sim.json').then(function(r){
             .replace("__FOOTNOTE__", footnote)
             .replace("__BODY__", body)
             .replace("__EXTRA_CSS__", extra_css)
-            .replace("__SCRIPT__", script))
+            .replace("__SCRIPT__", script + SHARED_FN_JS))
 
 
 # ------------------------------------------------------------
@@ -8848,7 +8943,8 @@ def _pattern_engine(sim_ohlc, detail_map, sim_dates):
     eligF = (price_ok & (turnover20 >= 1e8) & (near >= 97) & (ma50 > ma200))
     scF = np.nan_to_num(mom) * 0.5 + (near - 97) * 8 + np.clip(volr, 0, 5) * 3
     scores["F"] = np.where(eligF & np.isfinite(scF), scF, -1e9)
-    infos["F"] = lambda i, j: f"高値接近{near[i, j]:.1f}% ・ 1年{mom[i, j]:+.0f}%"
+    infos["F"] = lambda i, j: (f"高値接近{near[i, j]:.1f}%"
+                              + (f" ・ 1年{mom[i, j]:+.0f}%" if math.isfinite(mom[i, j]) else ""))
 
     # ---- G: 出来高急増・初動 ----
     r1 = (df_c / df_c.shift(1) - 1).to_numpy() * 100
