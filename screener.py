@@ -2108,7 +2108,7 @@ html[data-theme="light"] .intro{background:rgba(240,240,245,.82);}
     <div class="cnt mono" id="cnt">…</div>
   </div>
   <nav class="dnav">
-    <a href="index.html">今夜の厳選</a><a href="universe.html">全銘柄台帳</a><a href="sim.html">シミュレーション</a><a class="act">銘柄マップ</a><a href="caps.html">時価総額マップ</a><a href="tob.html">TOB素地</a><a href="guide.html">❓ 使い方</a><a href="javascript:location.reload()" title="最新結果を読み込み直す">🔄</a>
+    <a href="index.html">今夜の厳選</a><a href="universe.html">全銘柄台帳</a><a href="sim.html">シミュレーション</a><a href="repro.html">再現性</a><a class="act">銘柄マップ</a><a href="caps.html">時価総額マップ</a><a href="tob.html">TOB素地</a><a href="guide.html">❓ 使い方</a><a href="javascript:location.reload()" title="最新結果を読み込み直す">🔄</a>
   </nav>
   <div class="toolwrap"><div class="toolrow">
     <div class="srchwrap">
@@ -5336,6 +5336,17 @@ PATSW_JS = r"""<script>
     if(!j||!j.patterns){ sw.style.display='none'; return; }
     SIM=j; draw();
   }).catch(function(){ sw.style.display='none'; });
+  /* 再現性シグナルのバナー（点灯日のみ表示） */
+  var rb=document.getElementById('reprobanner');
+  if(rb){
+    fetch('repro.json').then(function(r){ return r.ok? r.json() : null; }).then(function(j){
+      if(!j||!j.signals||!j.signals.length) return;
+      rb.innerHTML='<a href="repro.html" style="display:block; background:#e9f3ea; border:1.5px solid #b9d3b4;'
+        +'border-radius:12px; padding:10px 12px; margin-bottom:10px; text-decoration:none; color:#1a5c37;'
+        +'font-size:12.5px; font-weight:800;">📡 本日の再現性シグナル '+j.signals.length+'件'
+        +' ── 過去に何度も再現した条件が今日点灯しています（タップで一覧）</a>';
+    }).catch(function(){});
+  }
 })();
 </script>"""
 
@@ -5834,6 +5845,7 @@ __NAV__
 {market_banner}
 {exec_banner}
 {topics_banner}
+<div id="reprobanner"></div>
 <div class="patsw" id="patsw"></div>
 <div id="patother" style="display:none"></div>
 <div id="patA">
@@ -5919,6 +5931,7 @@ NAV_ITEMS = [
     ("index.html", "今夜の厳選", "index"),
     ("universe.html", "全銘柄台帳", "universe"),
     ("sim.html", "シミュレーション", "sim"),
+    ("repro.html", "再現性", "repro"),
     ("map.html", "銘柄マップ", "map"),
     ("caps.html", "時価総額マップ", "caps"),
     ("tob.html", "TOB素地", "tob"),
@@ -5931,7 +5944,7 @@ NAV_SUB_ITEMS = [
 
 NAV_JS = """<script>
 (function(){
-  const order = ['index.html', 'universe.html', 'sim.html', 'map.html', 'caps.html', 'tob.html'];
+  const order = ['index.html', 'universe.html', 'sim.html', 'repro.html', 'map.html', 'caps.html', 'tob.html'];
   let here = location.pathname.split('/').pop();
   if (!here) here = 'index.html';
   const idx = order.indexOf(here);
@@ -9358,6 +9371,657 @@ def run_simulation(picked, detail_map, sim_ohlc, dt, demo=False, nikkei_days=Non
 # ------------------------------------------------------------
 # main
 # ------------------------------------------------------------
+# ============================================================
+# 再現性ランキング（銘柄 × 市場状態 × 売買条件）
+#   思想: 上がる株を当てるのではなく「自分の予測モデルが繰り返し
+#   機能してきた 銘柄×状態」を探す。条件セットは凍結済み（2026-09承認）。
+#   TEST期間(2025年〜)は条件・ホライズンの選択に一切使わない。
+# ============================================================
+REPRO_COST = 0.002          # 取引コスト往復0.2%（ネット期待値算出用）
+REPRO_MIN_SAMPLES = 30      # ランキング掲載の最低サンプル数
+REPRO_MIN_TURNOVER = 5e7    # 売買代金下限
+REPRO_COOLDOWN = 5          # 同一条件の再イベントまでの営業日
+REPRO_HORIZONS = (1, 2, 3, 5, 10, 20)
+REPRO_TRAIN_END = "2022-12-31"   # TRAIN: データ先頭〜ここ
+REPRO_VAL_END = "2024-12-31"     # VALIDATION: 2023〜2024 / TEST: 2025〜(封印)
+REPRO_NAMED = ["8841", "9433", "9166", "2928", "3680", "6731", "3092", "9843", "7203"]
+REPRO_MVP_N = 100
+REPRO_TYPES = {"A": "平均回帰", "B": "モメンタム", "C": "レンジ", "D": "出来高"}
+
+
+def _repro_features(o, h, l, c, v):
+    """条件判定に使う特徴量（すべてその日までのデータのみ＝look-aheadなし）"""
+    import pandas as pd
+    import numpy as np
+    s = pd.Series(c)
+    sv = pd.Series(v, dtype="float64")
+    sh, sl = pd.Series(h), pd.Series(l)
+    F = {}
+    F["r1"] = s.pct_change(1).to_numpy() * 100
+    F["r3"] = s.pct_change(3).to_numpy() * 100
+    F["r5"] = s.pct_change(5).to_numpy() * 100
+    F["r10"] = s.pct_change(10).to_numpy() * 100
+    delta = s.diff()
+    gain = delta.clip(lower=0).rolling(14, min_periods=14).mean()
+    loss = (-delta.clip(upper=0)).rolling(14, min_periods=14).mean()
+    F["rsi"] = (100 - 100 / (1 + gain / loss.replace(0, np.nan))).to_numpy()
+    ma25 = s.rolling(25, min_periods=25).mean()
+    ma75 = s.rolling(75, min_periods=75).mean()
+    F["dev25"] = ((s / ma25 - 1) * 100).to_numpy()
+    F["dev75"] = ((s / ma75 - 1) * 100).to_numpy()
+    m20 = s.rolling(20, min_periods=20).mean()
+    sd20 = s.rolling(20, min_periods=20).std()
+    F["bb_lo"] = (s < (m20 - 2 * sd20)).to_numpy()
+    F["bb_hi"] = (s > (m20 + 2 * sd20)).to_numpy()
+    dn = (s.diff() < 0).astype(int)
+    up = (s.diff() > 0).astype(int)
+    F["dn3"] = (dn.rolling(3).sum() == 3).to_numpy()
+    F["up3"] = (up.rolling(3).sum() == 3).to_numpy()
+    # 高値/安値更新: 「昨日までのN日最高(安)値」を今日の終値が超えたか
+    for w in (20, 60, 245):
+        F[f"nh{w}"] = (s > s.rolling(w, min_periods=w).max().shift(1)).to_numpy()
+    for w in (20, 60):
+        F[f"nl{w}"] = (s < s.rolling(w, min_periods=w).min().shift(1)).to_numpy()
+    # レンジ内位置（当日を含む窓）
+    for w in (60, 120, 250):
+        rmin = s.rolling(w, min_periods=w).min()
+        rmax = s.rolling(w, min_periods=w).max()
+        F[f"pos{w}"] = ((s - rmin) / (rmax - rmin).replace(0, np.nan)).to_numpy()
+    # 出来高
+    v20 = sv.rolling(20, min_periods=20).mean().shift(1)   # 前日までの20日平均
+    F["volr"] = (sv / v20.replace(0, np.nan)).to_numpy()
+    v5 = sv.rolling(5, min_periods=5).mean()
+    v20c = sv.rolling(20, min_periods=20).mean()
+    F["v5r"] = (v5 / v20c.replace(0, np.nan)).to_numpy()
+    F["turn20"] = (s * sv).rolling(20, min_periods=10).mean().to_numpy()
+    _ = sh, sl
+    return F
+
+
+def _g(F, k):
+    """NaN安全な取得（NaNはFalse側に落ちるよう比較前に処理）"""
+    import numpy as np
+    a = F[k]
+    return np.where(np.isfinite(a), a, np.nan)
+
+
+def repro_conditions():
+    """凍結済みの48条件（2026-09 たけみ承認版）。順序・定義を変えないこと。"""
+    import numpy as np
+    C = []
+
+    def add(cid, typ, label, fn):
+        C.append({"id": cid, "type": typ, "label": label, "fn": fn})
+    nn = np.nan_to_num
+    # ---- A 平均回帰（14） ----
+    add("A01", "A", "1日 ≤ −3%", lambda F: _g(F, "r1") <= -3)
+    add("A02", "A", "1日 ≤ −5%", lambda F: _g(F, "r1") <= -5)
+    add("A03", "A", "3日 ≤ −5%", lambda F: _g(F, "r3") <= -5)
+    add("A04", "A", "3日 ≤ −8%", lambda F: _g(F, "r3") <= -8)
+    add("A05", "A", "5日 ≤ −6%", lambda F: _g(F, "r5") <= -6)
+    add("A06", "A", "5日 ≤ −10%", lambda F: _g(F, "r5") <= -10)
+    add("A07", "A", "10日 ≤ −12%", lambda F: _g(F, "r10") <= -12)
+    add("A08", "A", "RSI14 < 25", lambda F: _g(F, "rsi") < 25)
+    add("A09", "A", "RSI14 < 30", lambda F: _g(F, "rsi") < 30)
+    add("A10", "A", "25MA乖離 ≤ −7%", lambda F: _g(F, "dev25") <= -7)
+    add("A11", "A", "25MA乖離 ≤ −10%", lambda F: _g(F, "dev25") <= -10)
+    add("A12", "A", "75MA乖離 ≤ −12%", lambda F: _g(F, "dev75") <= -12)
+    add("A13", "A", "3連続陰線", lambda F: F["dn3"])
+    add("A14", "A", "ボリンジャー −2σ割れ", lambda F: F["bb_lo"])
+    # ---- B モメンタム（12） ----
+    add("B01", "B", "1日 ≥ +5%", lambda F: _g(F, "r1") >= 5)
+    add("B02", "B", "3日 ≥ +8%", lambda F: _g(F, "r3") >= 8)
+    add("B03", "B", "5日 ≥ +8%", lambda F: _g(F, "r5") >= 8)
+    add("B04", "B", "20日高値更新", lambda F: F["nh20"])
+    add("B05", "B", "60日高値更新", lambda F: F["nh60"])
+    add("B06", "B", "52週高値更新", lambda F: F["nh245"])
+    add("B07", "B", "RSI14 > 70", lambda F: _g(F, "rsi") > 70)
+    add("B08", "B", "RSI14 > 80", lambda F: _g(F, "rsi") > 80)
+    add("B09", "B", "25MA乖離 ≥ +7%", lambda F: _g(F, "dev25") >= 7)
+    add("B10", "B", "3連続陽線", lambda F: F["up3"])
+    add("B11", "B", "ボリンジャー +2σ超え", lambda F: F["bb_hi"])
+    add("B12", "B", "20日高値更新＋出来高1.5倍", lambda F: F["nh20"] & (nn(F["volr"]) >= 1.5))
+    # ---- C レンジ（10） ----
+    add("C01", "C", "60日レンジ下位10%", lambda F: _g(F, "pos60") <= 0.10)
+    add("C02", "C", "60日レンジ下位20%", lambda F: _g(F, "pos60") <= 0.20)
+    add("C03", "C", "60日レンジ上位10%", lambda F: _g(F, "pos60") >= 0.90)
+    add("C04", "C", "60日レンジ上位20%", lambda F: _g(F, "pos60") >= 0.80)
+    add("C05", "C", "120日レンジ下位15%", lambda F: _g(F, "pos120") <= 0.15)
+    add("C06", "C", "120日レンジ上位15%", lambda F: _g(F, "pos120") >= 0.85)
+    add("C07", "C", "250日レンジ下位15%", lambda F: _g(F, "pos250") <= 0.15)
+    add("C08", "C", "250日レンジ上位15%", lambda F: _g(F, "pos250") >= 0.85)
+    add("C09", "C", "20日安値更新", lambda F: F["nl20"])
+    add("C10", "C", "60日安値更新", lambda F: F["nl60"])
+    # ---- D 出来高（12） ----
+    add("D01", "D", "出来高2倍＋陽線", lambda F: (nn(F["volr"]) >= 2) & (nn(F["r1"]) > 0))
+    add("D02", "D", "出来高2倍＋陰線", lambda F: (nn(F["volr"]) >= 2) & (nn(F["r1"]) < 0))
+    add("D03", "D", "出来高3倍＋陽線", lambda F: (nn(F["volr"]) >= 3) & (nn(F["r1"]) > 0))
+    add("D04", "D", "出来高3倍＋陰線", lambda F: (nn(F["volr"]) >= 3) & (nn(F["r1"]) < 0))
+    add("D05", "D", "出来高5倍", lambda F: nn(F["volr"]) >= 5)
+    add("D06", "D", "出来高2倍＋1日−3%以下（投げ）", lambda F: (nn(F["volr"]) >= 2) & (_g(F, "r1") <= -3))
+    add("D07", "D", "出来高2倍＋1日+3%以上（着火）", lambda F: (nn(F["volr"]) >= 2) & (_g(F, "r1") >= 3))
+    add("D08", "D", "閑散（20日平均の0.5倍未満）", lambda F: _g(F, "volr") < 0.5)
+    add("D09", "D", "出来高1.5倍＋20日安値更新（セリクラ候補）", lambda F: (nn(F["volr"]) >= 1.5) & F["nl20"])
+    add("D10", "D", "出来高3倍＋52週高値更新", lambda F: (nn(F["volr"]) >= 3) & F["nh245"])
+    add("D11", "D", "5日平均出来高が20日平均の2倍", lambda F: nn(F["v5r"]) >= 2)
+    add("D12", "D", "閑散＋60日レンジ下位20%", lambda F: (_g(F, "volr") < 0.5) & (_g(F, "pos60") <= 0.20))
+    return C
+
+
+def _wilson(k, n, z=1.96):
+    if n == 0:
+        return (0.0, 1.0)
+    p = k / n
+    d = 1 + z * z / n
+    ctr = (p + z * z / (2 * n)) / d
+    w = z * math.sqrt(p * (1 - p) / n + z * z / (4 * n * n)) / d
+    return (max(0.0, ctr - w), min(1.0, ctr + w))
+
+
+def _repro_stock(dates, o, h, l, c, v, disc_dates):
+    """1銘柄の全条件を評価。返り値: (conds: 48条件の統計dict, best: 最良条件の詳細 or None)"""
+    import numpy as np
+    n = len(dates)
+    F = _repro_features(o, h, l, c, v)
+    # 決算開示±2営業日はイベント除外
+    excl = np.zeros(n, dtype=bool)
+    import bisect
+    for dstr in disc_dates:
+        i0 = bisect.bisect_left(dates, dstr)
+        excl[max(0, i0 - 2):min(n, i0 + 3)] = True
+    i_train_end = bisect.bisect_right(dates, REPRO_TRAIN_END)
+    i_val_end = bisect.bisect_right(dates, REPRO_VAL_END)
+    i_recent = max(0, n - 252)
+
+    def split_of(i):
+        if i < i_train_end:
+            return "train"
+        if i < i_val_end:
+            return "val"
+        return "test"
+
+    conds_out = []
+    best = None
+    for cond in repro_conditions():
+        mask = cond["fn"](F)
+        mask = np.asarray(mask, dtype=bool)
+        # イベント抽出: 条件の点灯初日のみ・5営業日クールダウン・決算近傍は除外
+        ev = []
+        last = -999
+        for i in range(1, n):
+            if mask[i] and not mask[i - 1] and (i - last) > REPRO_COOLDOWN and not excl[i]:
+                ev.append(i)
+                last = i
+        lit_today = bool(mask[n - 1]) and not excl[n - 1]
+        is_event_today = lit_today and (not mask[n - 2] if n >= 2 else True) and (n - 1 - last) >= 0
+        # ホライズン選択はTRAINのみ（TEST封印）: 各ホライズンのTRAINネットEVを比較
+        entries = [(i, i + 1) for i in ev if i + 1 < n]   # 翌日寄りでエントリー
+
+        def outcomes(hz):
+            out = []
+            for i, e in entries:
+                x = e + hz - 1
+                if x >= n or o[e] <= 0:
+                    continue
+                gross = c[x] / o[e] - 1
+                out.append((i, gross - REPRO_COST))
+            return out
+
+        best_hz, best_train_ev = None, None
+        for hz in REPRO_HORIZONS:
+            tr = [r for i, r in outcomes(hz) if split_of(i) == "train"]
+            if len(tr) < 15:
+                continue
+            ev_tr = sum(tr) / len(tr)
+            if best_train_ev is None or ev_tr > best_train_ev:
+                best_train_ev, best_hz = ev_tr, hz
+        row = {"id": cond["id"], "type": cond["type"], "label": cond["label"],
+               "lit": lit_today, "n": 0}
+        if best_hz is None or best_train_ev is None or best_train_ev <= 0:
+            row["state"] = "不成立"
+            conds_out.append(row)
+            continue
+        oc = outcomes(best_hz)
+        rets = [r for _i, r in oc]
+        n_all = len(rets)
+        by = {"train": [], "val": [], "test": [], "recent": []}
+        for i, r in oc:
+            by[split_of(i)].append(r)
+            if i >= i_recent:
+                by["recent"].append(r)
+        wins = [r for r in rets if r > 0]
+
+        def wr(lst):
+            return (sum(1 for r in lst if r > 0) / len(lst)) if lst else None
+        w_tr, w_va, w_te, w_re = wr(by["train"]), wr(by["val"]), wr(by["test"]), wr(by["recent"])
+        ev_all = sum(rets) / n_all if n_all else 0.0
+        tv = by["train"] + by["val"]
+        ev_tv = sum(tv) / len(tv) if tv else 0.0
+        med = sorted(rets)[n_all // 2] if n_all else 0.0
+        losses = [r for r in rets if r <= 0]
+        pf = (sum(wins) / abs(sum(losses))) if losses and sum(losses) != 0 else None
+        # 外れ値耐性: 上位1%（最低1件）を除いたEV
+        k_trim = max(1, n_all // 100)
+        trimmed = sorted(rets)[:-k_trim] if n_all > k_trim else rets
+        ev_trim = sum(trimmed) / len(trimmed) if trimmed else 0.0
+        wl, wh = _wilson(len(wins), n_all)
+        # 状態判定（TESTと直近は選択に使わず、有効性の監査にのみ使う）
+        base_w = wr(tv) or 0.0
+        if len(by["test"]) < 5:
+            state = "データ不足"
+        elif (w_te is not None and w_te >= base_w - 0.10) and (w_re is None or w_re >= base_w - 0.12):
+            state = "有効"
+        elif w_te is not None and w_te >= base_w - 0.20:
+            state = "減衰"
+        else:
+            state = "崩れ"
+        row.update({
+            "hz": best_hz, "n": n_all,
+            "n_sp": [len(by["train"]), len(by["val"]), len(by["test"]), len(by["recent"])],
+            "w": [round(x * 100, 1) if x is not None else None for x in (w_tr, w_va, w_te, w_re)],
+            "ev": round(ev_all * 100, 2), "ev_tv": round(ev_tv * 100, 2),
+            "med": round(med * 100, 2), "ev_trim": round(ev_trim * 100, 2),
+            "pf": round(pf, 2) if pf is not None else None,
+            "wilson": [round(wl * 100, 1), round(wh * 100, 1)],
+            "state": state, "event_today": bool(is_event_today),
+        })
+        conds_out.append(row)
+        # ---- スコア（初期配点・ページ上で明記） ----
+        if n_all >= REPRO_MIN_SAMPLES and ev_tv > 0:
+            pts_ev = min(25.0, max(0.0, ev_tv * 100 * 12))
+            gaps = 0.0
+            pairs = [(w_tr, w_va), (w_va, w_te), (w_te, w_re)]
+            wts = [0.5, 0.7, 0.5]
+            for (a, b), wt in zip(pairs, wts):
+                if a is not None and b is not None:
+                    gaps += abs(a - b) * 100 * wt
+            pts_stab = max(0.0, 25.0 - gaps)
+            pts_n = 15.0 * min(1.0, max(0.0, (wl - 0.45) / 0.25))
+            pts_out = 10.0 * min(1.0, max(0.0, (ev_trim / ev_all) if ev_all > 0 else 0.0))
+            base_wtv = (wr(tv) or 0) * 100
+            pts_win = min(15.0, max(0.0, (base_wtv - 50) * 0.75))
+            t20 = F["turn20"][n - 1] if math.isfinite(F["turn20"][n - 1]) else 0
+            pts_liq = 10.0 if t20 >= 1e9 else (8.0 if t20 >= 3e8 else (6.0 if t20 >= 1e8 else (4.0 if t20 >= REPRO_MIN_TURNOVER else 0.0)))
+            score = round(pts_ev + pts_stab + pts_n + pts_out + pts_win + pts_liq, 1)
+            if state == "崩れ":
+                score = round(score * 0.55, 1)
+            cand = {"row": row, "score": score,
+                    "pts": {"ev": round(pts_ev, 1), "stab": round(pts_stab, 1), "n": round(pts_n, 1),
+                            "out": round(pts_out, 1), "win": round(pts_win, 1), "liq": round(pts_liq, 1)},
+                    "sel_key": (ev_tv * (wr(tv) or 0), n_all),
+                    "events": [[dates[i], round(r * 100, 2), 1 if r > 0 else 0] for i, r in oc[-60:]],
+                    "turn20": t20}
+            # 最良条件の選択はTRAIN+VALの成績のみで行う（スコアにはTEST監査が入るため使わない）
+            if best is None or cand["sel_key"] > best["sel_key"]:
+                best = cand
+    return conds_out, best
+
+
+def build_repro(universe_meta, disc_map, ohlc_fetch, demo=False):
+    """MVP100銘柄の再現性統計を計算して payload を返す。
+    universe_meta: [{code,name,turnover,suffix}] 候補（売買代金降順で先頭から使う）"""
+    chosen = []
+    seen = set()
+    by_code = {u["code"]: u for u in universe_meta}
+    for code in REPRO_NAMED:
+        if code in by_code and code not in seen:
+            chosen.append(by_code[code]); seen.add(code)
+    for u in universe_meta:
+        if len(chosen) >= REPRO_MVP_N:
+            break
+        if u["code"] not in seen and (u.get("turnover") or 0) >= REPRO_MIN_TURNOVER:
+            chosen.append(u); seen.add(u["code"])
+    print(f"  再現性ランキング: MVP {len(chosen)}銘柄を分析中...")
+    stocks_out = []
+    signals = []
+    n_done = 0
+    for u in chosen:
+        tup = ohlc_fetch(u)
+        n_done += 1
+        if n_done % 25 == 0:
+            print(f"    再現性 {n_done}/{len(chosen)}...")
+        if not tup or len(tup[0]) < 600:
+            continue
+        dates, o, h, l, c, v = tup
+        import numpy as np
+        conds, best = _repro_stock(list(dates), np.asarray(o, float), np.asarray(h, float),
+                                   np.asarray(l, float), np.asarray(c, float),
+                                   np.asarray(v, float), disc_map.get(u["code"]) or [])
+        # チャート用の間引き終値
+        step = max(1, len(dates) // 180)
+        spark = [[dates[i], round(float(c[i]), 1)] for i in range(0, len(dates), step)]
+        entry = {"code": u["code"], "name": u["name"], "close": round(float(c[-1]), 1),
+                 "spark": spark, "conds": conds}
+        if best is not None:
+            r = best["row"]
+            liq_rank = "S" if best["turn20"] >= 1e9 else ("A" if best["turn20"] >= 3e8 else ("B" if best["turn20"] >= 1e8 else "C"))
+            why = [
+                f"条件発生{r['n']}回（最低{REPRO_MIN_SAMPLES}回以上を満たす）",
+                f"TRAIN/VAL/TEST勝率 = {r['w'][0]}% / {r['w'][1]}% / {r['w'][2] if r['w'][2] is not None else '−'}%（差が小さいほど時系列安定）",
+                f"外れ値除外後EV {r['ev_trim']}%（通常EV {r['ev']}% との差が小さい＝数回の暴騰依存でない）",
+                f"直近12ヶ月勝率 {r['w'][3] if r['w'][3] is not None else '−'}% → 状態: {r['state']}",
+                f"20日平均売買代金 {best['turn20'] / 1e8:.1f}億円 → 流動性{liq_rank}",
+            ]
+            entry.update({"score": best["score"], "pts": best["pts"], "best": r,
+                          "events": best["events"], "liq": liq_rank,
+                          "state": r["state"], "why": why})
+            # 本日のシグナル: 掲載基準を満たす条件が今日「イベント」として点灯
+            for cr in conds:
+                if (cr.get("event_today") and cr.get("n", 0) >= REPRO_MIN_SAMPLES
+                        and (cr.get("ev_tv") or 0) > 0 and cr.get("state") == "有効"):
+                    signals.append({"code": u["code"], "name": u["name"],
+                                    "cond": f"{cr['type']}: {cr['label']}", "hz": cr["hz"],
+                                    "n": cr["n"], "win": cr["w"][0], "w_te": cr["w"][2],
+                                    "w_re": cr["w"][3], "ev": cr["ev_tv"],
+                                    "wilson": cr["wilson"]})
+        stocks_out.append(entry)
+    stocks_out.sort(key=lambda s: -(s.get("score") or -1))
+    payload = {
+        "generated_at": datetime.now(JST).isoformat(),
+        "mvp_n": len(stocks_out),
+        "frozen": {"conditions": 48, "cooldown": REPRO_COOLDOWN, "cost": REPRO_COST * 100,
+                   "min_samples": REPRO_MIN_SAMPLES,
+                   "split": f"TRAIN 〜{REPRO_TRAIN_END} / VAL 〜{REPRO_VAL_END} / TEST それ以降（封印）"},
+        "signals": signals,
+        "stocks": stocks_out,
+        "demo": bool(demo),
+    }
+    return payload
+
+
+def _demo_repro():
+    """デモ用: 平均回帰性を仕込んだ合成10年データで再現性エンジンの動作確認"""
+    import random
+    from datetime import date as _dd, timedelta as _tt
+    rng = random.Random(9)
+    dates = []
+    d = _dd(2016, 9, 1)
+    while len(dates) < 2450:
+        if d.weekday() < 5:
+            dates.append(d.isoformat())
+        d += _tt(days=1)
+    metas, series = [], {}
+    for k in range(30):
+        code = str(4000 + k)
+        meanrev = (k % 2 == 0)   # 半分は平均回帰性あり・半分はランダムウォーク
+        px = rng.uniform(500, 3000)
+        anchor = px
+        o, h, l, c, v = [], [], [], [], []
+        base_v = rng.uniform(3e5, 3e6)
+        tsum = 0.0
+        for _i in range(len(dates)):
+            drift = ((anchor - px) / anchor * 0.035) if meanrev else 0.0
+            px *= 1 + drift + rng.gauss(0.0002, 0.018)
+            px = max(100.0, px)
+            op = px * rng.uniform(0.995, 1.005)
+            hi = max(op, px) * rng.uniform(1.0, 1.02)
+            lo = min(op, px) * rng.uniform(0.98, 1.0)
+            vv = base_v * rng.lognormvariate(0, 0.5)
+            o.append(round(op, 1)); h.append(round(hi, 1)); l.append(round(lo, 1))
+            c.append(round(px, 1)); v.append(int(vv))
+            tsum += px * vv
+        metas.append({"code": code, "name": f"デモ銘柄{k + 1}{'（回帰型）' if meanrev else ''}",
+                      "suffix": ".T", "turnover": tsum / len(dates)})
+        series[code] = (dates, o, h, l, c, v)
+
+    def fetcher(u):
+        return series[u["code"]]
+    return build_repro(metas, {}, fetcher, demo=True)
+
+
+def render_repro(payload, dt):
+    """再現性ランキングページ（紙テイスト・repro.jsonを読む）"""
+    weekdays = "月火水木金土日"
+    body = r"""
+<div class="card" style="border-left:5px solid #2e7d32;">
+  <h2>📡 本日のシグナル（凍結済みの高再現条件が今日点灯した銘柄）</h2>
+  <div id="rsignals"></div>
+</div>
+
+<div class="card">
+  <h2>🏆 再現性ランキング（銘柄 × 最強条件）</h2>
+  <div class="frow" id="rfilters">
+    <button class="fbtn2 on" data-f="all">全タイプ</button>
+    <button class="fbtn2" data-f="A">A 平均回帰</button>
+    <button class="fbtn2" data-f="B">B モメンタム</button>
+    <button class="fbtn2" data-f="C">C レンジ</button>
+    <button class="fbtn2" data-f="D">D 出来高</button>
+    <button class="fbtn2" data-f="lit">点灯中のみ</button>
+  </div>
+  <div id="rlist"></div>
+  <div class="note">スコアはTRAIN+VALの成績で選んだ「最強条件」の評価。直近で法則が崩れた銘柄は減点して薄く表示します。
+  行をタップすると詳細（10年チャート上のイベント○×・スコア内訳・全48条件の成績表）が開きます。</div>
+</div>
+
+<div class="card">
+  <h2>⚖ 統計の約束事（この機能の信頼性の根拠）</h2>
+  <div class="note" style="font-size:11px; color:var(--ink2); line-height:1.9;" id="rpromise"></div>
+</div>
+"""
+    extra_css = """
+  .frow{display:flex; gap:5px; flex-wrap:wrap; margin-bottom:10px;}
+  .fbtn2{border:1.5px solid #d9d2bf; background:#fff; border-radius:9px; padding:6px 10px;
+    font-size:11px; font-weight:800; color:var(--ink2); cursor:pointer;}
+  .fbtn2.on{background:#1c1c1e; color:#fff; border-color:#1c1c1e;}
+  .sigrow{background:#fff; border-left:4px solid #2e7d32; border-radius:10px; padding:9px 11px; margin-bottom:8px;}
+  .sigrow .l1{display:flex; align-items:center; gap:7px; font-size:13px; font-weight:800; flex-wrap:wrap;}
+  .scond{font-size:10px; font-weight:800; color:#1a5c37; background:#e9f3ea; border-radius:4px; padding:2px 7px;}
+  .sigrow .l2{font-size:11px; color:var(--ink2); margin-top:4px; line-height:1.8;}
+  .sigrow .l2 b{color:var(--ink);}
+  .wil{font-size:9.5px; color:var(--ink3);}
+  details.rrow{background:#fff; border-radius:12px; margin-bottom:8px;}
+  details.rrow summary{list-style:none; cursor:pointer; display:flex; align-items:center; gap:8px; padding:9px 11px; font-size:12px;}
+  details.rrow summary::-webkit-details-marker{display:none;}
+  details.rrow.stale{opacity:.55;}
+  .rno{flex:none; width:26px; text-align:center; font-weight:800; color:#7a6a45; font-family:ui-monospace,Menlo,monospace;}
+  .rnm{flex:1; min-width:0; line-height:1.55;}
+  .rnm small{color:var(--ink3);}
+  .rmeta{font-size:10px; color:var(--ink2);}
+  .rst{flex:none; text-align:right; font-size:9.5px; color:var(--ink2); line-height:1.6; font-family:ui-monospace,Menlo,monospace;}
+  .rsc{flex:none; width:42px; text-align:right; font-size:16px; font-weight:800;}
+  .typc{display:inline-block; font-size:9px; font-weight:800; border-radius:4px; padding:1px 6px; margin-left:4px;}
+  .typc.A{background:#e9f3ea; color:#1a5c37;} .typc.B{background:#f3e9f3; color:#6b4487;}
+  .typc.C{background:#e8eef8; color:#2e4d7b;} .typc.D{background:#fdf3e3; color:#b06a00;}
+  .stbad{font-size:9px; font-weight:800; color:#c62f2f; background:#fdeeee; border-radius:4px; padding:1px 6px; margin-left:4px;}
+  .stok{font-size:9px; font-weight:800; color:#1a5c37; background:#e9f3ea; border-radius:4px; padding:1px 6px; margin-left:4px;}
+  .stmid{font-size:9px; font-weight:800; color:#b06a00; background:#fdf3e3; border-radius:4px; padding:1px 6px; margin-left:4px;}
+  .rbody{padding:2px 12px 12px; border-top:1px dashed #f0ead9;}
+  .kv2{display:flex; justify-content:space-between; font-size:12px; padding:5px 0; border-bottom:1px solid #f0ead9;}
+  .kv2 span:first-child{color:var(--ink2);}
+  .tser{display:flex; gap:6px; margin:8px 0;}
+  .tc{flex:1; background:#faf6ec; border-radius:8px; padding:7px 5px; text-align:center;}
+  .tc .k{font-size:8.5px; color:var(--ink3); font-weight:700; line-height:1.4;}
+  .tc .v{font-size:13.5px; font-weight:800;}
+  .whybox{background:#faf6ec; border-radius:10px; padding:9px 11px; font-size:11.5px; line-height:1.9; color:var(--ink2); margin:8px 0;}
+  .whybox b{color:var(--ink);}
+  .ptsrow{display:flex; gap:4px; flex-wrap:wrap; margin:6px 0;}
+  .pt{font-size:9.5px; font-weight:700; color:var(--ink2); background:#faf6ec; border-radius:5px; padding:3px 7px;}
+  .cndtbl{width:100%; font-size:10px; margin-top:8px;}
+  .cndh{display:flex; gap:4px; color:var(--ink3); font-weight:800; padding:3px 0; border-bottom:1px solid #e7e0cf;}
+  .cndr{display:flex; gap:4px; padding:3px 0; border-bottom:1px dashed #f0ead9; font-family:ui-monospace,Menlo,monospace;}
+  .cndr.na{color:var(--ink3);}
+  .cl{flex:2.4; font-family:-apple-system,"Hiragino Sans",sans-serif;}
+  .cn{flex:.6; text-align:right;} .cw{flex:.8; text-align:right;} .ce{flex:.8; text-align:right;} .cs{flex:1; text-align:right; font-family:-apple-system,"Hiragino Sans",sans-serif;}
+  .lit{color:#1a5c37; font-weight:800;}
+  .codebtn{font-family:ui-monospace,Menlo,monospace; color:#2e4d7b; background:none;
+    border:none; border-bottom:1px dashed #9db3cc; padding:0 1px; cursor:pointer;}
+  .codebtn.copied{color:#1a5c37; border-bottom-color:#1a5c37;}
+"""
+    script = r"""<script>
+(function(){
+'use strict';
+var D=null, FILT='all';
+function esc(t){return String(t).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});}
+function stTag(st){
+  if(st==='有効') return '<span class="stok">有効</span>';
+  if(st==='減衰') return '<span class="stmid">減衰</span>';
+  if(st==='崩れ') return '<span class="stbad">直近崩れ</span>';
+  return '<span class="stmid">'+esc(st)+'</span>';
+}
+function sigDraw(){
+  var el=document.getElementById('rsignals');
+  if(!D.signals.length){
+    el.innerHTML='<div class="note">本日は0件です（数合わせはしません。条件を満たす日だけ表示されます）</div>';
+    return;
+  }
+  el.innerHTML=D.signals.map(function(s){
+    return '<div class="sigrow"><div class="l1">'+esc(s.name)
+      +' <button class="codebtn" onclick="copyCode(this, \''+s.code+'\', event)">'+s.code+' ⧉</button>'
+      +'<span class="scond">'+esc(s.cond)+'</span></div>'
+      +'<div class="l2">過去<b>'+s.n+'回</b>発生 → '+s.hz+'営業日でのネット期待値 <b>'+(s.ev>=0?'+':'')+s.ev+'%</b>'
+      +' ・ TRAIN勝率 <b>'+s.win+'%</b> <span class="wil">(Wilson95%: '+s.wilson[0]+'〜'+s.wilson[1]+'%)</span><br>'
+      +'TEST '+(s.w_te!=null?s.w_te+'%':'−')+' / 直近12ヶ月 '+(s.w_re!=null?s.w_re+'%':'−')+' → 直近も有効'
+      +' ・ <a href="universe.html?q='+s.code+'" style="color:#2e4d7b; font-weight:800;">台帳で判定→</a></div></div>';
+  }).join('');
+}
+function evChart(cv, spark, events){
+  var ctx=cv.getContext('2d');
+  var W=cv.clientWidth, H=150;
+  var DPR=Math.min(2.5,window.devicePixelRatio||1);
+  cv.style.height=H+'px'; cv.width=W*DPR; cv.height=H*DPR;
+  ctx.setTransform(DPR,0,0,DPR,0,0);
+  ctx.clearRect(0,0,W,H);
+  if(!spark||spark.length<10) return;
+  var vals=spark.map(function(p){return p[1];});
+  var lo=Math.min.apply(null,vals), hi=Math.max.apply(null,vals);
+  if(hi-lo<1e-9) hi=lo+1;
+  var P={l:6,r:6,t:8,b:16};
+  function X(i){ return P.l+i/(spark.length-1)*(W-P.l-P.r); }
+  function Y(v){ return H-P.b-(v-lo)/(hi-lo)*(H-P.t-P.b); }
+  ctx.beginPath();
+  for(var i=0;i<spark.length;i++){ if(i===0) ctx.moveTo(X(i),Y(vals[i])); else ctx.lineTo(X(i),Y(vals[i])); }
+  ctx.strokeStyle='#1c1c1e'; ctx.lineWidth=1.3; ctx.stroke();
+  /* イベント日を○×でマーク（近い日付のspark点に置く） */
+  var dts=spark.map(function(p){return p[0];});
+  (events||[]).forEach(function(e){
+    var d=e[0], win=e[2]===1;
+    var j=0;
+    while(j<dts.length-1 && dts[j]<d) j++;
+    ctx.strokeStyle=win?'#2e7d32':'#c62f2f'; ctx.lineWidth=1.6;
+    ctx.beginPath();
+    if(win){ ctx.arc(X(j),Y(vals[j]),4,0,Math.PI*2); }
+    else { ctx.moveTo(X(j)-3,Y(vals[j])-3); ctx.lineTo(X(j)+3,Y(vals[j])+3);
+           ctx.moveTo(X(j)+3,Y(vals[j])-3); ctx.lineTo(X(j)-3,Y(vals[j])+3); }
+    ctx.stroke();
+  });
+  ctx.font='9px ui-monospace,Menlo,monospace'; ctx.fillStyle='#a99a76';
+  ctx.fillText(dts[0].slice(0,7), P.l, H-4);
+  ctx.textAlign='right'; ctx.fillText(dts[dts.length-1].slice(0,7), W-P.r, H-4); ctx.textAlign='left';
+}
+function listDraw(){
+  var el=document.getElementById('rlist');
+  var rows=D.stocks.filter(function(s){
+    if(!s.best) return false;
+    if(FILT==='lit') return s.conds.some(function(c){return c.event_today;});
+    if(FILT!=='all') return s.best && s.conds.find(function(c){return c.id===s.best.id;}) && s.best.type===FILT;
+    return true;
+  });
+  if(!rows.length){ el.innerHTML='<div class="note">該当0件（数合わせはしません）</div>'; return; }
+  el.innerHTML=rows.map(function(s,ix){
+    var b=s.best;
+    var stale=(s.state==='崩れ');
+    return '<details class="rrow'+(stale?' stale':'')+'" data-code="'+s.code+'">'
+      +'<summary><span class="rno">'+(ix+1)+'</span>'
+      +'<div class="rnm"><b>'+esc(s.name)+'</b> <small class="num">'+s.code+'</small>'
+      +'<span class="typc '+b.type+'">'+esc({A:'平均回帰',B:'モメンタム',C:'レンジ',D:'出来高'}[b.type])+'</span>'
+      +stTag(s.state)
+      +'<br><span class="rmeta">最強条件: '+esc(b.label)+' ・ n='+b.n+' ・ EV'+(b.ev_tv>=0?'+':'')+b.ev_tv+'% ・ '+b.hz+'日</span></div>'
+      +'<span class="rst">T'+(b.w[0]!=null?b.w[0]:'−')+'/V'+(b.w[1]!=null?b.w[1]:'−')+'/Te'+(b.w[2]!=null?b.w[2]:'−')
+      +'<br>直近'+(b.w[3]!=null?b.w[3]+'%':'−')+' ・ 流動'+s.liq+'</span>'
+      +'<span class="rsc">'+s.score+'</span></summary>'
+      +'<div class="rbody" data-loaded="0"></div></details>';
+  }).join('');
+  el.querySelectorAll('details.rrow').forEach(function(dt){
+    dt.addEventListener('toggle', function(){
+      if(!dt.open) return;
+      var bd=dt.querySelector('.rbody');
+      if(bd.dataset.loaded==='1') return;
+      bd.dataset.loaded='1';
+      detailDraw(bd, dt.dataset.code);
+    });
+  });
+}
+function detailDraw(bd, code){
+  var s=D.stocks.find(function(x){return x.code===code;});
+  if(!s||!s.best) return;
+  var b=s.best;
+  var h='<div class="kv2"><span>総合再現性（初期配点）</span><span class="num"><b>'+s.score+'</b> / 100</span></div>'
+    +'<div class="kv2"><span>最強条件（TRAIN+VALで選択・TEST未使用）</span><span>'+esc(b.label)+'</span></div>'
+    +'<div class="kv2"><span>出口</span><span>翌日寄り→'+b.hz+'営業日後の終値（コスト0.2%控除）</span></div>'
+    +'<div class="kv2"><span>サンプル</span><span class="num">'+b.n+'回（T'+b.n_sp[0]+'/V'+b.n_sp[1]+'/Te'+b.n_sp[2]+'）</span></div>'
+    +'<div class="kv2"><span>期待値 / 中央値 / 外れ値除外EV</span><span class="num">'+b.ev+'% / '+b.med+'% / '+b.ev_trim+'%</span></div>'
+    +'<div class="tser">'
+    +'<div class="tc"><div class="k">TRAIN<br>〜2022</div><div class="v">'+(b.w[0]!=null?b.w[0]+'%':'−')+'</div></div>'
+    +'<div class="tc"><div class="k">VAL<br>23-24</div><div class="v">'+(b.w[1]!=null?b.w[1]+'%':'−')+'</div></div>'
+    +'<div class="tc"><div class="k">TEST<br>25-</div><div class="v">'+(b.w[2]!=null?b.w[2]+'%':'−')+'</div></div>'
+    +'<div class="tc"><div class="k">直近<br>12ヶ月</div><div class="v">'+(b.w[3]!=null?b.w[3]+'%':'−')+'</div></div>'
+    +'</div>'
+    +'<canvas class="evcv" style="width:100%; display:block; background:#fffdf6; border-radius:10px;"></canvas>'
+    +'<div class="note">線=10年終値。○=このイベントで勝ち ×=負け（直近60イベント）</div>'
+    +'<div class="whybox"><b>なぜこのスコアか</b><br>'+s.why.map(esc).join('<br>')+'</div>'
+    +'<div class="ptsrow">'+['ev:期待値','stab:時系列安定','n:サンプル信頼','out:外れ値耐性','win:勝率','liq:流動性'].map(function(t){
+        var k=t.split(':')[0];
+        return '<span class="pt">'+t.split(':')[1]+' '+s.pts[k]+'</span>';
+      }).join('')+'</div>'
+    +'<div class="cndh"><span class="cl">全48条件の成績（この銘柄）</span><span class="cn">n</span><span class="cw">勝率</span><span class="ce">EV%</span><span class="cs">状態</span></div>'
+    +s.conds.map(function(c){
+      var na=(c.state==='不成立'||!c.n);
+      return '<div class="cndr'+(na?' na':'')+'">'
+        +'<span class="cl">'+(c.event_today?'<span class="lit">●</span> ':'')+c.id+' '+esc(c.label)+'</span>'
+        +'<span class="cn">'+(c.n||'−')+'</span>'
+        +'<span class="cw">'+(c.w&&c.w[0]!=null?c.w[0]:'−')+'</span>'
+        +'<span class="ce">'+(c.ev!=null?c.ev:'−')+'</span>'
+        +'<span class="cs">'+esc(c.state||'−')+'</span></div>';
+    }).join('')
+    +'<div style="margin-top:10px;"><a href="universe.html?q='+s.code+'" style="color:#2e4d7b; font-weight:800; font-size:12px;">全銘柄台帳でこの銘柄の判定を見る →</a></div>';
+  bd.innerHTML=h;
+  var cv=bd.querySelector('.evcv');
+  evChart(cv, s.spark, b ? s.events : []);
+}
+document.querySelectorAll('.fbtn2').forEach(function(bt){
+  bt.addEventListener('click',function(){
+    document.querySelectorAll('.fbtn2').forEach(function(x){x.classList.remove('on');});
+    bt.classList.add('on'); FILT=bt.dataset.f; listDraw();
+  });
+});
+fetch('repro.json').then(function(r){
+  if(!r.ok) throw new Error('repro.jsonがまだ生成されていません（次回の夜間実行で作られます）');
+  return r.json();
+}).then(function(j){
+  D=j;
+  document.getElementById('rpromise').innerHTML=[
+    '・条件セット48個・クールダウン'+j.frozen.cooldown+'営業日・コスト往復'+j.frozen.cost+'%は<b>凍結済み</b>（都合の良い後付け変更をしない）',
+    '・期間分割: '+esc(j.frozen.split)+' ── <b>TEST期間は条件・ホライズンの選択に一切使っていません</b>（表示と有効性監査のみ）',
+    '・最低サンプル'+j.frozen.min_samples+'回未満・TRAIN+VAL期待値マイナスの条件はランキング対象外',
+    '・現在の上場銘柄のみで検証（Survivorship Biasあり）・株価は分割調整済/配当未調整',
+    '・決算開示±2営業日のイベントは除外（開示データの制約により不完全）',
+    '・これは「未来を当てる」機能ではなく「過去と同じゲームが現在も続いている場所を探す」機能です',
+    (j.demo?'<b>・これはデモデータです（本番は夜間実行後に実データへ置き換わります）</b>':'')
+  ].filter(Boolean).join('<br>');
+  sigDraw(); listDraw();
+}).catch(function(e){
+  document.getElementById('rsignals').innerHTML='<div class="note">⚠ '+e.message+'</div>';
+});
+})();
+</script>"""
+    subtitle = (f"{dt.month}/{dt.day}（{weekdays[dt.weekday()]}）時点 ・ MVP {payload.get('mvp_n', 0)}銘柄 × 凍結48条件 ・ "
+                f"本日のシグナル {len(payload.get('signals') or [])}件 ・ "
+                f"「上がる株」ではなく「自分の予測モデルが機能してきた銘柄×状態」を探す")
+    footnote = ("統計はすべて過去データに基づく事実の記述であり、将来の成果を保証しません。"
+                "エントリーは翌営業日寄り付き・コスト往復0.2%控除後のネット値。投資判断はご自身で。")
+    return (SUBPAGE_TEMPLATE
+            .replace("__NAVCSS__", NAV_CSS)
+            .replace("__HEADBTN__", "")
+            .replace("__NAVJS__", NAV_JS)
+            .replace("__NAV__", nav_html("repro"))
+            .replace("__TITLE__", "再現性ランキング — 過去と同じゲームが続いている場所")
+            .replace("__SUBTITLE__", subtitle)
+            .replace("__FOOTNOTE__", footnote)
+            .replace("__BODY__", body)
+            .replace("__EXTRA_CSS__", extra_css)
+            .replace("__SCRIPT__", script + SHARED_FN_JS))
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--demo", action="store_true",
@@ -9504,6 +10168,64 @@ def main():
         import traceback
         traceback.print_exc()
         print(f"  シミュレーション生成に失敗（他のページは継続）: {_sim_ex}")
+
+    # 再現性ランキング（MVP: 100銘柄・凍結48条件）
+    try:
+        if args.demo:
+            repro_payload = _demo_repro()
+        else:
+            uni_meta = sorted(
+                [{"code": e["code"], "name": e.get("name", e["code"]),
+                  "suffix": e.get("suffix", ".T"), "turnover": e.get("turnover") or 0}
+                 for e in detail_map_all.values() if e.get("close")],
+                key=lambda x: -x["turnover"])
+            # SAAF系は銘柄名で自動検出して名指しリストへ（コード変動対策）
+            for e in detail_map_all.values():
+                if "SAAF" in (e.get("name") or "").upper() and e["code"] not in REPRO_NAMED:
+                    REPRO_NAMED.append(e["code"])
+            # 決算開示日（イベント除外用）: J-Quants開示履歴＋TDnetの決算短信
+            disc_map = {}
+            for code, e in detail_map_all.items():
+                ds = set()
+                for _k, r in ((e.get("fund") or {}).get("hist") or {}).items():
+                    d0 = r.get("disc") or ""
+                    if len(d0) == 10:
+                        ds.add(d0)
+                for dsc in (e.get("disclosures") or []):
+                    dstr = str(dsc.get("date") or "")
+                    if "決算短信" in str(dsc.get("title") or "") and "/" in dstr:
+                        try:
+                            mo, dd = dstr.split("/")[:2]
+                            yy = dt_now.year
+                            cand = f"{yy}-{int(mo):02d}-{int(dd):02d}"
+                            if cand > dt_now.date().isoformat():
+                                cand = f"{yy - 1}-{int(mo):02d}-{int(dd):02d}"
+                            ds.add(cand)
+                        except Exception:  # noqa: BLE001
+                            pass
+                disc_map[code] = sorted(ds)
+
+            def _fetch10y(u):
+                try:
+                    days = fetch_daily(_get_session(), u["code"], u.get("suffix", ".T"))
+                except Exception:  # noqa: BLE001
+                    return None
+                time.sleep(0.05)
+                if not days:
+                    return None
+                return ([d["date"] for d in days],
+                        [d["open"] for d in days], [d["high"] for d in days],
+                        [d["low"] for d in days], [d["close"] for d in days],
+                        [d.get("volume") or 0 for d in days])
+            repro_payload = build_repro(uni_meta, disc_map, _fetch10y)
+        (DOCS / "repro.json").write_text(json.dumps(repro_payload, ensure_ascii=False,
+                                                    separators=(",", ":"), default=float), encoding="utf-8")
+        (DOCS / "repro.html").write_text(render_repro(repro_payload, dt_now), encoding="utf-8")
+        print(f"  再現性ランキング: {repro_payload['mvp_n']}銘柄 / 本日のシグナル {len(repro_payload['signals'])}件")
+    except Exception as _re_ex:  # noqa: BLE001
+        import traceback
+        traceback.print_exc()
+        print(f"  再現性ランキング生成に失敗（他のページは継続）: {_re_ex}")
 
     print(f"完了: {len(data['stocks'])}銘柄を選定 "
           f"(除外 {stats.get('dead_excluded', 0)}銘柄) → docs/index.html"
