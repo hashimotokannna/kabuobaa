@@ -5425,6 +5425,27 @@ def render_html(data):
                          f'<div class="exlist">{"".join(cat_parts)}</div></details>')
     else:
         topics_banner = ""
+    # レーティング変化バナー（コンセンサスの評価・目標株価が動いた銘柄）
+    rt_all = data.get("rating_events") or []
+    if rt_all:
+        items_rt = []
+        for ev in rt_all[:10]:
+            if ev["kind"] == "tgt":
+                desc = f'目標株価 {ev["old"]:,}→{ev["new"]:,}円{"↑" if ev["dir"] == "up" else "↓"}'
+            else:
+                desc = f'平均評価 {ev["old"]}→{ev["new"]}{"（強気方向）" if ev["dir"] == "up" else "（弱気方向）"}'
+            items_rt.append(
+                f'<a class="exitem" href="universe.html?q={ev["code"]}">'
+                f'<span class="num">{ev["date"][5:].replace("-", "/")}</span> '
+                f'{html.escape(ev.get("name") or ev["code"])} <small>{html.escape(desc)}</small></a>')
+        more_rt = f'<div class="exmore">他 {len(rt_all) - 10}件</div>' if len(rt_all) > 10 else ""
+        rating_banner = (f'<details class="exban rtban"><summary>📈 直近14日のレーティング・目標株価の変化: '
+                         f'{len(rt_all)}件（証券会社コンセンサス・タップで一覧）</summary>'
+                         f'<div class="exlist">{"".join(items_rt)}{more_rt}'
+                         f'<div class="exmore">出所: Yahoo Finance(LSEG)の複数社平均。情報として把握する用途で、採点には未使用（効果検証中）。</div>'
+                         f'</div></details>')
+    else:
+        rating_banner = ""
     mkt = data.get("market")
     if mkt and mkt.get("above200") is not None:
         extra = []
@@ -5601,7 +5622,7 @@ def render_html(data):
       <summary class="row">
         <div class="rk num">{s["rank"]}</div>
         <div class="nm">
-          <div class="n1">{html.escape(s["name"])} <span class="chip {chip}">{html.escape(s["market"])}</span>{new_mark}{'<span class="tri3badge">安全×質×時</span>' if s.get("tri") else ""}{move_html(s)}{'<span class="execbadge">社長交代</span>' if s.get("exec_change") else ""}{topic_badge(s)}</div>
+          <div class="n1">{html.escape(s["name"])} <span class="chip {chip}">{html.escape(s["market"])}</span>{new_mark}{'<span class="tri3badge">安全×質×時</span>' if s.get("tri") else ""}{move_html(s)}{'<span class="execbadge">社長交代</span>' if s.get("exec_change") else ""}{'<span class="rtbadge">レーティング変化</span>' if s.get("rating_event") else ""}{topic_badge(s)}</div>
           <div class="n2 num"><button class="codebtn" onclick="copyCode(this, '{s["code"]}', event)">{s["code"]} ⧉</button> ・ {html.escape(s["group"])} ・ 100株 {s["cost"] / 10000:,.1f}万円 ・ {s["score"]:.0f}点<span class="nofund">資金不足</span></div>
           {f'<div class="cmt">{html.escape(s["comment"])}</div>' if s.get("comment") else ""}
         </div>
@@ -5626,6 +5647,7 @@ def render_html(data):
         {tech_html}
         {fund_html}
         {fin_chart_html((s.get("fund") or {}).get("hist"))}
+        {rating_block_html(s)}
         {disc_html}
         {latest_block(s)}
         <div class="fact"><span>100株の必要資金</span><span class="num">{s["cost"] / 10000:,.1f}万円</span></div>
@@ -5822,6 +5844,11 @@ __NAVCSS__
   details.tpban{{background:#f4f8f3; border-color:#b9d3b4;}}
   details.tpban summary{{color:#1d5c38;}}
   details.tpban .exitem{{border-top-color:#cfe0cb;}}
+  details.rtban{{background:#eef2f8; border-color:#aebfd8;}}
+  details.rtban summary{{color:#2e4d7b;}}
+  details.rtban .exitem{{border-top-color:#ccd8e8;}}
+  .rtbadge{{display:inline-block; font-size:9px; font-weight:800; color:#2e4d7b; background:#dce6f5;
+    border-radius:4px; padding:1px 6px; margin-left:4px; vertical-align:1px;}}
   details.tpban .exitem .num{{color:#5a6b58;}}
   details.tpban .exmore{{color:#4d6350;}}
   .tpcath{{padding-top:8px; font-weight:800;}} .tpcath small{{color:#4d6350; font-weight:600; margin-left:4px;}}
@@ -5845,6 +5872,7 @@ __NAV__
 {market_banner}
 {exec_banner}
 {topics_banner}
+{rating_banner}
 <div id="reprobanner"></div>
 <div class="patsw" id="patsw"></div>
 <div id="patother" style="display:none"></div>
@@ -6107,11 +6135,14 @@ def render_universe(all_results, stats, dt):
     chips.append(f'<button class="fbtn" data-f="__ag" style="background:#b9dcc0; color:#1a5c37">オールグリーン {n_ag:,}</button>')
     chips.append(f'<button class="fbtn" data-f="__rf" style="background:#e9f3ea; color:#3a5a40">赤なし {n_rf:,}</button>')
     n_exec = sum(1 for r in all_results if r.get("exec_change"))
+    n_rt = sum(1 for r in all_results if r.get("rating_event"))
     if n_exec:
         chips.append(f'<button class="fbtn" data-f="__exec" style="background:#c62f2f; color:#fff">社長交代 {n_exec:,}</button>')
     n_tp = sum(1 for r in all_results if r.get("topics"))
     if n_tp:
         chips.append(f'<button class="fbtn" data-f="__tp" style="background:#1d7a4f; color:#fff">注目開示 {n_tp:,}</button>')
+    if n_rt:
+        chips.append(f'<button class="fbtn" data-f="__rt" style="background:#2e4d7b; color:#fff">レーティング変化 {n_rt:,}</button>')
     chips.append('<button class="fbtn" data-f="__fav" style="background:#fff8e0; color:#a06f00">★お気に入り</button>')
     chips.append('<button class="fbtn" data-f="__hold" style="background:#e8eef8; color:#2e4d7b">持ち株</button>')
     chips.append("</div>")
@@ -6190,6 +6221,7 @@ def render_universe(all_results, stats, dt):
             f'data-q="{_n(r.get("q_score"), -1)}" data-tm="{_n(r.get("t_score"), -1)}" '
             f'data-tri="{1 if r.get("tri") else 0}" data-soon="{1 if r.get("soon") else 0}" '
             f'data-exec="{1 if r.get("exec_change") else 0}" '
+            f'data-rt="{1 if r.get("rating_event") else 0}" '
             f'data-tp="{len(r.get("topics") or [])}" '
             f'data-tob="{_n(r.get("tob"), -1)}" '
             f'data-ag="{1 if r.get("all_green") else 0}" data-rf="{1 if r.get("red_free") else 0}" data-nev="{r.get("n_eval", 0)}" '
@@ -6202,6 +6234,7 @@ def render_universe(all_results, stats, dt):
             + ('<span class="mark tri">帳簿</span>' if r.get("tri") and r["status"] == "picked" else "")
             + ('<span class="mark soon">まもなく</span>' if r.get("soon") else "")
             + ('<span class="mark exec">社長交代</span>' if r.get("exec_change") else "")
+            + ('<span class="mark rt">レーティング</span>' if r.get("rating_event") else "")
             + topic_badge(r)
             + ('<span class="mark ag">オールグリーン</span>' if r.get("all_green") else "")
             + f'<button class="uhold" data-code="{r["code"]}" aria-label="持ち株">持</button>'
@@ -6260,6 +6293,7 @@ def render_universe(all_results, stats, dt):
   .mark{display:inline-block; font-size:9px; font-weight:800; border-radius:4px; padding:1px 5px; margin-right:3px; vertical-align:1px;}
   .mark.tri{background:#1c1c1e; color:#fff;} .mark.soon{background:#fdf3e3; color:#b06a00;}
   .mark.exec{background:#c62f2f; color:#fff;}
+  .mark.rt{background:#2e4d7b; color:#fff;}
   .mark.ag{background:#b9dcc0; color:#1a5c37;}
 """ + EXEC_CSS + """
   .uhold{display:inline-block; font-size:9px; font-weight:800; border-radius:4px; padding:1px 5px; margin-right:3px;
@@ -6350,6 +6384,7 @@ function apply(){
                  || (filter === '__flaw' && r.dataset.dm === '0')
                  || (filter === '__soon' && r.dataset.soon === '1')
                  || (filter === '__exec' && r.dataset.exec === '1')
+                 || (filter === '__rt' && r.dataset.rt === '1')
                  || (filter === '__tp' && r.dataset.tp !== '0')
                  || (filter === '__ag' && r.dataset.ag === '1')
                  || (filter === '__rf' && r.dataset.rf === '1')
@@ -7360,6 +7395,8 @@ def render_stock_detail(e):
             parts.append(f'<div class="fact"><span>配当利回り</span><span class="num">{fu["div_yield"]:.2f}%</span></div>')
         if fu.get("mcap_oku"):
             parts.append(f'<div class="fact"><span>時価総額</span><span class="num">{fu["mcap_oku"]:,}億円</span></div>')
+
+    parts.append(rating_block_html(e))
 
     lg = e.get("long") or {}
     sb = spark_block_html(lg.get("spark"), lg.get("spark10"), lg,
@@ -10022,6 +10059,290 @@ fetch('repro.json').then(function(r){
             .replace("__SCRIPT__", script + SHARED_FN_JS))
 
 
+# ============================================================
+# アナリスト・レーティング（コンセンサス）検知
+#   MINKABU等の記事の元になっている「証券会社の投資評価・目標株価」を、
+#   Yahoo Finance(LSEG集計)のコンセンサス値として毎晩取得し、
+#   前回からの変化をイベントとして検知する。
+#   ※個別証券会社1社の発表そのものではなく複数社の平均（コンセンサス）。
+# ============================================================
+RATING_CACHE_PATH = DOCS / "rating_cache.json"
+
+
+def _yahoo_crumb(session):
+    """Yahoo APIのcrumb取得（cookie→crumbの2段階・yfinance方式）。失敗時None"""
+    headers = {"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)"}
+    try:
+        session.get("https://fc.yahoo.com", headers=headers, timeout=20)
+    except Exception:  # noqa: BLE001
+        pass  # 応答がエラーでもcookieは付与される
+    for host in ("query1", "query2"):
+        try:
+            r = session.get(f"https://{host}.finance.yahoo.com/v1/test/getcrumb",
+                            headers=headers, timeout=20)
+            crumb = (r.text or "").strip()
+            if r.status_code == 200 and crumb and "<" not in crumb and len(crumb) < 40:
+                return crumb
+        except Exception:  # noqa: BLE001
+            continue
+    return None
+
+
+def _parse_arn(ar):
+    """'1.9 - Buy' → 1.9（Yahooの平均評価。1=強気買い〜5=売り。小さいほど強気）"""
+    try:
+        v = float(str(ar).split(" ")[0])
+        return round(v, 2) if 0.5 <= v <= 5.5 else None
+    except (TypeError, ValueError, IndexError):
+        return None
+
+
+def _arn_label(arn):
+    if arn is None:
+        return "−"
+    if arn < 1.6:
+        return "強気買い"
+    if arn < 2.6:
+        return "買い"
+    if arn < 3.5:
+        return "中立"
+    if arn < 4.5:
+        return "売り"
+    return "強気売り"
+
+
+def _rating_attach(detail_map, cst, events, today_iso):
+    """キャッシュの評価値と直近7日のイベントを detail_map の各銘柄に付与"""
+    lim = (datetime.fromisoformat(today_iso) - timedelta(days=7)).date().isoformat()
+    ev_by = {}
+    for ev in events:
+        if ev.get("date", "") >= lim and ev["code"] not in ev_by:
+            ev_by[ev["code"]] = ev
+    for code, e in detail_map.items():
+        st = cst.get(code)
+        if st and st.get("arn") is not None:
+            rt = {"arn": st["arn"], "label": _arn_label(st["arn"]),
+                  "tgt": st.get("tgt"), "n": st.get("n"), "d": st.get("d")}
+            if st.get("tgt") and e.get("close"):
+                try:
+                    rt["upside"] = round((st["tgt"] / e["close"] - 1) * 100, 1)
+                except (TypeError, ZeroDivisionError):
+                    pass
+            e["rating"] = rt
+        if code in ev_by:
+            e["rating_event"] = ev_by[code]
+
+
+def fetch_ratings_update(detail_map, now_dt, max_detail=200):
+    """全銘柄のコンセンサス評価をバッチ取得し、前回キャッシュとの差分で
+    「レーティング変化」「目標株価変更」イベントを検出する。
+    取得失敗時は前回情報を表示に使い、イベントは出さない（グレースフル・スキップ）"""
+    import requests
+    today = now_dt.date().isoformat()
+    try:
+        cache = json.loads(RATING_CACHE_PATH.read_text(encoding="utf-8"))
+    except Exception:  # noqa: BLE001
+        cache = {"stocks": {}, "events": []}
+    cst = cache.get("stocks") or {}
+    keep_lim = (now_dt - timedelta(days=30)).date().isoformat()
+    events = [ev for ev in (cache.get("events") or []) if ev.get("date", "") >= keep_lim]
+    seen_keys = {(ev.get("date"), ev.get("code"), ev.get("kind")) for ev in events}
+
+    session = requests.Session()
+    headers = {"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)"}
+    crumb = _yahoo_crumb(session)
+    if crumb:
+        print("  レーティング: Yahoo認証OK・コンセンサスを取得します")
+    else:
+        print("  ! レーティング: crumb取得失敗（認証なしで試行）", file=sys.stderr)
+
+    codes = [(code, e.get("suffix", ".T")) for code, e in detail_map.items() if e.get("close")]
+    got = {}
+    fail_streak = 0
+    for i in range(0, len(codes), 40):
+        chunk = codes[i:i + 40]
+        params = {"symbols": ",".join(f"{c}{s}" for c, s in chunk),
+                  "fields": "symbol,averageAnalystRating"}
+        if crumb:
+            params["crumb"] = crumb
+        ok = False
+        for host in ("query1", "query2"):
+            try:
+                r = session.get(f"https://{host}.finance.yahoo.com/v7/finance/quote",
+                                params=params, headers=headers, timeout=30)
+                if r.status_code != 200:
+                    continue
+                for q in (r.json().get("quoteResponse", {}).get("result") or []):
+                    code0 = str(q.get("symbol", "")).split(".")[0]
+                    arn = _parse_arn(q.get("averageAnalystRating"))
+                    if arn is not None:
+                        got[code0] = arn
+                ok = True
+                break
+            except Exception:  # noqa: BLE001
+                continue
+        if ok:
+            fail_streak = 0
+        else:
+            fail_streak += 1
+            if fail_streak >= 5 and not got:
+                print("  ! レーティング: 取得経路が全滅。今回はスキップし前回情報を表示に使います", file=sys.stderr)
+                _rating_attach(detail_map, cst, events, today)
+                return events
+        time.sleep(0.12)
+
+    # 変化検出（キャッシュに前回値がある銘柄のみ＝初回実行はイベントを出さない）
+    changed = []
+    for code, arn in got.items():
+        prev = (cst.get(code) or {}).get("arn")
+        if prev is not None and abs(arn - prev) >= 0.1:
+            changed.append(code)
+
+    # 目標株価の詳細取得: 変化銘柄＋厳選圏＋研究銘柄＋目標株価が古い銘柄（上限つき）
+    focus = list(dict.fromkeys(
+        changed
+        + [c for c in got if (detail_map.get(c) or {}).get("tri")]
+        + [c for c in REPRO_NAMED if c in got]))
+    stale_lim = (now_dt - timedelta(days=30)).date().isoformat()
+    for code in got:
+        if len(focus) >= max_detail:
+            break
+        st = cst.get(code) or {}
+        if code not in focus and (st.get("tgt") is None or (st.get("tgt_d") or "") < stale_lim):
+            focus.append(code)
+    focus = focus[:max_detail]
+
+    def fin_detail(code, sfx):
+        params = {"modules": "financialData"}
+        if crumb:
+            params["crumb"] = crumb
+        for host in ("query1", "query2"):
+            try:
+                r = session.get(f"https://{host}.finance.yahoo.com/v10/finance/quoteSummary/{code}{sfx}",
+                                params=params, headers=headers, timeout=25)
+                if r.status_code != 200:
+                    continue
+                fd = ((r.json().get("quoteSummary", {}).get("result") or [{}])[0]
+                      .get("financialData") or {})
+                return {"tgt": (fd.get("targetMeanPrice") or {}).get("raw"),
+                        "n": (fd.get("numberOfAnalystOpinions") or {}).get("raw"),
+                        "rm": (fd.get("recommendationMean") or {}).get("raw")}
+            except Exception:  # noqa: BLE001
+                continue
+        return None
+
+    sfx_of = dict(codes)
+    n_det = 0
+    for code in focus:
+        det = fin_detail(code, sfx_of.get(code, ".T"))
+        n_det += 1
+        if n_det % 50 == 0:
+            print(f"    レーティング詳細 {n_det}/{len(focus)}...")
+        time.sleep(0.1)
+        if det is None:
+            continue
+        st = dict(cst.get(code) or {})
+        prev_tgt = st.get("tgt")
+        if det["tgt"] is not None:
+            if (prev_tgt and abs(det["tgt"] / prev_tgt - 1) >= 0.02
+                    and (today, code, "tgt") not in seen_keys):
+                e0 = detail_map.get(code) or {}
+                events.insert(0, {"date": today, "code": code,
+                                  "name": e0.get("name", code), "kind": "tgt",
+                                  "old": round(prev_tgt), "new": round(det["tgt"]),
+                                  "dir": "up" if det["tgt"] > prev_tgt else "down"})
+            st["tgt"] = det["tgt"]
+            st["tgt_d"] = today
+        if det["n"] is not None:
+            st["n"] = det["n"]
+        cst[code] = st
+
+    for code in changed:
+        if (today, code, "rate") in seen_keys:
+            continue
+        e0 = detail_map.get(code) or {}
+        events.insert(0, {"date": today, "code": code, "name": e0.get("name", code),
+                          "kind": "rate", "old": (cst.get(code) or {}).get("arn"),
+                          "new": got[code],
+                          "dir": "up" if got[code] < ((cst.get(code) or {}).get("arn") or 9) else "down"})
+    for code, arn in got.items():
+        st = dict(cst.get(code) or {})
+        st["arn"] = arn
+        st["d"] = today
+        cst[code] = st
+
+    events.sort(key=lambda ev: ev.get("date", ""), reverse=True)
+    cache = {"asof": today, "stocks": cst, "events": events[:400]}
+    try:
+        RATING_CACHE_PATH.write_text(json.dumps(cache, ensure_ascii=False,
+                                                separators=(",", ":"), default=float),
+                                     encoding="utf-8")
+    except Exception:  # noqa: BLE001
+        pass
+    _rating_attach(detail_map, cst, events, today)
+    print(f"  レーティング: カバレッジ{len(got)}銘柄 / 本日の変化 {len([e for e in events if e['date'] == today])}件")
+    return [ev for ev in events
+            if ev.get("date", "") >= (now_dt - timedelta(days=14)).date().isoformat()]
+
+
+def _demo_ratings(detail_map, now_dt):
+    """デモ用の疑似コンセンサスとイベント"""
+    import random
+    rng = random.Random(4)
+    today = now_dt.date().isoformat()
+    events = []
+    cst = {}
+    for i, (code, e) in enumerate(detail_map.items()):
+        if not e.get("close") or rng.random() < 0.3:
+            continue
+        arn = round(rng.uniform(1.2, 3.6), 2)
+        tgt = round(e["close"] * rng.uniform(0.85, 1.35))
+        cst[code] = {"arn": arn, "tgt": tgt, "n": rng.randint(2, 18), "d": today}
+        if i % 8 == 0 and len(events) < 4:
+            if rng.random() < 0.5:
+                events.append({"date": today, "code": code, "name": e.get("name", code),
+                               "kind": "tgt", "old": round(tgt * 0.9), "new": tgt, "dir": "up"})
+            else:
+                events.append({"date": today, "code": code, "name": e.get("name", code),
+                               "kind": "rate", "old": round(arn + 0.4, 2), "new": arn, "dir": "up"})
+    _rating_attach(detail_map, cst, events, today)
+    return events
+
+
+def rating_block_html(e):
+    """銘柄詳細に出す「アナリスト・コンセンサス」ブロック（データが無ければ空文字）"""
+    rt = e.get("rating")
+    if not rt:
+        return ""
+    parts = ['<div class="nhead">アナリスト・コンセンサス（証券会社レーティング）</div>']
+    parts.append(f'<div class="fact"><span>平均評価（1=強気買い〜5=売り）</span>'
+                 f'<span class="num"><b>{rt["arn"]}</b>（{rt["label"]}）</span></div>')
+    if rt.get("n"):
+        parts.append(f'<div class="fact"><span>カバーするアナリスト数</span>'
+                     f'<span class="num">{int(rt["n"])}名</span></div>')
+    if rt.get("tgt"):
+        up = rt.get("upside")
+        up_html = ""
+        if up is not None:
+            cls = "plus" if up >= 0 else "minus"
+            up_html = f'（現在値から <span class="{cls}">{up:+.1f}%</span>）'
+        parts.append(f'<div class="fact"><span>平均目標株価</span>'
+                     f'<span class="num">{rt["tgt"]:,.0f}円 {up_html}</span></div>')
+    ev = e.get("rating_event")
+    if ev:
+        if ev["kind"] == "tgt":
+            desc = f'平均目標株価が {ev["old"]:,}円 → {ev["new"]:,}円 に{"引き上げ" if ev["dir"] == "up" else "引き下げ"}'
+        else:
+            desc = f'平均評価が {ev["old"]} → {ev["new"]} に{"改善（強気方向）" if ev["dir"] == "up" else "悪化（弱気方向）"}'
+        parts.append(f'<div class="fact"><span>直近の変化（{ev["date"][5:].replace("-", "/")}）</span>'
+                     f'<span><b>{desc}</b></span></div>')
+    parts.append('<div class="discnote">出所はYahoo Finance（LSEG集計）のコンセンサス＝複数証券会社の平均で、'
+                 'MINKABU等の記事になる個別証券会社の発表が集計されたものです。目標株価はアナリストの「予想」であり保証ではありません。'
+                 'カバレッジのある銘柄（主に中大型株）のみ表示。レーティングは株価を動かす需給材料として「情報として知っておく」用途で、'
+                 'このシステムの採点には現時点で使っていません（変化イベントを蓄積し、効果を検証してから判断します）。</div>')
+    return "".join(parts)
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--demo", action="store_true",
@@ -10080,6 +10401,30 @@ def main():
         if e is not None and e.get("tob") is not None:
             r["tob"] = e["tob"]
             r["tob_announced"] = e.get("tob_announced", False)
+
+    # アナリスト・レーティング（コンセンサス）変化の検知
+    try:
+        _now_dt = datetime.fromisoformat(data["generated_at"])
+        if args.demo:
+            rating_events = _demo_ratings(detail_map_all, _now_dt)
+        else:
+            rating_events = fetch_ratings_update(detail_map_all, _now_dt)
+    except Exception as _rt_ex:  # noqa: BLE001
+        import traceback
+        traceback.print_exc()
+        print(f"  ! レーティング検知に失敗（他の処理は継続）: {_rt_ex}")
+        rating_events = []
+    data["rating_events"] = rating_events
+    for s in data["stocks"]:
+        e = detail_map_all.get(s["code"]) or {}
+        if e.get("rating"):
+            s["rating"] = e["rating"]
+        if e.get("rating_event"):
+            s["rating_event"] = e["rating_event"]
+    for r in all_results:
+        e = detail_map_all.get(r["code"])
+        if e is not None and e.get("rating_event"):
+            r["rating_event"] = True
 
     # 関連銘柄マップ（高次元ベクトル化 → 3D埋め込み → 類似度グラフ）
     try:
