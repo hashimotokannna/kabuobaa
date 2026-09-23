@@ -4053,6 +4053,25 @@ def run_screening():
             r["exec_change"] = exec_changes[r["code"]]
         if r["code"] in topic_map:
             r["topics"] = topic_map[r["code"]]
+    # 材料出尽くし（好材料で急騰→失速）のサイン検知: 全銘柄の日足＋開示から
+    print("材料出尽くしサインを検知中...")
+    n_exh = 0
+    for code, e in detail_map.items():
+        tup = sim_ohlc.get(code)
+        if not tup or len(tup[0]) < 40:
+            continue
+        try:
+            ex = compute_exhaust(tup, e.get("topics") or [])
+        except Exception:  # noqa: BLE001
+            continue
+        if ex:
+            e["exhaust"] = ex
+            n_exh += 1
+    for c in candidates:
+        ex = detail_map.get(c["code"], {}).get("exhaust")
+        if ex:
+            c["exhaust"] = ex
+    print(f"  出尽くしサイン: {n_exh}銘柄")
     rank_map2 = {s["code"]: i + 1 for i, s in enumerate(picked)}
     for c in candidates:
         e = detail_map.get(c["code"])
@@ -4435,6 +4454,7 @@ def build_output(picked, stats):
             "sparkall": (s.get("long") or {}).get("sparkall", []),
             "years_all": (s.get("long") or {}).get("years_all"),
             "topics": s.get("topics", []),
+            "exhaust": s.get("exhaust"),
             "cost": round(s["close"] * 100),
             "level": level_of(s["drop_pct"]),
             "is_new": (prev_codes is not None and s["code"] not in prev_codes),
@@ -4807,13 +4827,23 @@ def meter_zones(s):
     return z
 
 
+AG_MIN_EVAL = 9  # 「本当のオールグリーン」に必要な最低判定指標数（メーターは最大10個）
+
+
 def all_green_flags(s):
-    """(all_green, red_free, evaluated_count)。all_green=赤も黄も無し（緑/青/中立のみ）、red_free=赤なし"""
+    """(all_green, red_free, evaluated_count)。
+    all_green＝「本当のオールグリーン」: 赤も黄も無い ＋ 判定できた指標がAG_MIN_EVAL個以上
+    ＋ ファンダ3指標（PER/PBR/ROE）がすべて判定済み。
+    （以前は「判定できた指標だけ」で見ていたため、指標が2〜3個しか無い銘柄まで大量に該当していた）
+    red_free＝赤なし（従来どおり判定できた指標のみで見る緩い基準）"""
     z = meter_zones(s)
     cols = list(z.values())
     if not cols:
         return False, False, 0
-    return ("R" not in cols and "Y" not in cols), ("R" not in cols), len(cols)
+    strict = ("R" not in cols and "Y" not in cols
+              and len(cols) >= AG_MIN_EVAL
+              and all(k in z for k in ("PER", "PBR", "ROE")))
+    return strict, ("R" not in cols), len(cols)
 
 
 def stock_meters_html(s):
@@ -5622,7 +5652,7 @@ def render_html(data):
       <summary class="row">
         <div class="rk num">{s["rank"]}</div>
         <div class="nm">
-          <div class="n1">{html.escape(s["name"])} <span class="chip {chip}">{html.escape(s["market"])}</span>{new_mark}{'<span class="tri3badge">安全×質×時</span>' if s.get("tri") else ""}{move_html(s)}{'<span class="execbadge">社長交代</span>' if s.get("exec_change") else ""}{'<span class="rtbadge">レーティング変化</span>' if s.get("rating_event") else ""}{topic_badge(s)}</div>
+          <div class="n1">{html.escape(s["name"])} <span class="chip {chip}">{html.escape(s["market"])}</span>{new_mark}{'<span class="tri3badge">安全×質×時</span>' if s.get("tri") else ""}{move_html(s)}{'<span class="execbadge">社長交代</span>' if s.get("exec_change") else ""}{'<span class="rtbadge">レーティング変化</span>' if s.get("rating_event") else ""}{'<span class="exhbadge">出尽くし' + s["exhaust"]["level"] + '</span>' if s.get("exhaust") else ""}{topic_badge(s)}</div>
           <div class="n2 num"><button class="codebtn" onclick="copyCode(this, '{s["code"]}', event)">{s["code"]} ⧉</button> ・ {html.escape(s["group"])} ・ 100株 {s["cost"] / 10000:,.1f}万円 ・ {s["score"]:.0f}点<span class="nofund">資金不足</span></div>
           {f'<div class="cmt">{html.escape(s["comment"])}</div>' if s.get("comment") else ""}
         </div>
@@ -5638,6 +5668,7 @@ def render_html(data):
       <div class="notebox">
         {exec_card_html(s.get("exec_change"))}
         {topics_card_html(s.get("topics"))}
+        {exhaust_block_html(s)}
         {stock_meters_html(s)}
         <div class="nhead">選ばれた根拠（総合 {s["score"]:.0f}点 ＝ 質 {s.get("q_score") or 0:.0f} + タイミング {s.get("t_score") or 0:.0f}）</div>
         {reasons_html}
@@ -5647,7 +5678,8 @@ def render_html(data):
         {tech_html}
         {fund_html}
         {fin_chart_html((s.get("fund") or {}).get("hist"))}
-        {rating_block_html(s)}
+        {rating_block_html(s, show_absent=True)}
+        {flow_block_html(s, show_absent=True)}
         {disc_html}
         {latest_block(s)}
         <div class="fact"><span>100株の必要資金</span><span class="num">{s["cost"] / 10000:,.1f}万円</span></div>
@@ -5849,6 +5881,22 @@ __NAVCSS__
   details.rtban .exitem{{border-top-color:#ccd8e8;}}
   .rtbadge{{display:inline-block; font-size:9px; font-weight:800; color:#2e4d7b; background:#dce6f5;
     border-radius:4px; padding:1px 6px; margin-left:4px; vertical-align:1px;}}
+  .exhbadge{{display:inline-block; font-size:9px; font-weight:800; color:#fff; background:#b3541e;
+    border-radius:4px; padding:1px 6px; margin-left:4px; vertical-align:1px;}}
+  .exhbox{{background:#fdf3e3; border:1px solid #e8cfa0; border-radius:10px; padding:8px 10px; margin:8px 0;}}
+  .exhbox.warn{{background:#fbe9e0; border-color:#e0b09a;}}
+  .exhhead{{font-size:12px; font-weight:800; color:#8a4a12;}}
+  .exhbox.warn .exhhead{{color:#a03a1a;}}
+  .exhwhy{{font-size:11px; color:var(--ink2); padding:2px 0; line-height:1.5;}}
+  .fprof{{display:flex; align-items:flex-end; gap:3px; height:64px; padding:4px 2px 0;}}
+  .fpcol{{flex:1; display:flex; flex-direction:column; align-items:center; justify-content:flex-end; gap:2px; height:100%;}}
+  .fpbar{{width:100%; max-width:26px; background:#a8bfd8; border-radius:3px 3px 0 0;}}
+  .fplab{{font-size:8px; color:var(--ink3); white-space:nowrap; height:10px;}}
+  .fplegend{{font-size:9.5px; color:var(--ink3); padding:2px 0 6px;}}
+  .fsub{{font-size:11px; font-weight:800; color:var(--ink2); padding:8px 0 2px;}}
+  .factor{{background:#f2f0e8; border-radius:8px; padding:6px 8px; margin:4px 0;}}
+  .factorh{{font-size:11.5px; font-weight:800;}}
+  .fconf{{float:right; font-size:9.5px; font-weight:700; color:#2e4d7b; background:#dce6f5; border-radius:4px; padding:1px 6px;}}
   details.tpban .exitem .num{{color:#5a6b58;}}
   details.tpban .exmore{{color:#4d6350;}}
   .tpcath{{padding-top:8px; font-weight:800;}} .tpcath small{{color:#4d6350; font-weight:600; margin-left:4px;}}
@@ -6143,6 +6191,9 @@ def render_universe(all_results, stats, dt):
         chips.append(f'<button class="fbtn" data-f="__tp" style="background:#1d7a4f; color:#fff">注目開示 {n_tp:,}</button>')
     if n_rt:
         chips.append(f'<button class="fbtn" data-f="__rt" style="background:#2e4d7b; color:#fff">レーティング変化 {n_rt:,}</button>')
+    n_exh = sum(1 for r in all_results if r.get("exhaust"))
+    if n_exh:
+        chips.append(f'<button class="fbtn" data-f="__exh" style="background:#b3541e; color:#fff">出尽くし注意 {n_exh:,}</button>')
     chips.append('<button class="fbtn" data-f="__fav" style="background:#fff8e0; color:#a06f00">★お気に入り</button>')
     chips.append('<button class="fbtn" data-f="__hold" style="background:#e8eef8; color:#2e4d7b">持ち株</button>')
     chips.append("</div>")
@@ -6222,6 +6273,7 @@ def render_universe(all_results, stats, dt):
             f'data-tri="{1 if r.get("tri") else 0}" data-soon="{1 if r.get("soon") else 0}" '
             f'data-exec="{1 if r.get("exec_change") else 0}" '
             f'data-rt="{1 if r.get("rating_event") else 0}" '
+            f'data-exh="{1 if r.get("exhaust") else 0}" '
             f'data-tp="{len(r.get("topics") or [])}" '
             f'data-tob="{_n(r.get("tob"), -1)}" '
             f'data-ag="{1 if r.get("all_green") else 0}" data-rf="{1 if r.get("red_free") else 0}" data-nev="{r.get("n_eval", 0)}" '
@@ -6235,6 +6287,7 @@ def render_universe(all_results, stats, dt):
             + ('<span class="mark soon">まもなく</span>' if r.get("soon") else "")
             + ('<span class="mark exec">社長交代</span>' if r.get("exec_change") else "")
             + ('<span class="mark rt">レーティング</span>' if r.get("rating_event") else "")
+            + ('<span class="mark exh">出尽くし</span>' if r.get("exhaust") else "")
             + topic_badge(r)
             + ('<span class="mark ag">オールグリーン</span>' if r.get("all_green") else "")
             + f'<button class="uhold" data-code="{r["code"]}" aria-label="持ち株">持</button>'
@@ -6294,6 +6347,7 @@ def render_universe(all_results, stats, dt):
   .mark.tri{background:#1c1c1e; color:#fff;} .mark.soon{background:#fdf3e3; color:#b06a00;}
   .mark.exec{background:#c62f2f; color:#fff;}
   .mark.rt{background:#2e4d7b; color:#fff;}
+  .mark.exh{background:#b3541e; color:#fff;}
   .mark.ag{background:#b9dcc0; color:#1a5c37;}
 """ + EXEC_CSS + """
   .uhold{display:inline-block; font-size:9px; font-weight:800; border-radius:4px; padding:1px 5px; margin-right:3px;
@@ -6316,6 +6370,20 @@ def render_universe(all_results, stats, dt):
   .nrow .nd{width:58px; font-weight:700; flex:none;}
   .spark{margin:4px 0 2px;}
   .discnote{font-size:10px; color:var(--ink3); line-height:1.6; padding:5px 0 2px;}
+  .exhbox{background:#fdf3e3; border:1px solid #e8cfa0; border-radius:10px; padding:8px 10px; margin:8px 0;}
+  .exhbox.warn{background:#fbe9e0; border-color:#e0b09a;}
+  .exhhead{font-size:12px; font-weight:800; color:#8a4a12;}
+  .exhbox.warn .exhhead{color:#a03a1a;}
+  .exhwhy{font-size:11px; color:var(--ink2); padding:2px 0; line-height:1.5;}
+  .fprof{display:flex; align-items:flex-end; gap:3px; height:64px; padding:4px 2px 0;}
+  .fpcol{flex:1; display:flex; flex-direction:column; align-items:center; justify-content:flex-end; gap:2px; height:100%;}
+  .fpbar{width:100%; max-width:26px; background:#a8bfd8; border-radius:3px 3px 0 0;}
+  .fplab{font-size:8px; color:var(--ink3); white-space:nowrap; height:10px;}
+  .fplegend{font-size:9.5px; color:var(--ink3); padding:2px 0 6px;}
+  .fsub{font-size:11px; font-weight:800; color:var(--ink2); padding:8px 0 2px;}
+  .factor{background:#f2f0e8; border-radius:8px; padding:6px 8px; margin:4px 0;}
+  .factorh{font-size:11.5px; font-weight:800;}
+  .fconf{float:right; font-size:9.5px; font-weight:700; color:#2e4d7b; background:#dce6f5; border-radius:4px; padding:1px 6px;}
   .ylink{display:block; margin-top:10px; font-size:12px; font-weight:700; color:#2e4d7b;
     text-decoration:none; text-align:center; background:#eef2f8; border-radius:9px; padding:9px;}
   .chip{display:inline-block; font-size:9px; font-weight:600; border-radius:5px;
@@ -6385,6 +6453,7 @@ function apply(){
                  || (filter === '__soon' && r.dataset.soon === '1')
                  || (filter === '__exec' && r.dataset.exec === '1')
                  || (filter === '__rt' && r.dataset.rt === '1')
+                 || (filter === '__exh' && r.dataset.exh === '1')
                  || (filter === '__tp' && r.dataset.tp !== '0')
                  || (filter === '__ag' && r.dataset.ag === '1')
                  || (filter === '__rf' && r.dataset.rf === '1')
@@ -6526,7 +6595,8 @@ if (qp){ const qe=document.getElementById('q'); qe.value=qp; apply();
 <div class="ugrow"><span class="ugk" style="background:#fdf3e3; color:#b06a00">まもなく</span><span>安全と質は合格だが、◎の安さまであと3%以内。下がれば帳簿に昇格する待機組</span></div>
 <div class="ugrow"><span class="ugk" style="background:#c62f2f; color:#fff">社長交代</span><span>直近14日に「代表取締役の異動」を開示した銘柄。株価が大きく動きうる別格情報なので単独で表示（採点には含めません）</span></div>
 <div class="ugrow"><span class="ugk" style="background:#1d7a4f; color:#fff">注目開示</span><span>直近14日に株価に効きやすい適時開示（上方修正・自社株買い・増配・株式分割・TOBなど＝緑、下方修正・減配・上場廃止・不適切会計など＝赤）があった銘柄。詳細を開くと見出しと原文リンクが見られます（「今夜の厳選」トップのバナーは直近3営業日ぶんの速報）</span></div>
-<div class="ugrow"><span class="ugk" style="background:#b9dcc0; color:#1a5c37">オールグリーン</span><span>指標メーターに赤（警戒）も黄（注意）も無い銘柄。ただし判定できた指標だけで見るため、指標が少ない銘柄ほど該当しやすい点に注意</span></div>
+<div class="ugrow"><span class="ugk" style="background:#b3541e; color:#fff">出尽くし注意</span><span>直近10営業日に「大商いの急騰」があり、その後（または当日中に）失速サインが出ている銘柄。好材料の開示（上方修正・増配など）と結びつく場合は「警戒」に格上げ。詳細を開くと根拠（急騰日・出来高倍率・高値からの下落率）が見られます</span></div>
+<div class="ugrow"><span class="ugk" style="background:#b9dcc0; color:#1a5c37">オールグリーン</span><span>「本当のオールグリーン」だけを表示: 指標メーターに赤（警戒）も黄（注意）も無く、<b>かつ主要指標が9個以上判定できていて、PER・PBR・ROEがすべて判定済み</b>の銘柄。指標が2〜3個しか無い銘柄がまぐれで該当することはありません</span></div>
 <div class="ugrow"><span class="ugk" style="background:#e9f3ea; color:#3a5a40">赤なし</span><span>警戒（赤）だけが無い銘柄。オールグリーンより緩い基準</span></div>
 <div class="ugrow"><span class="ugk" style="background:#fff8e0; color:#a06f00">★お気に入り</span><span>行の★を押した銘柄。帳簿の★と共通で、この端末にだけ保存</span></div>
 <div class="ugrow"><span class="ugk" style="background:#e8eef8; color:#2e4d7b">持ち株</span><span>行の「持」を押した銘柄。銘柄マップの「マイ銘柄」モードで自分の地図としても見られます</span></div>
@@ -6551,8 +6621,8 @@ if (qp){ const qe=document.getElementById('q'); qe.value=qp; apply();
             + guide_card
             + "".join(chips)
             + '<div class="list">' + "\n".join(rows) + "</div>")
-    footnote = ("「オールグリーン」は各銘柄の指標メーターに赤（警戒）も黄（注意）も無い銘柄（判定できた指標のみで評価）、"
-                "「赤なし」は警戒だけが無い銘柄。指標が少ない銘柄ほど該当しやすい点に注意し、詳細を開いて評価済み指標の数も確認してください。"
+    footnote = ("「オールグリーン」は赤（警戒）も黄（注意）も無く、かつ主要指標が9個以上判定できた銘柄のみ（本当のオールグリーン）。"
+                "「赤なし」は警戒だけが無い銘柄（こちらは判定できた指標のみで評価する緩い基準）。"
                 "「対象外」は上場間もない・株価100円未満・売買代金が少ない、のいずれか。"
                 "「除外」は終わった株（1年高値から大幅下落・長期下落トレンド）に加え、"
                 "直近の急落（落ちるナイフ）・荒すぎる値動き・1年安値圏更新中・下げ止まり未確認を含みます。"
@@ -7342,7 +7412,7 @@ STATUS_LABEL = {"picked": "厳選候補", "ok": "候補", "bench": "圏外",
 def render_stock_detail(e):
     """1銘柄の詳細HTML断片（全銘柄一覧のタップ展開用）"""
     parts = [exec_card_html(e.get("exec_change")), topics_card_html(e.get("topics")),
-             stock_meters_html(e)]
+             exhaust_block_html(e), stock_meters_html(e)]
     status = e.get("status", "")
     if e.get("cand_rank"):
         parts.append(f'<div class="nhead">候補{e["cand_rank"]}位 ・ スコア {e.get("score", 0):.0f}点</div>')
@@ -7396,7 +7466,8 @@ def render_stock_detail(e):
         if fu.get("mcap_oku"):
             parts.append(f'<div class="fact"><span>時価総額</span><span class="num">{fu["mcap_oku"]:,}億円</span></div>')
 
-    parts.append(rating_block_html(e))
+    parts.append(rating_block_html(e, show_absent=True))
+    parts.append(flow_block_html(e, show_absent=True))
 
     lg = e.get("long") or {}
     sb = spark_block_html(lg.get("spark"), lg.get("spark10"), lg,
@@ -10309,10 +10380,17 @@ def _demo_ratings(detail_map, now_dt):
     return events
 
 
-def rating_block_html(e):
-    """銘柄詳細に出す「アナリスト・コンセンサス」ブロック（データが無ければ空文字）"""
+def rating_block_html(e, show_absent=False):
+    """銘柄詳細に出す「アナリスト・コンセンサス」ブロック。
+    データが無い場合: show_absent=True なら「カバレッジ対象外」を明示、False なら空文字。"""
     rt = e.get("rating")
     if not rt:
+        if show_absent:
+            return ('<div class="nhead">アナリスト・コンセンサス（証券会社レーティング）</div>'
+                    '<div class="discnote">この銘柄は現時点で<b>カバレッジ対象外</b>です'
+                    '（証券会社アナリストによる平均評価・平均目標株価の公表データがありません）。'
+                    'レーティングは主に中大型株が対象で、小型株はカバーされないことが多くあります。'
+                    'データが取得でき次第、ここに自動で表示されます。</div>')
         return ""
     parts = ['<div class="nhead">アナリスト・コンセンサス（証券会社レーティング）</div>']
     parts.append(f'<div class="fact"><span>平均評価（1=強気買い〜5=売り）</span>'
@@ -10341,6 +10419,432 @@ def rating_block_html(e):
                  'カバレッジのある銘柄（主に中大型株）のみ表示。レーティングは株価を動かす需給材料として「情報として知っておく」用途で、'
                  'このシステムの採点には現時点で使っていません（変化イベントを蓄積し、効果を検証してから判断します）。</div>')
     return "".join(parts)
+
+
+# ------------------------------------------------------------
+# 材料出尽くし検知 ＋ 板・売買フロー分析（5分足→売買主体のAI推定）
+# ------------------------------------------------------------
+EXHAUST_LOOKBACK = 10   # 急騰日を探す直近営業日数
+EXHAUST_VOL_X = 3.0     # 「大商い」= 20日平均出来高の3倍以上
+EXHAUST_SPIKE_PCT = 5.0  # 「急騰」= 前日比+5%以上（または寄りGU+3%／高値+6%）
+EXHAUST_DROP_PCT = 6.0   # 「失速」= 急騰日高値からの下落率
+
+
+def compute_exhaust(ohlc, topics):
+    """材料出尽くし（好材料で急騰→失速）の検知・予測。
+    ohlc = (dates, open, high, low, close, volume)（古い順）
+    戻り値: None か {level, label, date, news, why, ...}
+      level「警戒」= 好材料の開示と急騰が結びつき、失速サインも出ている
+      level「注意」= 開示は特定できないが急騰→失速の形、または急騰当日の上ヒゲ陰線（予兆）
+    """
+    dates, o, h, l, c, v = ohlc
+    n = len(dates)
+    if n < 40:
+        return None
+    last = n - 1
+    spike = None
+    for i in range(last, max(last - EXHAUST_LOOKBACK, 21) - 1, -1):
+        va = sum(x or 0 for x in v[i - 20:i]) / 20.0
+        if not va or not v[i] or not c[i - 1]:
+            continue
+        if v[i] < va * EXHAUST_VOL_X:
+            continue
+        prev = c[i - 1]
+        ret = (c[i] / prev - 1) * 100
+        gap = (o[i] / prev - 1) * 100
+        hi_ret = (h[i] / prev - 1) * 100
+        if ret >= EXHAUST_SPIKE_PCT or gap >= 3.0 or hi_ret >= EXHAUST_SPIKE_PCT + 1:
+            spike = (i, ret, v[i] / va)
+            break
+    if spike is None:
+        return None
+    i, spike_ret, vol_x = spike
+    sd = dates[i]
+    # 急騰日の前5日〜翌1日以内にあった「良い開示」（上方修正・増配・自社株買い等）
+    news = None
+    try:
+        s_dt = datetime.strptime(sd, "%Y-%m-%d").date()
+        for t in (topics or []):
+            tone = TOPIC_LABEL.get(t.get("cat"), ("", ""))[1]
+            if tone != "pos":
+                continue
+            t_dt = datetime.strptime(str(t.get("date")), "%Y-%m-%d").date()
+            if -1 <= (s_dt - t_dt).days <= 5:
+                news = TOPIC_LABEL[t["cat"]][0]
+                break
+    except Exception:  # noqa: BLE001
+        pass
+    rng = (h[i] - l[i]) or 1e-9
+    wick = (h[i] - c[i]) / rng  # 上ヒゲ率
+    onday_fade = (c[i] < o[i] and wick >= 0.5)
+    drop = (1 - c[last] / h[i]) * 100 if h[i] else 0.0
+    next_down = (i < last and c[i + 1] < c[i] * 0.985)
+    sd_lab = sd[5:].replace("-", "/")
+    why = [f"{sd_lab}に出来高{vol_x:.1f}倍の急騰（前日比{spike_ret:+.1f}%）"]
+    if news:
+        why.append(f"直前に好材料の開示（{news}）→ 発表を見て買った資金の利益確定が出やすい局面")
+    if onday_fade:
+        why.append("急騰当日が上ヒゲ陰線（高値から売り込まれて引け＝寄り天型）")
+    if next_down:
+        why.append("翌営業日に続落（買いの続かなさを確認）")
+    if drop >= 2 and i < last:
+        why.append(f"急騰日の高値からすでに−{drop:.1f}%")
+    if news and (onday_fade or next_down or drop >= EXHAUST_DROP_PCT - 2):
+        level, label = "警戒", "材料出尽くしの疑い"
+    elif i == last and onday_fade:
+        level, label = "注意", "出尽くしの予兆（急騰当日の上ヒゲ陰線）"
+    elif onday_fade or next_down or drop >= EXHAUST_DROP_PCT:
+        level, label = "注意", "急騰後の失速（出尽くし型）"
+    else:
+        return None
+    return {"level": level, "label": label, "date": sd, "news": news,
+            "spike_ret": round(spike_ret, 1), "vol_x": round(vol_x, 1),
+            "drop_from_high": round(drop, 1), "why": why}
+
+
+def exhaust_block_html(e):
+    """銘柄詳細に出す「材料出尽くし」警告ブロック（サインが無ければ空文字）"""
+    ex = e.get("exhaust")
+    if not ex:
+        return ""
+    warn = ex.get("level") == "警戒"
+    why = "".join(f'<div class="exhwhy">・{html.escape(w)}</div>' for w in ex.get("why", []))
+    label = html.escape(ex.get("label", ""))
+    level = html.escape(ex.get("level", ""))
+    return (f'<div class="exhbox{" warn" if warn else ""}">'
+            f'<div class="exhhead">⚠ {label}（{level}）</div>{why}'
+            '<div class="discnote">「材料出尽くし」＝良い発表（上方修正・増配など）で急騰した後、'
+            '買いたい人が買い終わって利益確定売りに押される現象。値動きと出来高の形からの機械検知・予測であり、'
+            '必ず下がるという意味ではありません。急騰直後の高値追いは一呼吸置くのが定石です。</div></div>')
+
+
+FLOW_MAX_CODES = 180  # 板・売買フロー分析の対象銘柄数の上限（1晩あたり）
+
+
+def _fetch_intraday(session, code, suffix=".T"):
+    """直近営業日の場中足（5分足、取れなければ15分足）を取得する。
+    戻り値: (date_iso, interval, bars) / None。bars=[(その日の分, o, h, l, c, v), ...]（時系列順）"""
+    headers = {"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)"}
+    for interval, min_bars in (("5m", 20), ("15m", 8)):
+        try:
+            resp = session.get(
+                f"https://query1.finance.yahoo.com/v8/finance/chart/{code}{suffix}",
+                params={"range": "5d", "interval": interval}, headers=headers, timeout=20)
+            if resp.status_code != 200:
+                continue
+            result = (resp.json().get("chart", {}).get("result") or [None])[0]
+            if not result:
+                continue
+            ts = result.get("timestamp") or []
+            q = (result.get("indicators", {}).get("quote") or [{}])[0]
+            opens, highs = q.get("open") or [], q.get("high") or []
+            lows, closes, vols = q.get("low") or [], q.get("close") or [], q.get("volume") or []
+            byday = {}
+            for j, t in enumerate(ts):
+                try:
+                    o_, h_, l_, c_ = opens[j], highs[j], lows[j], closes[j]
+                except IndexError:
+                    continue
+                if None in (o_, h_, l_, c_):
+                    continue
+                dt_ = datetime.fromtimestamp(t, JST)
+                v_ = vols[j] if j < len(vols) else None
+                byday.setdefault(dt_.date().isoformat(), []).append(
+                    (dt_.hour * 60 + dt_.minute, o_, h_, l_, c_, v_ or 0))
+            for d in sorted(byday, reverse=True):
+                bars = byday[d]
+                if len(bars) >= min_bars and sum(b[5] for b in bars) > 0:
+                    return d, interval, bars
+        except Exception:  # noqa: BLE001
+            continue
+    return None
+
+
+def _flow_features(bars):
+    """1日ぶんの場中足から売買フローの特徴量を計算する"""
+    vols = [b[5] for b in bars]
+    total = sum(vols) or 1
+    # 30分バケット: 前場 9:00-11:30（5枠）＋ 後場 12:30-15:30（6枠）
+    edges = [(540, 570), (570, 600), (600, 630), (630, 660), (660, 690),
+             (750, 780), (780, 810), (810, 840), (840, 870), (870, 900), (900, 935)]
+    prof = [0] * len(edges)
+    for b in bars:
+        for k, (a, z) in enumerate(edges):
+            if a <= b[0] < z:
+                prof[k] += b[5]
+                break
+    prof_sh = [round(p / total, 4) for p in prof]
+    vwap = sum(((b[2] + b[3] + b[4]) / 3) * b[5] for b in bars) / total
+    closes = [b[4] for b in bars]
+    highs = [b[2] for b in bars]
+    lows = [b[3] for b in bars]
+    hi, lo = max(highs), min(lows)
+    rng = (hi - lo) or 1e-9
+    flips = moves = 0
+    prev_sign = 0
+    for a, z in zip(closes, closes[1:]):
+        d = z - a
+        if d == 0:
+            continue
+        sgn = 1 if d > 0 else -1
+        if prev_sign and sgn != prev_sign:
+            flips += 1
+        prev_sign = sgn
+        moves += 1
+    nz = sorted(x for x in vols if x > 0)
+    med = nz[len(nz) // 2] if nz else 1
+    pm = sum(b[5] for b in bars if b[0] >= 750)
+    o0 = bars[0][1] or 1e-9
+    return {
+        "prof": prof_sh, "open30": prof_sh[0], "close30": prof_sh[-1],
+        "pm_share": round(pm / total, 3),
+        "vwap_dev": (closes[-1] - vwap) / vwap if vwap else 0.0,
+        "spike": max(vols) / med if med else 0.0,
+        "flips": flips / moves if moves else 0.0,
+        "ret": closes[-1] / o0 - 1,
+        "fade": (hi - closes[-1]) / rng,
+        "closepos": (closes[-1] - lo) / rng,
+        "range_pct": rng / o0 * 100,
+        "hi_at": bars[highs.index(hi)][0], "lo_at": bars[lows.index(lo)][0],
+    }
+
+
+def _flow_actors(f, vol_mult):
+    """特徴量から「裏にいそうな売買主体」を機械採点する（0-100点・上位2件を採用）。
+    実際の注文主体は公開情報では特定できないため、市場の経験則（典型パターン）との
+    一致度によるAI推定。採点式はすべてこの関数に明文化してある。"""
+    out = []
+
+    def add(name, score, why):
+        if score >= 40 and why:
+            out.append({"who": name, "score": min(100, int(score)), "why": why})
+
+    om, cm = f["open30"], f["close30"]
+    vd = abs(f["vwap_dev"]) * 100
+    vm = vol_mult or 0
+    # ① 機関投資家（VWAP・大引け執行）
+    s, w = 0, []
+    if cm >= 0.18:
+        s += 35; w.append(f"引け30分に出来高の{cm * 100:.0f}%が集中（大引け執行は機関・パッシブ資金の典型）")
+    if vd <= 0.4:
+        s += 25; w.append(f"終値がVWAP±{vd:.1f}%（1日の平均価格に沿った執行＝VWAPアルゴの痕跡）")
+    if f["spike"] <= 5:
+        s += 20; w.append("突出した出来高の瞬間集中がなく、終日ならして発注")
+    if om <= 0.25:
+        s += 10; w.append("寄り直後の過熱がない")
+    if vm >= 1.3:
+        s += 10; w.append(f"出来高は普段の{vm:.1f}倍と厚め")
+    add("機関投資家（VWAP・大引け執行）", s, w)
+    # ② 個人の短期資金（イナゴ・飛びつき買い）
+    s, w = 0, []
+    if om >= 0.30:
+        s += 35; w.append(f"寄り30分に出来高の{om * 100:.0f}%が集中（材料に飛びつく個人の成行買いの典型）")
+    if f["spike"] >= 8:
+        s += 25; w.append(f"瞬間的な出来高スパイク{f['spike']:.0f}倍（イナゴ的な集中）")
+    if f["fade"] >= 0.6 and f["hi_at"] < 660:
+        s += 25; w.append("午前に高値→その後失速（買いが続かず利確に押される形）")
+    if vm >= 3:
+        s += 15; w.append(f"出来高が普段の{vm:.1f}倍に膨張")
+    add("個人の短期資金（イナゴ・飛びつき買い）", s, w)
+    # ③ 大口の買い集め（静かな仕込み）
+    s, w = 0, []
+    if f["closepos"] >= 0.75 and f["ret"] > 0:
+        s += 30; w.append("高値圏で引け（売り物を吸収しながら値を保つ形）")
+    if f["pm_share"] >= 0.55:
+        s += 25; w.append(f"後場に出来高の{f['pm_share'] * 100:.0f}%（時間をかけた分割買いの痕跡）")
+    if 1.3 <= vm <= 4 and f["range_pct"] <= 3:
+        s += 25; w.append(f"出来高{vm:.1f}倍なのに値幅{f['range_pct']:.1f}%と静か（目立たず数量を確保する動き）")
+    if f["flips"] <= 0.45:
+        s += 10; w.append("上下動が少なく一方向の買い")
+    add("大口の買い集め（静かな仕込み）", s, w)
+    # ④ 大口の売り抜け（戻り売り）
+    s, w = 0, []
+    if f["fade"] >= 0.6 and vm >= 1.5:
+        s += 35; w.append("高値から売り込まれて引け＋出来高増（戻りを売る大口の典型）")
+    if om >= 0.25 and f["ret"] < 0:
+        s += 25; w.append("寄りの買いの高い所に売りをぶつける形")
+    if f["closepos"] <= 0.3:
+        s += 20; w.append("安値圏で引け")
+    if cm >= 0.18 and f["ret"] < -0.01:
+        s += 10; w.append("引けでも売りが優勢")
+    add("大口の売り抜け（戻り売り・はめ込み警戒）", s, w)
+    # ⑤ 個人の狼狽売り・損切り
+    s, w = 0, []
+    if f["ret"] <= -0.03 and vm >= 2:
+        s += 45; w.append(f"日中{f['ret'] * 100:+.1f}%の下げ＋出来高{vm:.1f}倍（損切りの投げが出た形）")
+    if f["closepos"] <= 0.2:
+        s += 25; w.append("ほぼ安値引け（投げがまだ吸収されていない）")
+    if f["lo_at"] >= 840:
+        s += 15; w.append("引けにかけて安値を更新（翌日に売り残りの可能性）")
+    add("個人の狼狽売り・損切り", s, w)
+    # ⑥ デイトレ・アルゴの回転売買
+    s, w = 0, []
+    if f["flips"] >= 0.55:
+        s += 35; w.append(f"5分足の方向転換率{f['flips'] * 100:.0f}%（細かい往復＝回転売買）")
+    if f["spike"] <= 6 and abs(f["ret"]) <= 0.015:
+        s += 25; w.append("方向感なく出来高だけこなす1日")
+    if f["range_pct"] >= 2 and abs(f["ret"]) <= 0.01:
+        s += 20; w.append(f"値幅{f['range_pct']:.1f}%の割に行って来い")
+    add("デイトレ・アルゴの回転売買", s, w)
+
+    out.sort(key=lambda x: -x["score"])
+    return out[:2]
+
+
+def fetch_flow_analysis(detail_map, picked_codes=None, rating_events=None,
+                        max_codes=FLOW_MAX_CODES):
+    """注目銘柄の場中足を取得し、売買フロー分析を detail_map[code]['flow'] に付ける。
+    対象（優先順）: 今夜の厳選 → 出尽くしサイン → レーティング変化 → 注目開示
+    → TOB公表 → 名指し銘柄 → まもなく。max_codes件まで。戻り値=分析できた銘柄数。"""
+    order = []
+
+    def push(codes):
+        for cd in codes:
+            if cd and cd in detail_map and cd not in order:
+                order.append(cd)
+
+    push(picked_codes or [])
+    push([cd for cd, e in detail_map.items() if e.get("exhaust")])
+    push([ev.get("code") for ev in (rating_events or [])])
+    push([cd for cd, e in detail_map.items() if e.get("topics")])
+    push([cd for cd, e in detail_map.items() if e.get("tob_announced")])
+    push(list(REPRO_NAMED))
+    push([cd for cd, e in detail_map.items() if e.get("soon")])
+    targets = order[:max_codes]
+    if not targets:
+        return 0
+    from concurrent.futures import ThreadPoolExecutor as _TPE
+
+    def _one(cd):
+        e = detail_map[cd]
+        got = _fetch_intraday(_get_session(), cd, e.get("suffix", ".T"))
+        time.sleep(0.1)
+        if not got:
+            return cd, None
+        d, interval, bars = got
+        f = _flow_features(bars)
+        # 普段の出来高（直近日足の平均・当日を除く）と当日の比
+        vs = [dd.get("volume") or 0 for dd in (e.get("days") or [])
+              if dd.get("date") != d and dd.get("volume")]
+        va = (sum(vs) / len(vs)) if vs else 0
+        today_v = sum(b[5] for b in bars)
+        vol_mult = round(today_v / va, 2) if va else None
+        return cd, {"date": d, "interval": interval, "prof": f["prof"],
+                    "open30": round(f["open30"], 3), "close30": round(f["close30"], 3),
+                    "pm_share": f["pm_share"], "vwap_dev": round(f["vwap_dev"] * 100, 2),
+                    "spike": round(f["spike"], 1), "flips": round(f["flips"], 2),
+                    "ret": round(f["ret"] * 100, 2), "fade": round(f["fade"], 2),
+                    "range_pct": round(f["range_pct"], 2), "vol_mult": vol_mult,
+                    "actors": _flow_actors(f, vol_mult)}
+
+    n = 0
+    with _TPE(max_workers=8) as pool:
+        for cd, fl in pool.map(_one, targets):
+            if fl:
+                detail_map[cd]["flow"] = fl
+                n += 1
+    return n
+
+
+def _demo_flow(detail_map):
+    """デモ用: 先頭銘柄に3種類の典型フロー（機関執行/イナゴ/回転）と出尽くし例を作る"""
+    rr = random.Random(7)
+    n = 0
+    codes = sorted(detail_map)
+    for i, cd in enumerate(codes[:12]):
+        e = detail_map[cd]
+        shape = i % 3
+        base = float(e.get("close") or 1000)
+        px = base
+        bars = []
+        for m in list(range(540, 690, 5)) + list(range(750, 930, 5)):
+            drift = 0.0004 if shape == 0 else (-0.0005 if shape == 1 else 0.0)
+            px *= 1 + rr.gauss(drift, 0.0012)
+            v = 8000 + rr.randint(0, 4000)
+            if shape == 1 and m < 570:
+                v *= 6
+            if shape == 0 and m >= 900:
+                v *= 4
+            bars.append((m, px, px * 1.0012, px * 0.9988, px, int(v)))
+        f = _flow_features(bars)
+        vol_mult = [1.6, 3.4, 1.0][shape]
+        e["flow"] = {"date": "2026-08-12", "interval": "5m", "prof": f["prof"],
+                     "open30": round(f["open30"], 3), "close30": round(f["close30"], 3),
+                     "pm_share": f["pm_share"], "vwap_dev": round(f["vwap_dev"] * 100, 2),
+                     "spike": round(f["spike"], 1), "flips": round(f["flips"], 2),
+                     "ret": round(f["ret"] * 100, 2), "fade": round(f["fade"], 2),
+                     "range_pct": round(f["range_pct"], 2), "vol_mult": vol_mult,
+                     "actors": _flow_actors(f, vol_mult)}
+        n += 1
+    for k, cd in enumerate(codes[:2]):
+        detail_map[cd]["exhaust"] = {
+            "level": "警戒" if k == 0 else "注意",
+            "label": "材料出尽くしの疑い" if k == 0 else "急騰後の失速（出尽くし型）",
+            "date": "2026-08-10", "news": "上方修正" if k == 0 else None,
+            "spike_ret": 8.2, "vol_x": 4.1, "drop_from_high": 7.3,
+            "why": ["8/10に出来高4.1倍の急騰（前日比+8.2%）",
+                    "直前に好材料の開示（上方修正）→ 発表を見て買った資金の利益確定が出やすい局面",
+                    "急騰日の高値からすでに−7.3%"]}
+    return n
+
+
+def flow_block_html(e, show_absent=False):
+    """銘柄詳細に出す「板・売買フローの推定」ブロック。
+    データが無い場合: show_absent=True なら対象外の一行を明示、False なら空文字。"""
+    fl = e.get("flow")
+    if not fl:
+        if show_absent:
+            return ('<div class="nhead">板・売買フローの推定（AI）</div>'
+                    '<div class="discnote">この銘柄は本日の分析対象外です（今夜の厳選・出尽くしサイン・'
+                    'レーティング変化・注目開示などの注目銘柄のみ、毎晩の実行で場中の5分足を取得して分析します）。</div>')
+        return ""
+    labels = ["9時", "", "10時", "", "11時", "12時半", "", "13時半", "", "14時半", "引け"]
+    prof = fl.get("prof") or []
+    mx = max(prof) if prof else 1
+    mx = mx or 1
+    cols = []
+    for k, p in enumerate(prof):
+        hpx = max(3, p / mx * 46)
+        lab = labels[k] if k < len(labels) else ""
+        cols.append(f'<div class="fpcol"><div class="fpbar" style="height:{hpx:.0f}px"></div>'
+                    f'<span class="fplab">{lab}</span></div>')
+    vm = fl.get("vol_mult")
+    vm_lab = f"{vm:.1f}倍" if vm else "−"
+    ret = fl.get("ret") or 0
+    rng = fl.get("range_pct") or 0
+    vd = fl.get("vwap_dev") or 0
+    o30 = (fl.get("open30") or 0) * 100
+    c30 = (fl.get("close30") or 0) * 100
+    facts = (f'<div class="fact"><span>この日の値動き</span><span class="num">{ret:+.1f}%（値幅{rng:.1f}%）</span></div>'
+             f'<div class="fact"><span>出来高（普段の日足平均との比）</span><span class="num">{vm_lab}</span></div>'
+             f'<div class="fact"><span>終値とVWAP（1日の平均約定価格）の差</span><span class="num">{vd:+.2f}%</span></div>'
+             f'<div class="fact"><span>寄り30分／引け30分の出来高シェア</span><span class="num">{o30:.0f}% ／ {c30:.0f}%</span></div>')
+    actors = fl.get("actors") or []
+    if actors:
+        blocks = []
+        for k, a in enumerate(actors):
+            sc = a.get("score", 0)
+            conf = "高" if sc >= 70 else ("中" if sc >= 50 else "低")
+            icon = "🎯" if k == 0 else "👤"
+            who = html.escape(a.get("who", ""))
+            whys = "".join(f'<div class="exhwhy">・{html.escape(wt)}</div>' for wt in a.get("why", []))
+            blocks.append(f'<div class="factor"><div class="factorh">{icon} {who}'
+                          f'<span class="fconf">一致度{sc}・確度{conf}</span></div>{whys}</div>')
+        act = "".join(blocks)
+    else:
+        act = '<div class="discnote">典型パターンとの一致が弱く、特定の主体色は薄い1日でした（様子見・閑散）。</div>'
+    d_lab = str(fl.get("date", ""))[5:].replace("-", "/")
+    iv_lab = str(fl.get("interval", "5m")).replace("m", "分")
+    return (f'<div class="nhead">板・売買フローの推定（{d_lab}の{iv_lab}足・AI）</div>'
+            f'<div class="fprof">{"".join(cols)}</div>'
+            '<div class="fplegend">時間帯ごとの出来高（どの時間に売買が集中したか）</div>'
+            + facts
+            + '<div class="fsub">裏にいそうな売買主体（機械推定・上位2件）</div>' + act +
+            '<div class="discnote">リアルタイムの板（気配値・注文残）は取引所の有料データのため、'
+            '場中の5分足の値動きと出来高の「形」から典型パターンとの一致度で推定しています。'
+            '実際の注文主体を特定するものではありません。寄り集中＝個人の飛びつき、'
+            '引け集中＋VWAP沿い＝機関の執行、出来高増なのに値幅が静か＝大口の仕込み、'
+            'といった市場の経験則を採点式にしたものです。</div>')
 
 
 def main():
@@ -10425,6 +10929,32 @@ def main():
         e = detail_map_all.get(r["code"])
         if e is not None and e.get("rating_event"):
             r["rating_event"] = True
+
+    # 板・売買フロー分析（場中5分足 → 裏にいる売買主体のAI推定）
+    try:
+        if args.demo:
+            flow_n = _demo_flow(detail_map_all)
+        else:
+            flow_n = fetch_flow_analysis(
+                detail_map_all,
+                picked_codes=[s["code"] for s in data["stocks"]],
+                rating_events=rating_events)
+        print(f"板・売買フロー分析: {flow_n}銘柄")
+    except Exception as _fl_ex:  # noqa: BLE001
+        import traceback
+        traceback.print_exc()
+        print(f"  ! 板・売買フロー分析に失敗（他の処理は継続）: {_fl_ex}")
+    # フロー・出尽くしサインを厳選/一覧の表示データへ反映
+    for s in data["stocks"]:
+        e = detail_map_all.get(s["code"]) or {}
+        if e.get("flow"):
+            s["flow"] = e["flow"]
+        if e.get("exhaust"):
+            s["exhaust"] = e["exhaust"]
+    for r in all_results:
+        e = detail_map_all.get(r["code"])
+        if e is not None and e.get("exhaust"):
+            r["exhaust"] = e["exhaust"].get("level", "注意")
 
     # 関連銘柄マップ（高次元ベクトル化 → 3D埋め込み → 類似度グラフ）
     try:
